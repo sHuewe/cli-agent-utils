@@ -1,0 +1,108 @@
+version = 1
+
+# Paths are workspace-relative. Adjust source_root to the project that should be
+# documented. source_root is a logical scope for the prompts; the hard security
+# boundary remains the --workspace passed to cli-agent-flow.
+[vars]
+source_root = "src"
+okf_root = "okf-generated"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+[[steps]]
+id = "inventory"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/01_inventory.md"
+output = "flow/okf/flow_okf_from_src/state/inventory.json"
+overwrite_output = true
+workspace_access = "read"
+response_format = "json"
+
+[[steps]]
+id = "plan"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/02_plan.md"
+output = "flow/okf/flow_okf_from_src/state/plan.json"
+overwrite_output = true
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+inventory = "${steps.inventory.output}"
+
+[[steps]]
+id = "initialize_okf"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/03_initialize.md"
+output = "flow/okf/flow_okf_from_src/state/initialize.json"
+overwrite_output = true
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__make_directory"]
+
+[steps.vars]
+plan = "${steps.plan.output}"
+
+[[steps]]
+id = "create_concepts"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/04_create_concept.md"
+foreach = "steps.plan.output.concepts"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_src/state/concepts/${iteration.id}.json"
+overwrite_output = true
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__write_file"]
+
+[steps.vars]
+concept = "${item}"
+
+[[steps]]
+id = "create_indexes"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/05_create_indexes.md"
+output = "flow/okf/flow_okf_from_src/state/indexes.json"
+overwrite_output = true
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__write_file"]
+
+[steps.vars]
+plan = "${steps.plan.output}"
+concept_results = "${steps.create_concepts.output}"
+
+[[steps]]
+id = "verify"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/06_verify.md"
+output = "flow/okf/flow_okf_from_src/state/verification.json"
+overwrite_output = true
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+plan = "${steps.plan.output}"
+
+[[steps]]
+id = "repair"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/07_repair.md"
+output = "flow/okf/flow_okf_from_src/state/repair.json"
+overwrite_output = true
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__write_file", "os__make_directory"]
+
+[steps.vars]
+plan = "${steps.plan.output}"
+verification = "${steps.verify.output}"
+
+[[steps]]
+id = "final_verify"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/08_final_verify.md"
+output = "flow/okf/flow_okf_from_src/state/final-verification.json"
+overwrite_output = true
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+plan = "${steps.plan.output}"
+repair = "${steps.repair.output}"

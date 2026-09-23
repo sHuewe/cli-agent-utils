@@ -1,0 +1,4 @@
+state/*.json
+state/concepts/*.json
+!state/.gitkeep
+!state/concepts/.gitkeep
