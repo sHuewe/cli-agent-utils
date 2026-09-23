@@ -36,6 +36,7 @@ unit = "${item}"
 [[steps]]
 id = "plan_units"
 prompt_file = "flow/okf/flow_okf_from_src/prompts/03_plan_unit.md"
+add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.inventory_units.output.iterations"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_src/state/plan-${iteration.id}.json"
@@ -49,6 +50,7 @@ inventory = "${item.output}"
 [[steps]]
 id = "build_units"
 prompt_file = "flow/okf/flow_okf_from_src/prompts/04_build_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
 conversation_items = "${item.output.concepts}"
 conversation_final_prompt_file = "flow/okf/flow_okf_from_src/prompts/05_build_unit_final.md"
 foreach = "steps.plan_units.output.iterations"
@@ -66,6 +68,7 @@ concept = "${conversation.item}"
 [[steps]]
 id = "verify_units"
 prompt_file = "flow/okf/flow_okf_from_src/prompts/06_verify_unit.md"
+add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.build_units.output.iterations"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_src/state/verify-${iteration.id}.json"
@@ -79,6 +82,7 @@ build = "${item.output}"
 [[steps]]
 id = "repair_units"
 prompt_file = "flow/okf/flow_okf_from_src/prompts/07_repair_unit.md"
+add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.verify_units.output.iterations"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_src/state/repair-${iteration.id}.json"
@@ -93,6 +97,7 @@ verification = "${item.output}"
 [[steps]]
 id = "create_root_index"
 prompt_file = "flow/okf/flow_okf_from_src/prompts/08_create_root_index.md"
+add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_src/state/root-index.json"
 overwrite_output = true
 workspace_access = "write"
@@ -106,6 +111,7 @@ units = "${steps.repair_units.output.iterations}"
 [[steps]]
 id = "final_verify"
 prompt_file = "flow/okf/flow_okf_from_src/prompts/09_final_verify.md"
+add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_src/state/final-verification.json"
 overwrite_output = true
 workspace_access = "read"
