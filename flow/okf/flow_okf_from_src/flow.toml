@@ -94,9 +94,55 @@ approve_tools = ["os__make_directory", "os__write_file"]
 [steps.vars]
 verification = "${item.output}"
 
+# This JSON file is deliberately resumable/editable. On the first run the model
+# generates coverage candidates. Before a later run, users can add their own
+# {id,name,description,...} entries; the existing valid JSON is then used as a
+# checkpoint instead of being overwritten.
+[[steps]]
+id = "additional_concepts"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/08_additional_concepts.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_src/state/additional-concepts.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+unit_plans = "${steps.plan_units.output.iterations}"
+unit_results = "${steps.repair_units.output.iterations}"
+
+[[steps]]
+id = "assess_additional_concepts"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/09_assess_additional_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+foreach = "steps.additional_concepts.output.concepts"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_src/state/assess-${iteration.id}.json"
+overwrite_output = true
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+requested_concept = "${item}"
+
+[[steps]]
+id = "apply_additional_concepts"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/10_apply_additional_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+foreach = "steps.assess_additional_concepts.output.iterations"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_src/state/apply-${iteration.id}.json"
+overwrite_output = true
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__make_directory", "os__write_file"]
+
+[steps.vars]
+assessment = "${item.output}"
+
 [[steps]]
 id = "create_root_index"
-prompt_file = "flow/okf/flow_okf_from_src/prompts/08_create_root_index.md"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/11_create_root_index.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_src/state/root-index.json"
 overwrite_output = true
@@ -107,10 +153,11 @@ approve_tools = ["os__make_directory", "os__write_file"]
 [steps.vars]
 project = "${steps.partition.output.project}"
 units = "${steps.repair_units.output.iterations}"
+additional_changes = "${steps.apply_additional_concepts.output.iterations}"
 
 [[steps]]
 id = "final_verify"
-prompt_file = "flow/okf/flow_okf_from_src/prompts/09_final_verify.md"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/12_final_verify.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_src/state/final-verification.json"
 overwrite_output = true

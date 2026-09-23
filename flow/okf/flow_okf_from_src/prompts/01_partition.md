@@ -3,30 +3,31 @@ Partition the configured source tree into independently analyzable units for sca
 Source root: `{{var:source_root}}`
 
 Rules:
-- Do not attempt a detailed architecture analysis yet. This step exists only to discover robust analysis boundaries.
-- Inspect repository structure, build/package metadata and a small amount of representative source as needed to identify natural units.
-- Prefer existing project/module boundaries such as Maven/Gradle modules, npm workspaces, Python packages, services, applications or clearly separated top-level components.
-- If one natural module is still obviously too large for a single detailed analysis, split it further along stable package/component boundaries.
-- Avoid over-fragmentation. Small repositories should normally produce one unit.
-- Every unit must be fully contained below source_root.
-- Units should cover the relevant source tree without intentionally overlapping. Shared root-level build/configuration material may be represented as one dedicated unit when it materially affects the project.
+- Treat `source_root` as the complete scope of this step. Do not list, read, search or otherwise inspect files or directories outside it, even if repository-level build metadata exists there.
+- Do not attempt a detailed architecture analysis yet. This step exists only to discover robust analysis boundaries inside `source_root`.
+- Inspect directory/package structure and a small amount of representative source below `source_root` as needed to identify natural units.
+- Prefer boundaries visible inside the source tree: distinct applications, services, major packages, subprojects represented below the source root, or clearly separated top-level components.
+- If one natural unit is still obviously too large for a single detailed analysis, split it further along stable package/component boundaries.
+- Avoid over-fragmentation. Small source trees may legitimately produce one unit.
+- Every unit must be fully contained below `source_root`.
+- Units should cover the relevant source tree without intentional overlap.
 - `id` must be stable, unique, filesystem-safe and match `[A-Za-z0-9_-]+`.
-- `source_path` is workspace-relative and must point at the unit's analysis root.
+- `source_path` is workspace-relative and must point at the unit's analysis root below `source_root`.
 - `okf_path` is relative to the configured OKF root, contains no `..`, and should use lowercase kebab-case. It may be `.` only when there is exactly one unit.
-- Record uncertain or ambiguous boundaries in `warnings`; do not invent structure.
+- Record uncertain or ambiguous boundaries in `warnings`; do not invent structure from information outside `source_root`.
 
 Return exactly one JSON object:
 
 {
   "project": {
     "name": "string",
-    "summary": "short repository-level summary"
+    "summary": "short summary based only on the configured source tree"
   },
   "units": [
     {
       "id": "backend",
       "name": "Backend",
-      "kind": "gradle-module",
+      "kind": "package|component|application|service|subproject|other",
       "source_path": "workspace-relative/path",
       "okf_path": "backend",
       "description": "why this is an independent analysis unit"

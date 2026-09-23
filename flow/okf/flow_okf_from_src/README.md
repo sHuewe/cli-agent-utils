@@ -4,22 +4,25 @@ This flow creates an OKF repository from source code in scalable, partitioned st
 
 ## Design
 
-The first step does not try to understand the whole repository in depth. It partitions `source_root` into independently analyzable units such as Maven/Gradle modules, npm workspaces, Python packages, services, subprojects or stable package/component boundaries.
+The first step does not try to understand the whole repository in depth. It partitions only the configured `source_root` into independently analyzable units such as applications, services, major packages, subprojects represented below the source root, or stable component boundaries. It is explicitly instructed not to inspect files outside `source_root`.
 
 All expensive downstream work is chained through the aggregated `iterations` output of the previous foreach step. The next step therefore does not need to know the original partition item explicitly; the iteration wrapper carries both the stable iteration `id` and that iteration's `output`.
 
 Pipeline:
 
-1. `partition` -> repository-level unit discovery
-2. `inventory_units` -> foreach over `partition.units`
-3. `plan_units` -> foreach over `inventory_units.output.iterations`
+1. `partition` -> source-root-local unit discovery
+2. `inventory_units` -> foreach over `partition.units`; records external functions and configuration options explicitly
+3. `plan_units` -> foreach over `inventory_units.output.iterations`; maps every external function/configuration option to one or more planned concepts
 4. `build_units` -> foreach over `plan_units.output.iterations`; concepts are created as conversation turns inside the unit iteration and the final turn writes the unit index
 5. `verify_units` -> foreach over `build_units.output.iterations`
 6. `repair_units` -> foreach over `verify_units.output.iterations`
-7. `create_root_index` -> creates the mandatory OKF root `index.md` from the aggregated unit results
-8. `final_verify` -> read-only structural verification
+7. `additional_concepts` -> creates an editable JSON list of additional concept requests
+8. `assess_additional_concepts` -> foreach request: decides `covered`, `not_applicable`, `extend`, or `create`
+9. `apply_additional_concepts` -> foreach assessment: performs only the required change
+10. `create_root_index` -> creates the mandatory OKF root `index.md`
+11. `final_verify` -> read-only structural verification
 
-Because every foreach step reuses `${item.id}` as its own `iteration_id`, the unit identity propagates automatically from one aggregated `iterations` array to the next.
+Because every foreach step reuses `${item.id}` as its own `iteration_id`, identity propagates automatically through each chained `iterations` array.
 
 ## Configure
 
@@ -31,7 +34,7 @@ source_root = "src"
 okf_root = "okf-generated"
 ```
 
-Both values are workspace-relative. `source_root` is a logical analysis scope; the hard filesystem boundary is still the `--workspace` supplied to `cli-agent-flow`.
+Both values are workspace-relative. `source_root` is a logical analysis scope; the hard filesystem boundary is still the `--workspace` supplied to `cli-agent-flow`. The partition/inventory/coverage prompts nevertheless explicitly forbid source inspection outside `source_root`.
 
 ## Run
 
@@ -43,23 +46,41 @@ cli-agent-flow run flow/okf/flow_okf_from_src/flow.toml --workspace <project-roo
 
 For a reusable checkout next to a project, choose a common parent as workspace and set `source_root`/`okf_root` accordingly.
 
-## Scaling behavior
+## Scaling and coverage
 
-The partition step should keep a small repository as one unit and split a large repository along natural project/module boundaries. If a single natural module is still too large, it may be split further along stable package/component boundaries.
+The partition step should keep a small source tree as one unit and split a large source tree along natural boundaries visible inside `source_root`. If one unit is still too large, it may be split further along stable package/component boundaries.
 
-Detailed source analysis is then bounded to one unit per agent iteration. No later step needs the full detailed inventory of all units in one prompt. Unit plans and build/verification results are passed through `iterations`, and the global root-index step consumes only the compact final unit results.
+Within every unit, completeness has priority for outward-facing behavior: every externally visible application function and every configuration possibility discovered by the inventory must be mapped to at least one planned concept. The normal concept-count guidance is not a cap.
+
+## Additional concept requests
+
+`state/additional-concepts.json` is intentionally different from the other generated state files. Its step uses `overwrite_output = false` and JSON checkpoint semantics.
+
+On a first run, the model creates a list such as:
+
+```json
+{
+  "concepts": [
+    {
+      "id": "extra001",
+      "name": "TLS configuration",
+      "description": "Document all TLS-related configuration and runtime behavior.",
+      "unit_hint": "server",
+      "evidence_hints": []
+    }
+  ],
+  "warnings": []
+}
+```
+
+You can then edit that file manually between runs and add further requested concepts. On the next run, a valid file already present at flow start is used as the checkpoint rather than regenerated. Each request is independently assessed against the existing OKF and source: it may already be covered, be not applicable, require extending an existing concept, or require creating a new concept.
+
+Delete `state/additional-concepts.json` when you want the model to regenerate the candidate list from the current plans/results.
 
 ## Generated OKF conventions
 
-- Root marker: lowercase `index.md`.
-- Concepts use YAML frontmatter with at least a non-empty `type`; the prompts also request `title`, `description`, `tags`, and `status`.
-- Concepts are organized by knowledge topic, not one file per source file.
-- Claims should contain concrete workspace-relative source references.
-- Internal links are relative Markdown links inside the OKF root.
-- The flow does not claim human verification and does not add `verified` metadata.
+The shared rules are kept in `flow/okf/okf-format.md` and supplied as file context to all steps that plan, create, verify, repair, assess, or finalize OKF content.
 
 ## State files
 
-Per-run JSON outputs are written below `state/` using iteration IDs, for example `inventory-backend.json`, `plan-backend.json`, `build-backend.json`, and `verify-backend.json`. They are orchestration state and are ignored by this directory's `.gitignore`.
-
-`overwrite_output = true` is intentional so a rerun analyzes the current source rather than accepting stale checkpoints after source changes.
+Per-run JSON outputs are written below `state/` using iteration IDs. Most use `overwrite_output = true` so reruns analyze current source. `additional-concepts.json` is the deliberate exception because it doubles as a human-editable request/checkpoint file.
