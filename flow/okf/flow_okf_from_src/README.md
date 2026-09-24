@@ -19,8 +19,8 @@ Pipeline:
 7. `additional_concepts` -> creates an editable JSON list of additional concept requests
 8. `assess_additional_concepts` -> foreach request: decides `covered`, `not_applicable`, `extend`, or `create`
 9. `apply_additional_concepts` -> foreach assessment: performs only the required change
-10. `create_root_index` -> creates the mandatory OKF root `index.md`
-11. `final_verify` -> read-only structural verification
+10. `create_root_index` -> shared prompt creates the mandatory OKF root `index.md`
+11. `final_verify` -> shared read-only structural verification
 
 Because every foreach step reuses `${item.id}` as its own `iteration_id`, identity propagates automatically through each chained `iterations` array.
 
@@ -44,43 +44,22 @@ When this flow directory is inside the workspace:
 cli-agent-flow run flow/okf/flow_okf_from_src/flow.toml --workspace <project-root>
 ```
 
-For a reusable checkout next to a project, choose a common parent as workspace and set `source_root`/`okf_root` accordingly.
-
 ## Scaling and coverage
 
-The partition step should keep a small source tree as one unit and split a large source tree along natural boundaries visible inside `source_root`. If one unit is still too large, it may be split further along stable package/component boundaries.
+The partition step should keep a small source tree as one unit and split a large source tree along natural boundaries visible inside `source_root`. File count is only a soft signal; around 50-100 relevant source files the partitioner explicitly checks whether a meaningful split exists.
 
 Within every unit, completeness has priority for outward-facing behavior: every externally visible application function and every configuration possibility discovered by the inventory must be mapped to at least one planned concept. The normal concept-count guidance is not a cap.
 
 ## Additional concept requests
 
-`state/additional-concepts.json` is intentionally different from the other generated state files. Its step uses `overwrite_output = false` and JSON checkpoint semantics.
+`state/additional-concepts.json` uses `overwrite_output = false` and JSON checkpoint semantics. You can edit it manually between runs and add requested topics. Each request is independently assessed against the existing OKF and source and may be classified as covered, not applicable, an extension, or a new concept.
 
-On a first run, the model creates a list such as:
+Delete the file when you want the model to regenerate the candidate list.
 
-```json
-{
-  "concepts": [
-    {
-      "id": "extra001",
-      "name": "TLS configuration",
-      "description": "Document all TLS-related configuration and runtime behavior.",
-      "unit_hint": "server",
-      "evidence_hints": []
-    }
-  ],
-  "warnings": []
-}
-```
+## Shared OKF material
 
-You can then edit that file manually between runs and add further requested concepts. On the next run, a valid file already present at flow start is used as the checkpoint rather than regenerated. Each request is independently assessed against the existing OKF and source: it may already be covered, be not applicable, require extending an existing concept, or require creating a new concept.
-
-Delete `state/additional-concepts.json` when you want the model to regenerate the candidate list from the current plans/results.
-
-## Generated OKF conventions
-
-The shared rules are kept in `flow/okf/okf-format.md` and supplied as file context to all steps that plan, create, verify, repair, assess, or finalize OKF content.
+`flow/okf/okf-format.md` defines the common OKF conventions. Source-independent prompts used by more than one OKF flow live in `flow/okf/prompts/`.
 
 ## State files
 
-Per-run JSON outputs are written below `state/` using iteration IDs. Most use `overwrite_output = true` so reruns analyze current source. `additional-concepts.json` is the deliberate exception because it doubles as a human-editable request/checkpoint file.
+Per-run JSON outputs are written below `state/` using iteration IDs. Most use `overwrite_output = true`; `additional-concepts.json` is the deliberate human-editable exception.

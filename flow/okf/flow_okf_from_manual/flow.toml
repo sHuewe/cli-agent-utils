@@ -1,9 +1,9 @@
 version = 1
 
-# Workspace-relative roots. source_root selects the source tree to document;
-# okf_root is where the generated OKF repository is written.
+# manual_path may point to one line-oriented text manual or to a directory
+# containing several manuals. PDF input is intentionally unsupported here.
 [vars]
-source_root = "src"
+manual_path = "manuals"
 okf_root = "okf-generated"
 
 [retry]
@@ -13,65 +13,61 @@ backoff_multiplier = 2
 max_delay_seconds = 10
 
 [[steps]]
-id = "partition"
-prompt_file = "flow/okf/flow_okf_from_src/prompts/01_partition.md"
-output = "flow/okf/flow_okf_from_src/state/partition.json"
+id = "discover_manuals"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/01_discover_manuals.md"
+output = "flow/okf/flow_okf_from_manual/state/manuals.json"
 overwrite_output = true
 workspace_access = "read"
 response_format = "json"
 
 [[steps]]
-id = "inventory_units"
-prompt_file = "flow/okf/flow_okf_from_src/prompts/02_inventory_unit.md"
-foreach = "steps.partition.output.units"
+id = "scan_manuals"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/02_scan_manual.md"
+foreach = "steps.discover_manuals.output.manuals"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_src/state/inventory-${iteration.id}.json"
-overwrite_output = true
-workspace_access = "read"
-response_format = "json"
-
-[steps.vars]
-unit = "${item}"
-
-[[steps]]
-id = "plan_units"
-prompt_file = "flow/okf/flow_okf_from_src/prompts/03_plan_unit.md"
-add_file_context = ["flow/okf/okf-format.md"]
-foreach = "steps.inventory_units.output.iterations"
-iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_src/state/plan-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/scan-${iteration.id}.json"
 overwrite_output = true
 workspace_access = "read"
 response_format = "json"
 
 [steps.vars]
-inventory = "${item.output}"
+manual = "${item}"
 
 [[steps]]
-id = "build_units"
-prompt_file = "flow/okf/flow_okf_from_src/prompts/04_build_concept.md"
+id = "plan_concepts"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/03_plan_concepts.md"
 add_file_context = ["flow/okf/okf-format.md"]
-conversation_items = "${item.output.concepts}"
-conversation_final_prompt_file = "flow/okf/flow_okf_from_src/prompts/05_build_unit_final.md"
-foreach = "steps.plan_units.output.iterations"
+output = "flow/okf/flow_okf_from_manual/state/plan.json"
+overwrite_output = true
+workspace_access = "none"
+response_format = "json"
+
+[steps.vars]
+project = "${steps.discover_manuals.output.project}"
+manual_scans = "${steps.scan_manuals.output.iterations}"
+
+[[steps]]
+id = "build_concepts"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/04_build_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+foreach = "steps.plan_concepts.output.concepts"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_src/state/build-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/build-${iteration.id}.json"
 overwrite_output = true
 workspace_access = "write"
 response_format = "json"
 approve_tools = ["os__make_directory", "os__write_file"]
 
 [steps.vars]
-unit_plan = "${item.output}"
-concept = "${conversation.item}"
+concept = "${item}"
 
 [[steps]]
-id = "verify_units"
-prompt_file = "flow/okf/flow_okf_from_src/prompts/06_verify_unit.md"
+id = "verify_concepts"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/05_verify_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
-foreach = "steps.build_units.output.iterations"
+foreach = "steps.build_concepts.output.iterations"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_src/state/verify-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/verify-${iteration.id}.json"
 overwrite_output = true
 workspace_access = "read"
 response_format = "json"
@@ -80,54 +76,58 @@ response_format = "json"
 build = "${item.output}"
 
 [[steps]]
-id = "repair_units"
-prompt_file = "flow/okf/flow_okf_from_src/prompts/07_repair_unit.md"
+id = "repair_concepts"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/06_repair_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
-foreach = "steps.verify_units.output.iterations"
+foreach = "steps.verify_concepts.output.iterations"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_src/state/repair-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/repair-${iteration.id}.json"
 overwrite_output = true
 workspace_access = "write"
 response_format = "json"
-approve_tools = ["os__write_file", "os__make_directory"]
+approve_tools = ["os__write_file"]
 
 [steps.vars]
 verification = "${item.output}"
 
+# Deliberately resumable/editable. Users may add requested concepts before a
+# later run; an existing valid JSON file is then consumed as a checkpoint.
 [[steps]]
 id = "additional_concepts"
 prompt_file = "flow/okf/prompts/additional_concepts.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "flow/okf/flow_okf_from_src/state/additional-concepts.json"
+output = "flow/okf/flow_okf_from_manual/state/additional-concepts.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 
 [steps.vars]
-plans = "${steps.plan_units.output.iterations}"
-results = "${steps.repair_units.output.iterations}"
+plans = "${steps.plan_concepts.output}"
+results = "${steps.repair_concepts.output.iterations}"
 
 [[steps]]
 id = "assess_additional_concepts"
-prompt_file = "flow/okf/flow_okf_from_src/prompts/09_assess_additional_concept.md"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/07_assess_additional_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.additional_concepts.output.concepts"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_src/state/assess-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/assess-${iteration.id}.json"
 overwrite_output = true
 workspace_access = "read"
 response_format = "json"
 
 [steps.vars]
 requested_concept = "${item}"
+concept_map = "${steps.plan_concepts.output.concepts}"
+manuals = "${steps.discover_manuals.output.manuals}"
 
 [[steps]]
 id = "apply_additional_concepts"
-prompt_file = "flow/okf/flow_okf_from_src/prompts/10_apply_additional_concept.md"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/08_apply_additional_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.assess_additional_concepts.output.iterations"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_src/state/apply-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/apply-${iteration.id}.json"
 overwrite_output = true
 workspace_access = "write"
 response_format = "json"
@@ -140,22 +140,22 @@ assessment = "${item.output}"
 id = "create_root_index"
 prompt_file = "flow/okf/prompts/create_root_index.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "flow/okf/flow_okf_from_src/state/root-index.json"
+output = "flow/okf/flow_okf_from_manual/state/root-index.json"
 overwrite_output = true
 workspace_access = "write"
 response_format = "json"
 approve_tools = ["os__make_directory", "os__write_file"]
 
 [steps.vars]
-project = "${steps.partition.output.project}"
-primary_results = "${steps.repair_units.output.iterations}"
+project = "${steps.discover_manuals.output.project}"
+primary_results = "${steps.repair_concepts.output.iterations}"
 additional_changes = "${steps.apply_additional_concepts.output.iterations}"
 
 [[steps]]
 id = "final_verify"
 prompt_file = "flow/okf/prompts/final_verify.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "flow/okf/flow_okf_from_src/state/final-verification.json"
+output = "flow/okf/flow_okf_from_manual/state/final-verification.json"
 overwrite_output = true
 workspace_access = "read"
 response_format = "json"
