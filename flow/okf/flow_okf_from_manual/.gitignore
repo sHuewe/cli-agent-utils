@@ -1,6 +1,8 @@
 state/*.json
 state/routes/*.json
 state/concepts/*.json
+state/questions/*.json
 !state/.gitkeep
 !state/routes/.gitkeep
 !state/concepts/.gitkeep
+!state/questions/.gitkeep

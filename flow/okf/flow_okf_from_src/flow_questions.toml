@@ -21,7 +21,12 @@ response_format = "json"
 
 [steps.vars]
 source_kind = "source code"
-okf_root = "okf-generated"
+
+[[steps]]
+id = "settings"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/12_question_settings.md"
+workspace_access = "none"
+response_format = "json"
 
 [[steps]]
 id = "process_questions"
@@ -31,5 +36,5 @@ foreach = "steps.questions.output.questions"
 [steps.input]
 question = "${item}"
 question_id = "${iteration.id}"
-source_root = "src"
-okf_root = "okf-generated"
+source_root = "${steps.settings.output.source_root}"
+okf_root = "${steps.settings.output.okf_root}"
