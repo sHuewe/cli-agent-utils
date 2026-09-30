@@ -10,11 +10,12 @@ Rules:
 - Judge the actual concept content, not filenames alone.
 - Choose exactly one action:
   - `covered`: the question can already be answered adequately and unambiguously from the existing OKF.
-  - `extend`: relevant knowledge exists in the OKF, but one existing concept needs additional information to answer the question adequately.
-  - `create`: the question exposes a meaningful knowledge gap that is best represented by a new concept.
+  - `extend`: relevant knowledge exists in the OKF, but one existing concept needs additional information.
+  - `create`: the question exposes a meaningful knowledge gap best represented by a new concept.
 - For `covered`, list the concepts that provide the answer and summarize why coverage is sufficient.
 - For `extend`, select exactly one existing concept as `target_path` and describe the missing information.
-- For `create`, select the best existing semantic top-level folder and propose a safe `target_path` directly inside that folder. Do not invent a new top-level folder.
+- For `create`, select the best existing semantic top-level folder and propose a safe `target_path` directly inside that folder. Confirm that this target does not already exist; if it exists, use `extend` instead.
+- Do not invent a new top-level folder.
 - Never classify a question as covered merely because related terminology appears.
 - If the question is ambiguous, state the ambiguity in `missing_information` and choose the action that would make the OKF useful without inventing facts.
 
