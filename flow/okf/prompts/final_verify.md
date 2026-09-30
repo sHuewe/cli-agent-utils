@@ -1,21 +1,28 @@
-Perform a final read-only structural verification of the generated OKF repository.
+Perform the final root-level structural verification of the generated OKF.
 
 Target OKF root: `{{var:okf_root}}`
-Root-index result:
-{{var:root_index}}
+
+Semantic structure:
+{{var:structure}}
+
+Navigation creation result:
+{{var:navigation}}
+
+Per-folder verification results:
+{{var:folder_verifications}}
 
 Rules:
-- Start at `<okf_root>/index.md` and follow the internal OKF navigation.
-- Verify that the root `index.md` exists, linked indexes/concepts are reachable, concept files exist, concept frontmatter contains a non-empty `type`, and internal Markdown links remain within the OKF repository.
-- Report broken links, missing files, malformed concepts, unreachable generated concepts and obvious structural inconsistencies.
-- Include concepts created or extended by the additional-concept phase in the structural check.
+- This is deliberately a compact final pass. Do not re-read all concept files and do not analyze original source material.
+- Read the root `<okf_root>/index.md`.
+- Verify it links every declared semantic folder index and does not bypass the planned folder layer for normal concepts.
+- Check that every per-folder verification result is present and account for all reported errors/warnings.
+- Verify no normal generated concept is reported directly below the OKF root.
 - Do not modify files.
-- Do not perform another broad analysis of the original source material; this is a structural/navigation verification pass.
 
 Return exactly one JSON object:
 {
   "status":"ok|needs_attention",
-  "checked_indexes":["relative/path/index.md"],
+  "checked_folders":["folder-id"],
   "findings":[
     {"severity":"error|warning","path":"relative/path","problem":"string"}
   ],

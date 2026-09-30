@@ -1,33 +1,34 @@
-Review the generated OKF and propose additional concept requests that should be checked before the repository is finalized.
+Review the generated OKF at a high level and propose additional concept requests that should be checked before navigation is finalized.
 
 Target OKF root: `{{var:okf_root}}`
 
-Planning state:
+Semantic folder structure:
+{{var:structure}}
+
+Compact planning/profile state:
 {{var:plans}}
 
-Generation/repair results:
+Compact generation/coverage results:
 {{var:results}}
-
-This step creates the editable intermediate request list used by the later coverage steps.
 
 Rules:
 - Do not modify files.
-- Use the supplied planning/results data and, when useful, inspect the generated OKF. Do not perform a fresh broad analysis of the original source material in this step.
-- Pay special attention to outward-facing functions/capabilities and configuration possibilities identified by the planning state. Every such capability should be discoverable in at least one concept.
-- Add candidates for meaningful omissions, weakly represented capabilities, or useful cross-cutting concepts that are not clearly represented by the current concept set.
-- Do not create duplicate requests for concepts that are already obviously covered.
-- Keep requests semantic and user-oriented. A request may describe a new concept or a topic that could be added to an existing concept; the next step will decide which.
-- This file is intended to be editable by a human between runs. Therefore each request must remain understandable without hidden context.
+- Use the supplied compact state and, when useful, inspect generated OKF files. Do not perform a fresh broad analysis of the original source material.
+- Pay special attention to remaining warnings/gaps from function and configuration coverage.
+- Add candidates for meaningful cross-cutting omissions or weakly represented knowledge that is not already clearly represented.
+- Do not duplicate requests for topics that are already adequately covered.
+- Every proposed request must identify the best existing semantic folder in `folder_id`. Do not propose a concept directly below the OKF root.
+- This file is intended to remain human-editable between runs, so each request must be understandable without hidden context.
 - `id` must be unique and filesystem-safe. Use `extra001`, `extra002`, ... for generated requests.
-- `name` and `description` are mandatory. `scope_hint` and `evidence_hints` are optional aids for the later assessment step.
 
 Return exactly one JSON object:
 {
-  "concepts": [
+  "concepts":[
     {
       "id":"extra001",
       "name":"string",
-      "description":"short explanation of what knowledge should be available",
+      "description":"short explanation of the knowledge that should be available",
+      "folder_id":"one declared folder id",
       "scope_hint":"optional unit/manual/topic hint",
       "evidence_hints":["optional source hint"]
     }
