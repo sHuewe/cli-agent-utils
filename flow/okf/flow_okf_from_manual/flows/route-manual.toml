@@ -1,4 +1,5 @@
 version = 1
+exclude_paths = []
 inputs = ["scan", "structure"]
 result = "steps.finalize.output"
 
@@ -22,7 +23,7 @@ prompt_file = "flow/okf/flow_okf_from_manual/prompts/05_route_scan.md"
 foreach = "steps.folders.output.folders"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_manual/state/routes/${input.scan.manual.id}-${iteration.id}.json"
-overwrite_output = true
+overwrite_output = false
 response_format = "json"
 
 [steps.vars]

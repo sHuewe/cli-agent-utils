@@ -1,4 +1,5 @@
 version = 1
+exclude_paths = []
 
 [vars]
 source_root = "src"
@@ -14,7 +15,7 @@ max_delay_seconds = 10
 id = "partition"
 prompt_file = "flow/okf/flow_okf_from_src/prompts/01_partition.md"
 output = "flow/okf/flow_okf_from_src/state/partition.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 
@@ -23,7 +24,7 @@ id = "design_structure"
 prompt_file = "flow/okf/prompts/design_structure.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_src/state/structure.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "none"
 response_format = "json"
 
@@ -65,7 +66,7 @@ add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.additional_concepts.output.concepts"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_src/state/assess-${iteration.id}.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 
@@ -80,7 +81,7 @@ add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.assess_additional_concepts.output.iterations"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_src/state/apply-${iteration.id}.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "write"
 response_format = "json"
 approve_tools = ["os__make_directory", "os__write_file"]
@@ -103,7 +104,7 @@ id = "create_root_index"
 prompt_file = "flow/okf/prompts/create_root_index.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_src/state/root-index.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "write"
 response_format = "json"
 approve_tools = ["os__make_directory", "os__write_file"]
@@ -128,7 +129,7 @@ id = "final_verify"
 prompt_file = "flow/okf/prompts/final_verify.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_src/state/final-verification.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 
