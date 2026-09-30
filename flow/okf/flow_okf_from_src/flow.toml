@@ -41,8 +41,8 @@ iteration_id = "${item.id}"
 [steps.input]
 unit = "${item}"
 structure = "${steps.design_structure.output}"
-source_root = "src"
-okf_root = "okf-generated"
+source_root = "${steps.partition.output.source_root}"
+okf_root = "${steps.design_structure.output.okf_root}"
 
 [[steps]]
 id = "additional_concepts"

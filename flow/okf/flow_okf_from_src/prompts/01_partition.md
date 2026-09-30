@@ -16,18 +16,10 @@ Rules:
 
 Return exactly one JSON object:
 {
-  "project":{
-    "name":"string",
-    "summary":"short summary based only on the configured source tree"
-  },
+  "source_root":"{{var:source_root}}",
+  "project":{"name":"string","summary":"short summary based only on the configured source tree"},
   "units":[
-    {
-      "id":"backend",
-      "name":"Backend",
-      "kind":"package|component|application|service|subproject|other",
-      "source_path":"workspace-relative/path",
-      "description":"why this is an independent analysis unit"
-    }
+    {"id":"backend","name":"Backend","kind":"package|component|application|service|subproject|other","source_path":"workspace-relative/path","description":"why this is an independent analysis unit"}
   ],
   "warnings":["string"]
 }

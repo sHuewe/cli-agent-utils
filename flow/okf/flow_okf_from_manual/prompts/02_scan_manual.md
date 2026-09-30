@@ -1,62 +1,28 @@
-Scan exactly one manual and extract a compact evidence map for later OKF planning.
+Scan exactly one manual and create a complete evidence inventory for later OKF generation.
 
 Manual:
 {{var:manual}}
 
 Rules:
-- Read only the manual at `manual.path`. Do not inspect other manuals or unrelated workspace files.
-- The manual is line-oriented text. NEVER call `read_file` for this manual without both `start_line` and `end_line`.
-- Scan the manual sequentially using bounded line ranges. A practical first-pass window is about 300-500 lines. Continue until a requested range is beyond the end of the file.
-- Identify coherent knowledge topics, outward-facing/user-visible functions, configuration possibilities, procedures/workflows, constraints, operational behavior, interfaces/integrations and other reusable knowledge described by the manual.
-- Completeness matters: do not omit a function or configuration option merely because it is small.
-- Every candidate concept, outward-facing function and configuration option must carry one or more concrete evidence ranges.
-- Refine coarse scan windows into useful evidence ranges. Prefer ranges no larger than about 200 lines when the relevant material can be isolated more narrowly. Multiple ranges are allowed when a topic is distributed across the manual.
-- Evidence ranges are 1-based and inclusive. They must refer to lines actually inspected and must contain the information described.
-- Do not use the whole manual as one evidence range merely for convenience.
-- Keep summaries compact; later steps will re-read only the recorded ranges.
-- Do not write or modify files.
+- Read only `manual.path`; do not inspect other manuals or unrelated files.
+- NEVER read this manual without both `start_line` and `end_line`.
+- Scan sequentially using bounded ranges. Prefer roughly 200-350 lines per first-pass read and continue until beyond EOF.
+- Keep the model output compact even when the manual is long; do not quote manual prose.
+- Completeness is mandatory: identify coherent reusable topics, every user-visible/externally observable function, and every configuration possibility described by the manual.
+- Configuration includes individual keys/options/settings, modes, flags, endpoints, paths, timeouts, limits and toggles. Do not collapse multiple independently configurable settings into a vague "configuration" entry.
+- Assign `fn001...` to functions/capabilities and `cfg001...` to configuration options.
+- Every candidate/function/configuration item must have concrete 1-based inclusive evidence ranges. Prefer focused ranges <=200 lines where possible.
+- Do not use the entire manual as one evidence range.
+- Do not modify files.
 
 Return exactly one JSON object:
 {
-  "manual": {
-    "id":"string",
-    "name":"string",
-    "path":"workspace-relative/path"
-  },
+  "manual":{"id":"string","name":"string","path":"workspace-relative/path"},
   "summary":"string",
-  "candidate_concepts":[
-    {
-      "name":"string",
-      "description":"string",
-      "evidence_ranges":[
-        {
-          "manual":"workspace-relative/path",
-          "start_line":1,
-          "end_line":120,
-          "reason":"what relevant information is contained here"
-        }
-      ]
-    }
-  ],
-  "external_functions":[
-    {
-      "name":"string",
-      "kind":"string",
-      "description":"string",
-      "evidence_ranges":[
-        {"manual":"workspace-relative/path","start_line":1,"end_line":40,"reason":"string"}
-      ]
-    }
-  ],
-  "configuration_options":[
-    {
-      "name":"string",
-      "description":"string",
-      "evidence_ranges":[
-        {"manual":"workspace-relative/path","start_line":1,"end_line":40,"reason":"string"}
-      ]
-    }
-  ],
+  "candidate_concepts":[{"id":"topic001","name":"string","description":"string","evidence_ranges":[{"manual":"workspace-relative/path","start_line":1,"end_line":120,"reason":"string"}]}],
+  "external_functions":[{"id":"fn001","name":"string","kind":"string","description":"string","evidence_ranges":[{"manual":"workspace-relative/path","start_line":1,"end_line":40,"reason":"string"}]}],
+  "configuration_options":[{"id":"cfg001","name":"string","description":"string","evidence_ranges":[{"manual":"workspace-relative/path","start_line":1,"end_line":40,"reason":"string"}]}],
+  "scan_checks":{"function_sweep":"completed","configuration_sweep":"completed"},
   "warnings":["string"]
 }
 
