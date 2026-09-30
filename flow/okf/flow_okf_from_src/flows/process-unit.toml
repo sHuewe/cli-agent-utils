@@ -37,7 +37,7 @@ inventory = "${steps.inventory.output}"
 
 [[steps]]
 id = "concepts"
-flow = "process-concept.toml"
+flow = "flow/okf/flow_okf_from_src/flows/process-concept.toml"
 foreach = "steps.plan.output.concepts"
 iteration_id = "${item.id}"
 
