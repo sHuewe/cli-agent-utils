@@ -1,0 +1,40 @@
+version = 1
+inputs = ["scan", "structure"]
+result = "steps.finalize.output"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+[[steps]]
+id = "folders"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/04_emit_folders.md"
+response_format = "json"
+
+[steps.vars]
+structure = "${input.structure}"
+
+[[steps]]
+id = "route"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/05_route_scan.md"
+foreach = "steps.folders.output.folders"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_manual/state/routes/${input.scan.manual.id}-${iteration.id}.json"
+overwrite_output = true
+response_format = "json"
+
+[steps.vars]
+scan = "${input.scan}"
+folder = "${item}"
+structure = "${input.structure}"
+
+[[steps]]
+id = "finalize"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/06_finalize_routing.md"
+response_format = "json"
+
+[steps.vars]
+manual = "${input.scan.manual}"
+structure = "${input.structure}"

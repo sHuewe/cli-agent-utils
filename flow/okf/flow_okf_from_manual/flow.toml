@@ -1,7 +1,5 @@
 version = 1
 
-# manual_path may point to one line-oriented text manual or to a directory
-# containing several manuals. PDF input is intentionally unsupported here.
 [vars]
 manual_path = "manuals"
 okf_root = "okf-generated"
@@ -34,64 +32,55 @@ response_format = "json"
 manual = "${item}"
 
 [[steps]]
-id = "plan_concepts"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/03_plan_concepts.md"
-add_file_context = ["flow/okf/okf-format.md"]
-output = "flow/okf/flow_okf_from_manual/state/plan.json"
+id = "summarize_scans"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/03_summarize_scan.md"
+foreach = "steps.scan_manuals.output.iterations"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_manual/state/profile-${iteration.id}.json"
 overwrite_output = true
 workspace_access = "none"
 response_format = "json"
 
 [steps.vars]
+scan = "${item.output}"
+
+[[steps]]
+id = "design_structure"
+prompt_file = "flow/okf/prompts/design_structure.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_manual/state/structure.json"
+overwrite_output = true
+workspace_access = "none"
+response_format = "json"
+
+[steps.vars]
+source_kind = "manuals"
 project = "${steps.discover_manuals.output.project}"
-manual_scans = "${steps.scan_manuals.output.iterations}"
+analysis_profiles = "${steps.summarize_scans.output.iterations}"
 
 [[steps]]
-id = "build_concepts"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/04_build_concept.md"
-add_file_context = ["flow/okf/okf-format.md"]
-foreach = "steps.plan_concepts.output.concepts"
+id = "route_manuals"
+flow = "flows/route-manual.toml"
+foreach = "steps.scan_manuals.output.iterations"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_manual/state/build-${iteration.id}.json"
-overwrite_output = true
-workspace_access = "write"
-response_format = "json"
-approve_tools = ["os__make_directory", "os__write_file"]
 
-[steps.vars]
-concept = "${item}"
+[steps.input]
+scan = "${item.output}"
+structure = "${steps.design_structure.output}"
 
 [[steps]]
-id = "verify_concepts"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/05_verify_concept.md"
-add_file_context = ["flow/okf/okf-format.md"]
-foreach = "steps.build_concepts.output.iterations"
+id = "process_folders"
+flow = "flows/process-folder.toml"
+foreach = "steps.design_structure.output.folders"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_manual/state/verify-${iteration.id}.json"
-overwrite_output = true
-workspace_access = "read"
-response_format = "json"
 
-[steps.vars]
-build = "${item.output}"
+[steps.input]
+folder = "${item}"
+structure = "${steps.design_structure.output}"
+manuals = "${steps.discover_manuals.output.manuals}"
+manual_path = "${steps.discover_manuals.output.manual_path}"
+okf_root = "${steps.design_structure.output.okf_root}"
 
-[[steps]]
-id = "repair_concepts"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/06_repair_concept.md"
-add_file_context = ["flow/okf/okf-format.md"]
-foreach = "steps.verify_concepts.output.iterations"
-iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_manual/state/repair-${iteration.id}.json"
-overwrite_output = true
-workspace_access = "write"
-response_format = "json"
-approve_tools = ["os__write_file"]
-
-[steps.vars]
-verification = "${item.output}"
-
-# Deliberately resumable/editable. Users may add requested concepts before a
-# later run; an existing valid JSON file is then consumed as a checkpoint.
 [[steps]]
 id = "additional_concepts"
 prompt_file = "flow/okf/prompts/additional_concepts.md"
@@ -102,12 +91,13 @@ workspace_access = "read"
 response_format = "json"
 
 [steps.vars]
-plans = "${steps.plan_concepts.output}"
-results = "${steps.repair_concepts.output.iterations}"
+structure = "${steps.design_structure.output}"
+plans = "${steps.process_folders.output.iterations}"
+results = "${steps.process_folders.output.iterations}"
 
 [[steps]]
 id = "assess_additional_concepts"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/07_assess_additional_concept.md"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/13_assess_additional_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.additional_concepts.output.concepts"
 iteration_id = "${item.id}"
@@ -118,12 +108,12 @@ response_format = "json"
 
 [steps.vars]
 requested_concept = "${item}"
-concept_map = "${steps.plan_concepts.output.concepts}"
+structure = "${steps.design_structure.output}"
 manuals = "${steps.discover_manuals.output.manuals}"
 
 [[steps]]
 id = "apply_additional_concepts"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/08_apply_additional_concept.md"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/14_apply_additional_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.assess_additional_concepts.output.iterations"
 iteration_id = "${item.id}"
@@ -137,6 +127,16 @@ approve_tools = ["os__make_directory", "os__write_file"]
 assessment = "${item.output}"
 
 [[steps]]
+id = "create_folder_indexes"
+flow = "../flows/create-folder-index.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+folder = "${item}"
+structure = "${steps.design_structure.output}"
+
+[[steps]]
 id = "create_root_index"
 prompt_file = "flow/okf/prompts/create_root_index.md"
 add_file_context = ["flow/okf/okf-format.md"]
@@ -148,8 +148,18 @@ approve_tools = ["os__make_directory", "os__write_file"]
 
 [steps.vars]
 project = "${steps.discover_manuals.output.project}"
-primary_results = "${steps.repair_concepts.output.iterations}"
-additional_changes = "${steps.apply_additional_concepts.output.iterations}"
+structure = "${steps.design_structure.output}"
+folder_indexes = "${steps.create_folder_indexes.output.iterations}"
+
+[[steps]]
+id = "verify_folders"
+flow = "../flows/verify-folder.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+folder = "${item}"
+structure = "${steps.design_structure.output}"
 
 [[steps]]
 id = "final_verify"
@@ -161,4 +171,6 @@ workspace_access = "read"
 response_format = "json"
 
 [steps.vars]
-root_index = "${steps.create_root_index.output}"
+structure = "${steps.design_structure.output}"
+navigation = "${steps.create_root_index.output}"
+folder_verifications = "${steps.verify_folders.output.iterations}"

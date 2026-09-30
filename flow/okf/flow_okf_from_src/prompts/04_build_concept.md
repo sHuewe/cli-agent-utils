@@ -1,28 +1,33 @@
-Create exactly one OKF concept for the current unit.
+Create exactly one source-derived OKF concept.
 
+Source root: `{{var:source_root}}`
 Target OKF root: `{{var:okf_root}}`
-Unit plan:
-{{var:unit_plan}}
-Current concept:
+
+Concept plan:
 {{var:concept}}
 
 Rules:
-- Treat the plan as guidance, not evidence. Inspect the actual source needed for this concept.
+- The concept plan is navigation/planning metadata, not factual evidence. Inspect the actual source needed for the concept.
+- Limit source inspection to the evidence/source hints required for this concept; do not broadly analyze the whole source tree.
 - Write exactly one concept file at `<okf_root>/<concept.path>`.
-- Never write outside the OKF root. Reject absolute paths and paths containing `..`.
-- Create missing parent directories only when required.
-- Do not edit source code or other concept files.
-- Start the Markdown file with valid YAML frontmatter containing at least `type`, `title`, `description`, `tags`, and `status: stable`.
-- Do not add `verified` or imply human review.
-- Keep content concise and durable. Include a `## Source references` section with concrete workspace-relative paths and symbols when useful.
-- Add relative Markdown links only to concepts listed in `related`.
+- The path must already be inside one planned semantic folder. Never write a normal concept directly below the OKF root.
+- Never write outside the OKF root and never modify source code.
+- Create the missing semantic parent directory only when needed.
+- Start with valid YAML frontmatter containing at least `type`, `title`, `description`, `tags`, and `status: stable`.
+- Do not add `verified`.
+- Explicitly document every entry in `concept.coverage_items`. For configuration families, enumerate the individual supported keys/members/options represented by that item rather than merely saying that configuration exists.
+- For externally observable functions, document what the caller/user/operator can do, the relevant inputs/options and important observable behavior supported by the evidence.
+- Keep implementation details secondary to durable behavior, but do not drop configuration/function details required for coverage.
+- Include `## Source references` with concrete workspace-relative paths and symbols/keys.
+- Add relative links only to paths listed in `related`.
 
 Return exactly one JSON object:
 {
   "status":"created",
+  "concept_id":"string",
   "path":"relative/concept.md",
-  "title":"string",
-  "source_references":["workspace-relative/path"],
+  "documented_item_ids":["fn001","cfg001"],
+  "source_references":["workspace-relative/path#symbol-or-key"],
   "warnings":["string"]
 }
 

@@ -1,0 +1,52 @@
+version = 1
+inputs = ["concept", "manual_path", "okf_root", "folder_id"]
+result = "steps.repair.output"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+[[steps]]
+id = "build"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/08_build_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_manual/state/concepts/${input.folder_id}-${input.concept.id}-build.json"
+overwrite_output = true
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__make_directory", "os__write_file"]
+
+[steps.vars]
+concept = "${input.concept}"
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "verify"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/09_verify_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_manual/state/concepts/${input.folder_id}-${input.concept.id}-verify.json"
+overwrite_output = true
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+concept = "${input.concept}"
+build = "${steps.build.output}"
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "repair"
+prompt_file = "flow/okf/flow_okf_from_manual/prompts/10_repair_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_manual/state/concepts/${input.folder_id}-${input.concept.id}-repair.json"
+overwrite_output = true
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__write_file"]
+
+[steps.vars]
+concept = "${input.concept}"
+verification = "${steps.verify.output}"
+okf_root = "${input.okf_root}"
