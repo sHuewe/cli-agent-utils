@@ -26,7 +26,7 @@ okf_root = "${input.okf_root}"
 
 [[steps]]
 id = "concepts"
-flow = "process-concept.toml"
+flow = "flow/okf/flow_okf_from_manual/flows/process-concept.toml"
 foreach = "steps.plan.output.concepts"
 iteration_id = "${item.id}"
 

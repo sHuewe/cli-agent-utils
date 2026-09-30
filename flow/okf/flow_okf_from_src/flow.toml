@@ -35,7 +35,7 @@ analysis_profiles = "${steps.partition.output.units}"
 
 [[steps]]
 id = "process_units"
-flow = "flows/process-unit.toml"
+flow = "flow/okf/flow_okf_from_src/flows/process-unit.toml"
 foreach = "steps.partition.output.units"
 iteration_id = "${item.id}"
 
@@ -91,7 +91,7 @@ assessment = "${item.output}"
 
 [[steps]]
 id = "create_folder_indexes"
-flow = "../flows/create-folder-index.toml"
+flow = "flow/okf/flows/create-folder-index.toml"
 foreach = "steps.design_structure.output.folders"
 iteration_id = "${item.id}"
 
@@ -116,7 +116,7 @@ folder_indexes = "${steps.create_folder_indexes.output.iterations}"
 
 [[steps]]
 id = "verify_folders"
-flow = "../flows/verify-folder.toml"
+flow = "flow/okf/flows/verify-folder.toml"
 foreach = "steps.design_structure.output.folders"
 iteration_id = "${item.id}"
 

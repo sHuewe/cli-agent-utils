@@ -30,7 +30,7 @@ response_format = "json"
 
 [[steps]]
 id = "process_questions"
-flow = "flows/process-question.toml"
+flow = "flow/okf/flow_okf_from_manual/flows/process-question.toml"
 foreach = "steps.questions.output.questions"
 
 [steps.input]
