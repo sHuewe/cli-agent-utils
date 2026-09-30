@@ -1,0 +1,138 @@
+version = 1
+
+[vars]
+source_root = "src"
+okf_root = "okf-generated"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+[[steps]]
+id = "partition"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/01_partition.md"
+output = "flow/okf/flow_okf_from_src/state/partition.json"
+overwrite_output = true
+workspace_access = "read"
+response_format = "json"
+
+[[steps]]
+id = "design_structure"
+prompt_file = "flow/okf/prompts/design_structure.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_src/state/structure.json"
+overwrite_output = true
+workspace_access = "none"
+response_format = "json"
+
+[steps.vars]
+source_kind = "source code"
+project = "${steps.partition.output.project}"
+analysis_profiles = "${steps.partition.output.units}"
+
+[[steps]]
+id = "process_units"
+flow = "flows/process-unit.toml"
+foreach = "steps.partition.output.units"
+iteration_id = "${item.id}"
+
+[steps.input]
+unit = "${item}"
+structure = "${steps.design_structure.output}"
+source_root = "${steps.partition.output.source_root}"
+okf_root = "${steps.design_structure.output.okf_root}"
+
+[[steps]]
+id = "additional_concepts"
+prompt_file = "flow/okf/prompts/additional_concepts.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_src/state/additional-concepts.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+structure = "${steps.design_structure.output}"
+plans = "${steps.process_units.output.iterations}"
+results = "${steps.process_units.output.iterations}"
+
+[[steps]]
+id = "assess_additional_concepts"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/09_assess_additional_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+foreach = "steps.additional_concepts.output.concepts"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_src/state/assess-${iteration.id}.json"
+overwrite_output = true
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+requested_concept = "${item}"
+structure = "${steps.design_structure.output}"
+
+[[steps]]
+id = "apply_additional_concepts"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/10_apply_additional_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+foreach = "steps.assess_additional_concepts.output.iterations"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_src/state/apply-${iteration.id}.json"
+overwrite_output = true
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__make_directory", "os__write_file"]
+
+[steps.vars]
+assessment = "${item.output}"
+
+[[steps]]
+id = "create_folder_indexes"
+flow = "../flows/create-folder-index.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+folder = "${item}"
+structure = "${steps.design_structure.output}"
+
+[[steps]]
+id = "create_root_index"
+prompt_file = "flow/okf/prompts/create_root_index.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_src/state/root-index.json"
+overwrite_output = true
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__make_directory", "os__write_file"]
+
+[steps.vars]
+project = "${steps.partition.output.project}"
+structure = "${steps.design_structure.output}"
+folder_indexes = "${steps.create_folder_indexes.output.iterations}"
+
+[[steps]]
+id = "verify_folders"
+flow = "../flows/verify-folder.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+folder = "${item}"
+structure = "${steps.design_structure.output}"
+
+[[steps]]
+id = "final_verify"
+prompt_file = "flow/okf/prompts/final_verify.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_src/state/final-verification.json"
+overwrite_output = true
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+structure = "${steps.design_structure.output}"
+navigation = "${steps.create_root_index.output}"
+folder_verifications = "${steps.verify_folders.output.iterations}"
