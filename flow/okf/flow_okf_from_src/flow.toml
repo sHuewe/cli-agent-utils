@@ -89,10 +89,20 @@ approve_tools = ["os__make_directory", "os__write_file"]
 assessment = "${item.output}"
 
 [[steps]]
-id = "create_navigation"
-prompt_file = "flow/okf/prompts/create_navigation.md"
+id = "create_folder_indexes"
+flow = "../flows/create-folder-index.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+folder = "${item}"
+structure = "${steps.design_structure.output}"
+
+[[steps]]
+id = "create_root_index"
+prompt_file = "flow/okf/prompts/create_root_index.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "flow/okf/flow_okf_from_src/state/navigation.json"
+output = "flow/okf/flow_okf_from_src/state/root-index.json"
 overwrite_output = true
 workspace_access = "write"
 response_format = "json"
@@ -101,8 +111,7 @@ approve_tools = ["os__make_directory", "os__write_file"]
 [steps.vars]
 project = "${steps.partition.output.project}"
 structure = "${steps.design_structure.output}"
-primary_results = "${steps.process_units.output.iterations}"
-additional_changes = "${steps.apply_additional_concepts.output.iterations}"
+folder_indexes = "${steps.create_folder_indexes.output.iterations}"
 
 [[steps]]
 id = "verify_folders"
@@ -125,5 +134,5 @@ response_format = "json"
 
 [steps.vars]
 structure = "${steps.design_structure.output}"
-navigation = "${steps.create_navigation.output}"
+navigation = "${steps.create_root_index.output}"
 folder_verifications = "${steps.verify_folders.output.iterations}"
