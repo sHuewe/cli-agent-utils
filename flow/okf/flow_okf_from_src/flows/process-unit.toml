@@ -1,0 +1,74 @@
+version = 1
+inputs = ["unit", "structure", "source_root", "okf_root"]
+result = "steps.finalize.output"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+[[steps]]
+id = "inventory"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/02_inventory_unit.md"
+output = "flow/okf/flow_okf_from_src/state/inventory-${input.unit.id}.json"
+overwrite_output = true
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+source_root = "${input.source_root}"
+unit = "${input.unit}"
+
+[[steps]]
+id = "plan"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/03_plan_unit.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_src/state/plan-${input.unit.id}.json"
+overwrite_output = true
+workspace_access = "none"
+response_format = "json"
+
+[steps.vars]
+okf_root = "${input.okf_root}"
+structure = "${input.structure}"
+inventory = "${steps.inventory.output}"
+
+[[steps]]
+id = "concepts"
+flow = "process-concept.toml"
+foreach = "steps.plan.output.concepts"
+iteration_id = "${item.id}"
+
+[steps.input]
+concept = "${item}"
+source_root = "${input.source_root}"
+okf_root = "${input.okf_root}"
+unit_id = "${input.unit.id}"
+
+[[steps]]
+id = "verify_coverage"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/07_verify_coverage.md"
+output = "flow/okf/flow_okf_from_src/state/coverage-${input.unit.id}.json"
+overwrite_output = true
+workspace_access = "none"
+response_format = "json"
+
+[steps.vars]
+unit = "${input.unit}"
+plan = "${steps.plan.output}"
+concept_results = "${steps.concepts.output}"
+
+[[steps]]
+id = "finalize"
+prompt_file = "flow/okf/flow_okf_from_src/prompts/08_finalize_unit.md"
+output = "flow/okf/flow_okf_from_src/state/unit-${input.unit.id}.json"
+overwrite_output = true
+workspace_access = "none"
+response_format = "json"
+
+[steps.vars]
+unit = "${input.unit}"
+plan = "${steps.plan.output}"
+coverage = "${steps.verify_coverage.output}"
+concept_results = "${steps.concepts.output}"

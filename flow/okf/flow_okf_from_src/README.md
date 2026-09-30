@@ -1,32 +1,56 @@
 # OKF from source flow
 
-This flow creates an OKF repository from source code in scalable, partitioned stages.
+This flow creates an OKF repository from source code with nested flows, bounded per-concept contexts, an LLM-designed semantic folder layer, and explicit completeness tracking for externally observable behavior and configuration.
 
 ## Design
 
-The first step does not try to understand the whole repository in depth. It partitions only the configured `source_root` into independently analyzable units such as applications, services, major packages, subprojects represented below the source root, or stable component boundaries. It is explicitly instructed not to inspect files outside `source_root`.
+The top-level flow stays deliberately small:
 
-All expensive downstream work is chained through the aggregated `iterations` output of the previous foreach step. The next step therefore does not need to know the original partition item explicitly; the iteration wrapper carries both the stable iteration `id` and that iteration's `output`.
+1. `partition` discovers independently analyzable source units.
+2. `design_structure` chooses the semantic top-level OKF folders for this project. The taxonomy is not hard-coded.
+3. `process_units` invokes a nested child flow once per source unit.
+4. Coverage gaps and optional additional concepts are handled after the unit runs.
+5. Navigation is created from compact unit results.
+6. Each semantic folder is structurally verified in its own nested flow.
+7. A compact final verification checks the root/navigation aggregate.
 
-Pipeline:
+Inside each unit child, the source is inventoried exhaustively and concepts are planned against the shared semantic folder structure. Each concept is then processed by a **separate nested child flow** (build -> verify -> repair). This replaces the previous multi-turn conversation that accumulated all concepts of one unit in a single model context.
 
-1. `partition` -> source-root-local unit discovery
-2. `inventory_units` -> foreach over `partition.units`; records external functions and configuration options explicitly
-3. `plan_units` -> foreach over `inventory_units.output.iterations`; maps every external function/configuration option to one or more planned concepts
-4. `build_units` -> foreach over `plan_units.output.iterations`; concepts are created as conversation turns inside the unit iteration and the final turn writes the unit index
-5. `verify_units` -> foreach over `build_units.output.iterations`
-6. `repair_units` -> foreach over `verify_units.output.iterations`
-7. `additional_concepts` -> creates an editable JSON list of additional concept requests
-8. `assess_additional_concepts` -> foreach request: decides `covered`, `not_applicable`, `extend`, or `create`
-9. `apply_additional_concepts` -> foreach assessment: performs only the required change
-10. `create_root_index` -> shared prompt creates the mandatory OKF root `index.md`
-11. `final_verify` -> shared read-only structural verification
+## Context-size strategy
 
-Because every foreach step reuses `${item.id}` as its own `iteration_id`, identity propagates automatically through each chained `iterations` array.
+No downstream concept run receives the full project inventory. Each concept child receives only its own plan object, including its assigned source hints and coverage items. Build, verification and repair are separate fresh agent instances.
+
+The parent receives only a compact unit result. Large detailed inventories/plans remain in `state/` and are not copied into the later root/navigation prompts.
+
+This design is intended to stay below the previous per-run context pressure rather than moving the same large context to a later step.
+
+## Semantic OKF folders
+
+The flow always creates at least one semantic folder below `okf_root`. Before concept planning, the LLM decides which folders make sense for the project and supplies routing guidance. Examples such as `domain`, `application-context`, `interfaces`, `configuration`, `operations` or `security` are examples only.
+
+Every normal concept is placed directly below exactly one selected folder:
+
+```text
+okf-generated/
+  index.md
+  <semantic-folder>/
+    index.md
+    <concept>.md
+```
+
+Source packages/units do not determine the OKF directory layout.
+
+## Complete function/configuration coverage
+
+For every source unit the inventory performs an explicit sweep for:
+- externally observable/callable functions and integration surfaces;
+- every configuration possibility visible in the source.
+
+Each item receives a stable ID (`fn...` / `cfg...`). The planner must assign every item to at least one concept. The item is embedded into that concept's `coverage_items`, the concept builder must document it, and the independent concept verifier checks the actual generated text. The unit coverage step then checks the item-ID set end-to-end.
+
+This makes small configuration options and less prominent application functions first-class coverage obligations rather than optional candidate topics.
 
 ## Configure
-
-Edit the global variables at the top of `flow.toml`:
 
 ```toml
 [vars]
@@ -34,32 +58,15 @@ source_root = "src"
 okf_root = "okf-generated"
 ```
 
-Both values are workspace-relative. `source_root` is a logical analysis scope; the hard filesystem boundary is still the `--workspace` supplied to `cli-agent-flow`. The partition/inventory/coverage prompts nevertheless explicitly forbid source inspection outside `source_root`.
+Both are workspace-relative.
 
 ## Run
 
-When this flow directory is inside the workspace:
-
 ```text
+cli-agent-flow validate flow/okf/flow_okf_from_src/flow.toml --workspace <project-root>
 cli-agent-flow run flow/okf/flow_okf_from_src/flow.toml --workspace <project-root>
 ```
 
-## Scaling and coverage
+## State
 
-The partition step should keep a small source tree as one unit and split a large source tree along natural boundaries visible inside `source_root`. File count is only a soft signal; around 50-100 relevant source files the partitioner explicitly checks whether a meaningful split exists.
-
-Within every unit, completeness has priority for outward-facing behavior: every externally visible application function and every configuration possibility discovered by the inventory must be mapped to at least one planned concept. The normal concept-count guidance is not a cap.
-
-## Additional concept requests
-
-`state/additional-concepts.json` uses `overwrite_output = false` and JSON checkpoint semantics. You can edit it manually between runs and add requested topics. Each request is independently assessed against the existing OKF and source and may be classified as covered, not applicable, an extension, or a new concept.
-
-Delete the file when you want the model to regenerate the candidate list.
-
-## Shared OKF material
-
-`flow/okf/okf-format.md` defines the common OKF conventions. Source-independent prompts used by more than one OKF flow live in `flow/okf/prompts/`.
-
-## State files
-
-Per-run JSON outputs are written below `state/` using iteration IDs. Most use `overwrite_output = true`; `additional-concepts.json` is the deliberate human-editable exception.
+Detailed per-unit and per-concept JSON state is kept below `flow/okf/flow_okf_from_src/state/`. It is intentionally not fed wholesale into later parent steps.
