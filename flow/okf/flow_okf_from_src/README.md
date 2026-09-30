@@ -70,3 +70,38 @@ cli-agent-flow run flow/okf/flow_okf_from_src/flow.toml --workspace <project-roo
 ## State
 
 Detailed per-unit and per-concept JSON state is kept below `flow/okf/flow_okf_from_src/state/`. It is intentionally not fed wholesale into later parent steps.
+
+
+## Resume/checkpoint behavior
+
+All generated JSON state outputs use `overwrite_output = false` by default. A valid state file that already exists at flow start is therefore used as a checkpoint instead of being regenerated. Delete the relevant state JSON when you intentionally want that analysis step to run again.
+
+Every flow file also has a root-level `exclude_paths = []` entry so project-specific exclusions can be configured in one obvious place and are inherited by nested flows.
+
+## Question-driven gap flow
+
+`flow_questions.toml` is a standalone follow-up flow for questions that the generated OKF should answer better.
+
+The first step produces only this editable checkpoint format:
+
+```json
+{"questions":["How is the software installed?","How is it operated?","Which runtime version is required?"]}
+```
+
+In normal use, create or edit `state/questions.json` yourself before running the flow. Because the first step uses `overwrite_output = false`, your list is consumed unchanged.
+
+Each question then runs in its own nested child flow:
+
+1. assess the answerability from the existing OKF only;
+2. if coverage is incomplete, collect targeted evidence from `source_root`;
+3. extend an existing concept or create a new concept in an existing semantic folder;
+4. verify from the updated OKF alone that the question is now answerable.
+
+Per-question state is stored under `state/questions/` and is resumable as well. Question iteration IDs are positional, so if you change or reorder `state/questions.json` after some questions have already been processed, delete the corresponding `state/questions/*.json` files before rerunning.
+
+Run it with:
+
+```text
+cli-agent-flow validate flow/okf/flow_okf_from_src/flow_questions.toml --workspace <project-root>
+cli-agent-flow run flow/okf/flow_okf_from_src/flow_questions.toml --workspace <project-root>
+```

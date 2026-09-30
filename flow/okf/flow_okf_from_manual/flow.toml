@@ -1,4 +1,5 @@
 version = 1
+exclude_paths = []
 
 [vars]
 manual_path = "manuals"
@@ -14,7 +15,7 @@ max_delay_seconds = 10
 id = "discover_manuals"
 prompt_file = "flow/okf/flow_okf_from_manual/prompts/01_discover_manuals.md"
 output = "flow/okf/flow_okf_from_manual/state/manuals.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 
@@ -24,7 +25,7 @@ prompt_file = "flow/okf/flow_okf_from_manual/prompts/02_scan_manual.md"
 foreach = "steps.discover_manuals.output.manuals"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_manual/state/scan-${iteration.id}.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 
@@ -37,7 +38,7 @@ prompt_file = "flow/okf/flow_okf_from_manual/prompts/03_summarize_scan.md"
 foreach = "steps.scan_manuals.output.iterations"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_manual/state/profile-${iteration.id}.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "none"
 response_format = "json"
 
@@ -49,7 +50,7 @@ id = "design_structure"
 prompt_file = "flow/okf/prompts/design_structure.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_manual/state/structure.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "none"
 response_format = "json"
 
@@ -102,7 +103,7 @@ add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.additional_concepts.output.concepts"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_manual/state/assess-${iteration.id}.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 
@@ -118,7 +119,7 @@ add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.assess_additional_concepts.output.iterations"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_manual/state/apply-${iteration.id}.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "write"
 response_format = "json"
 approve_tools = ["os__make_directory", "os__write_file"]
@@ -141,7 +142,7 @@ id = "create_root_index"
 prompt_file = "flow/okf/prompts/create_root_index.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_manual/state/root-index.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "write"
 response_format = "json"
 approve_tools = ["os__make_directory", "os__write_file"]
@@ -166,7 +167,7 @@ id = "final_verify"
 prompt_file = "flow/okf/prompts/final_verify.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_manual/state/final-verification.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 

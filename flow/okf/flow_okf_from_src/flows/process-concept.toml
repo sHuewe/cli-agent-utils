@@ -1,4 +1,5 @@
 version = 1
+# exclude_paths = []  # inherited from the parent flow
 inputs = ["concept", "source_root", "okf_root", "unit_id"]
 result = "steps.repair.output"
 
@@ -13,7 +14,7 @@ id = "build"
 prompt_file = "flow/okf/flow_okf_from_src/prompts/04_build_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_src/state/concepts/${input.unit_id}-${input.concept.id}-build.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "write"
 response_format = "json"
 approve_tools = ["os__make_directory", "os__write_file"]
@@ -28,7 +29,7 @@ id = "verify"
 prompt_file = "flow/okf/flow_okf_from_src/prompts/05_verify_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_src/state/concepts/${input.unit_id}-${input.concept.id}-verify.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 
@@ -43,7 +44,7 @@ id = "repair"
 prompt_file = "flow/okf/flow_okf_from_src/prompts/06_repair_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_src/state/concepts/${input.unit_id}-${input.concept.id}-repair.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "write"
 response_format = "json"
 approve_tools = ["os__write_file"]
