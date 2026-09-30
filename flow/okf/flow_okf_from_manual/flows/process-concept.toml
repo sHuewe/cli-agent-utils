@@ -1,5 +1,5 @@
 version = 1
-exclude_paths = []
+# exclude_paths = []  # inherited from the parent flow
 inputs = ["concept", "manual_path", "okf_root", "folder_id"]
 result = "steps.repair.output"
 

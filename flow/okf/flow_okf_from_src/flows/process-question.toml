@@ -1,5 +1,5 @@
 version = 1
-exclude_paths = []
+# exclude_paths = []  # inherited from the parent flow
 inputs = ["question", "question_id", "source_root", "okf_root"]
 result = "steps.verify.output"
 
