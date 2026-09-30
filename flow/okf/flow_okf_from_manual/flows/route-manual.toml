@@ -2,6 +2,12 @@ version = 1
 inputs = ["scan", "structure"]
 result = "steps.finalize.output"
 
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
 [[steps]]
 id = "folders"
 prompt_file = "flow/okf/flow_okf_from_manual/prompts/04_emit_folders.md"
