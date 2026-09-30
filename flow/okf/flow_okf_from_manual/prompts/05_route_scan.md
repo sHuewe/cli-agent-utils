@@ -3,15 +3,20 @@ Route one manual scan into exactly one already planned semantic OKF folder.
 Manual scan:
 {{var:scan}}
 
-Target folder:
+Complete semantic folder structure:
+{{var:structure}}
+
+Current target folder:
 {{var:folder}}
 
 Rules:
 - Do not read or modify files.
-- Select only candidate concepts, external functions and configuration options whose best semantic home is this folder.
+- For each scan item, compare all declared folders and determine its single best semantic home from their descriptions/routing guidance.
+- Include the item in this result only when the current target folder is that best home.
+- If two folders appear equally suitable, break the tie deterministically by the order in `structure.folders`: the earlier folder wins.
 - Preserve IDs and evidence ranges exactly.
-- Do not duplicate an item merely because it is related; select one best semantic home.
-- It is valid for this folder to receive no items from this manual.
+- The same decision rule must be applied to candidate concepts, external functions and configuration options.
+- It is valid for the current folder to receive no items.
 - Keep the result compact and omit unrelated scan data.
 
 Return exactly one JSON object:

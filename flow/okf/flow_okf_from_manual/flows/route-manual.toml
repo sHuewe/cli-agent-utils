@@ -22,6 +22,7 @@ response_format = "json"
 [steps.vars]
 scan = "${input.scan}"
 folder = "${item}"
+structure = "${input.structure}"
 
 [[steps]]
 id = "finalize"
