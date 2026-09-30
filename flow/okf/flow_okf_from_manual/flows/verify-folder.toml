@@ -1,0 +1,21 @@
+version = 1
+# exclude_paths = []  # inherited from the parent flow
+inputs = ["folder", "structure"]
+result = "steps.verify.output"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+[[steps]]
+id = "verify"
+prompt_file = "flow/okf/prompts/verify_folder.md"
+add_file_context = ["flow/okf/okf-format.md"]
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+folder = "${input.folder}"
+structure = "${input.structure}"
