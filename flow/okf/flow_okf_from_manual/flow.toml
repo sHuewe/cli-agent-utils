@@ -175,3 +175,38 @@ response_format = "json"
 structure = "${steps.design_structure.output}"
 navigation = "${steps.create_root_index.output}"
 folder_verifications = "${steps.verify_folders.output.iterations}"
+
+[[steps]]
+id = "split_concepts"
+flow = "flow/okf/flows/split-folder.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+folder = "${item}"
+okf_root = "${steps.design_structure.output.okf_root}"
+
+[[steps]]
+id = "post_split_verify_folders"
+flow = "flow/okf/flows/verify-folder.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+folder = "${item}"
+structure = "${steps.design_structure.output}"
+
+[[steps]]
+id = "post_split_final_verify"
+prompt_file = "flow/okf/prompts/final_verify.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_manual/state/post-split-final-verification.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+structure = "${steps.design_structure.output}"
+navigation = "${steps.create_root_index.output}"
+folder_verifications = "${steps.post_split_verify_folders.output.iterations}"
+

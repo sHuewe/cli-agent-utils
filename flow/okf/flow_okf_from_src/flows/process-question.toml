@@ -62,3 +62,12 @@ response_format = "json"
 okf_root = "${input.okf_root}"
 question = "${input.question}"
 change = "${steps.apply.output}"
+
+[[steps]]
+id = "split_changed_concept"
+flow = "flow/okf/flows/split-concept.toml"
+
+[steps.input]
+concept_path = "${steps.apply.output.target_path}"
+okf_root = "${input.okf_root}"
+

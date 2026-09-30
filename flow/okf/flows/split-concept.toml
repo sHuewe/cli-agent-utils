@@ -1,0 +1,47 @@
+version = 1
+# exclude_paths = []  # inherited from the parent flow
+inputs = ["concept_path", "okf_root"]
+result = "steps.verify.output"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+[[steps]]
+id = "assess"
+prompt_file = "flow/okf/prompts/evaluate_concept_split.md"
+add_file_context = ["flow/okf/okf-format.md"]
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+concept_path = "${input.concept_path}"
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "apply"
+prompt_file = "flow/okf/prompts/apply_concept_split.md"
+add_file_context = ["flow/okf/okf-format.md"]
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__write_file"]
+
+[steps.vars]
+concept_path = "${input.concept_path}"
+okf_root = "${input.okf_root}"
+assessment = "${steps.assess.output}"
+
+[[steps]]
+id = "verify"
+prompt_file = "flow/okf/prompts/verify_concept_split.md"
+add_file_context = ["flow/okf/okf-format.md"]
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+concept_path = "${input.concept_path}"
+okf_root = "${input.okf_root}"
+assessment = "${steps.assess.output}"
+change = "${steps.apply.output}"
