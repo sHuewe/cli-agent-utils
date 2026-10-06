@@ -28,8 +28,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="cli-agent-test-cache",
         description=(
             "Prepare dependency caches for the offline cli-agent test validator. "
-            "This command runs as the current user and may use the user's normal "
-            "Maven/JFrog configuration."
+            "This command runs as the current user and may use normal Maven or "
+            "pip/PyPI/JFrog configuration. Python preparation requires WSL."
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
