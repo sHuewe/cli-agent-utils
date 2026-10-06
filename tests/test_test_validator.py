@@ -180,12 +180,13 @@ def test_python_tests_use_fixed_no_shell_command_and_redact_output(
     assert ["--cap-drop", "ALL"] == create_call[
         create_call.index("--cap-drop") : create_call.index("--cap-drop") + 2
     ]
-    cp_call = next(
+    snapshot_transfer = next(
         (args, payload)
         for args, payload in backend.calls
-        if args[0] == "cp"
+        if args[0] == "exec" and payload is not None
     )
-    assert cp_call[1]
+    assert snapshot_transfer[1]
+    assert snapshot_transfer[0][-3:] == ["tar", "-xf", "-"]
 
 
 def test_java_maven_selector_is_translated_without_shell(
