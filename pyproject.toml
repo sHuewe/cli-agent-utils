@@ -21,6 +21,7 @@ dev = [
 cli-agent-compose-mcp = "cli_agent_mcp.compose_server:main"
 cli-agent-python-validator-mcp = "cli_agent_mcp.python_validator_server:main"
 cli-agent-test-validator-mcp = "cli_agent_mcp.test_validator_server:main"
+cli-agent-test-cache = "cli_agent_mcp.test_cache_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cli_agent_mcp"]
