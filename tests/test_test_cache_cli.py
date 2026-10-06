@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from cli_agent_mcp.maven_cache import cache_entry, default_maven_cache_root
-from cli_agent_mcp.test_cache_cli import build_parser, prepare_maven
+from cli_agent_mcp.python_cache import python_cache_entry
+from cli_agent_mcp.test_cache_cli import build_parser, prepare_maven, prepare_python
 
 
 def test_prepare_maven_builds_isolated_repository_and_marks_ready(
@@ -88,3 +89,67 @@ def test_prepare_parser_uses_shared_default_cache_root() -> None:
     args = build_parser().parse_args(["prepare-maven", "."])
 
     assert args.cache_root == default_maven_cache_root()
+
+
+def test_prepare_python_requires_wsl_and_builds_wheel_cache(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "requirements.txt").write_text(
+        "demo-package==1.0\n",
+        encoding="utf-8",
+    )
+    cache_root = tmp_path / "python-cache"
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.require_wsl",
+        lambda: None,
+    )
+
+    def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
+        calls.append(command)
+        wheel_dir = Path(command[command.index("--wheel-dir") + 1])
+        wheel_dir.mkdir(parents=True, exist_ok=True)
+        (wheel_dir / "demo_package-1.0-py3-none-any.whl").write_bytes(b"wheel")
+
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._run_python",
+        fake_run,
+    )
+
+    entry = prepare_python(
+        project,
+        cache_root,
+        python_command="/usr/bin/python3",
+    )
+
+    assert entry.is_ready()
+    assert (
+        entry.wheels / "demo_package-1.0-py3-none-any.whl"
+    ).is_file()
+    assert len(calls) == 1
+    assert calls[0][:4] == [
+        "/usr/bin/python3",
+        "-m",
+        "pip",
+        "wheel",
+    ]
+    assert calls[0][-2:] == ["-r", "requirements.txt"]
+
+
+def test_python_cache_entry_matches_preparation_key(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "requirements.txt").write_text(
+        "demo-package==1.0\n",
+        encoding="utf-8",
+    )
+    cache_root = tmp_path / "python-cache"
+
+    entry = python_cache_entry(cache_root, project)
+
+    assert entry.directory == cache_root.resolve() / entry.key
+    assert entry.key.startswith("python-")
