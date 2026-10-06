@@ -195,7 +195,7 @@ class DockerTestValidator:
                 "sh",
                 image,
                 "-c",
-                "while :; do sleep 3600; done",
+                "mkdir -p /tmp/home; while :; do sleep 3600; done",
             ],
             timeout=self.settings.setup_timeout_seconds,
         )
@@ -414,6 +414,8 @@ class DockerTestValidator:
                         "/work",
                         "--env",
                         "HOME=/tmp/home",
+                        "--env",
+                        "PYTHONPATH=/work:/work/src",
                         container_name,
                         "sh",
                         "-c",
