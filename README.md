@@ -29,6 +29,7 @@ Installed commands:
 cli-agent-compose-mcp
 cli-agent-python-validator-mcp
 cli-agent-test-validator-mcp
+cli-agent-test-cache
 ```
 
 ## Sandbox Test Validator MCP
@@ -77,7 +78,7 @@ Project files such as `.env` are intentionally part of the project snapshot when
 Three immutable image references are configured administratively. Each image must provide a POSIX `sh`, `tar`, `cat`, `cp` and `mkdir` in addition to the language/build tooling:
 
 - a Python image containing Python, `pytest` and all dependencies required for the tested projects,
-- a Maven image containing Maven and the dependencies required for offline builds,
+- a Maven image containing Maven; project dependencies can be supplied from a separately prepared per-dependency cache,
 - a Gradle image containing Gradle and the dependencies required for offline builds.
 
 Every reference must include a complete SHA-256 digest:
@@ -88,7 +89,23 @@ registry.internal/maven-tests@sha256:<64-hex-digest>
 registry.internal/gradle-tests@sha256:<64-hex-digest>
 ```
 
-The validator never downloads packages during a test. Python uses the environment already present in its image. Maven runs with `-o`; Gradle runs with `--offline`. Maven and Gradle images may seed offline caches at `/opt/cli-agent-test-cache/maven` and `/opt/cli-agent-test-cache/gradle`; these caches are copied into writable container tmpfs before the build starts. Prepare or refresh dependency images separately in a trusted preparation process with network access and credentials, then run tests offline.
+The validator never downloads packages during a test. Python uses the environment already present in its image. Maven runs with `-o`; Gradle runs with `--offline`.
+
+For Maven, a shared host cache root can be configured once by the administrator. Each project dependency state gets a deterministic key derived from all relevant `pom.xml` files and root `.mvn` configuration. The user prepares that key outside the agent with the normal Maven/JFrog setup:
+
+```powershell
+cli-agent-test-cache prepare-maven C:\dev\my-project
+```
+
+The command uses the user's normal Maven configuration and credentials, but writes dependencies into a separate repository below:
+
+```text
+%USERPROFILE%\.cli-agent\dependency-cache\maven\maven-<sha256>\repository
+```
+
+The test validator never receives Maven/JFrog credentials. It calculates the same key, streams only that prepared repository into container tmpfs, and executes Maven offline. Source changes do not invalidate the cache; relevant POM/configuration changes produce a new key and require preparation again.
+
+Gradle still supports an immutable image seed cache at `/opt/cli-agent-test-cache/gradle`.
 
 The images must already exist in the Docker daemon because the validator uses `--pull never`.
 
@@ -113,6 +130,7 @@ args = [
     "--python-image", "registry.internal/python-tests@sha256:<digest>",
     "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
     "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
+    "--maven-cache-root", "C:/Users/<user>/.cli-agent/dependency-cache/maven",
 ]
 ```
 
@@ -123,6 +141,7 @@ args = [
     "--python-image", "registry.internal/python-tests@sha256:<digest>",
     "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
     "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
+    "--maven-cache-root", "C:/Users/<user>/.cli-agent/dependency-cache/maven",
     "--wsl",
     "--wsl-distribution", "Ubuntu",
 ]
@@ -186,6 +205,8 @@ gradle --offline --no-daemon --gradle-user-home /tmp/gradle test [--tests <selec
 ```
 
 If both Maven and Gradle descriptors exist, set `build_system` explicitly.
+
+If the Maven cache for the current dependency key is missing, the tool returns `reason = "dependencies_not_prepared"` and the required key. Run `cli-agent-test-cache prepare-maven <project>` as the user, then retry. The machine-wide admin policy does not need to change per project.
 
 See [docs/test-validator.md](docs/test-validator.md) for the full security and configuration details.
 
