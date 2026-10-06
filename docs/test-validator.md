@@ -86,30 +86,30 @@ The validator deliberately does not run `pip install` and has no network access.
 
 ### Maven
 
-The Maven image must already contain Maven and every dependency/plugin needed for the project in its local repository. The validator runs:
+The Maven image must contain Maven. Offline dependencies/plugins can be baked into `/opt/cli-agent-test-cache/maven`. Before the test, this seed cache is copied into writable tmpfs at `/tmp/m2`. The validator runs:
 
 ```text
-mvn -o -B test
+mvn -o -B -Dmaven.repo.local=/tmp/m2 test
 ```
 
 or, with a selector:
 
 ```text
-mvn -o -B -Dtest=<selector> test
+mvn -o -B -Dmaven.repo.local=/tmp/m2 -Dtest=<selector> test
 ```
 
 ### Gradle
 
-The Gradle image must already contain Gradle and all dependencies/plugins needed by the project. The validator runs:
+The Gradle image must contain Gradle. Offline dependencies/plugins can be baked into `/opt/cli-agent-test-cache/gradle`. Before the test, this seed cache is copied into writable tmpfs at `/tmp/gradle`. The validator runs:
 
 ```text
-gradle --offline --no-daemon test
+gradle --offline --no-daemon --gradle-user-home /tmp/gradle test
 ```
 
 or:
 
 ```text
-gradle --offline --no-daemon test --tests <selector>
+gradle --offline --no-daemon --gradle-user-home /tmp/gradle test --tests <selector>
 ```
 
 Dependency preparation that requires network access or credentials should be performed separately in a trusted preparation pipeline. The resulting test image may contain dependency caches, but should not contain credentials.
