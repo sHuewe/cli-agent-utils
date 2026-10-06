@@ -907,6 +907,22 @@ class DockerTestValidator:
             gradle_home=gradle_home,
         )
 
+    def run_java_build(
+        self,
+        project_path: str = ".",
+        build_system: Literal["auto", "maven", "gradle"] = "auto",
+    ) -> dict[str, Any]:
+        """Build a Maven or Gradle project offline without executing tests."""
+        project = self._resolve_project(project_path)
+        if build_system not in {"auto", "maven", "gradle"}:
+            raise TestValidationError(
+                "build_system muss 'auto', 'maven' oder 'gradle' sein."
+            )
+        selected = self._detect_java_build_system(project, build_system)
+        if selected == "maven":
+            return self.run_maven_build(project_path)
+        return self.run_gradle_build(project_path)
+
     def run_maven_build(
         self,
         project_path: str = ".",
