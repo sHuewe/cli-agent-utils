@@ -60,7 +60,7 @@ Required properties include:
 - not privileged,
 - no host bind mounts,
 - no unexpected image/volume mounts,
-- `/tmp` and `/work` as tmpfs.
+- `/tmp`, `/work` and `/output` as tmpfs.
 
 Project data is then streamed into `/work` through `docker cp -`; the real workspace is never mounted.
 
@@ -116,7 +116,7 @@ Dependency preparation that requires network access or credentials should be per
 
 ## Output and secret handling
 
-Container stdout/stderr is bounded before being returned to the model.
+Container stdout/stderr is redirected to the bounded `/output` tmpfs before it can reach the host process, then truncated/redacted before being returned to the model.
 
 Before testing, the validator scans common text configuration formats such as `.env`, `.properties`, YAML, JSON and TOML for values under sensitive keys including password, secret, token and API/access key names. Exact discovered values are redacted from returned output. Generic bearer-token, credential-assignment and PEM-private-key patterns are also redacted.
 
