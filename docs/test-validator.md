@@ -78,6 +78,8 @@ All images must be digest-pinned and already present locally. `--pull never` is 
 
 The configured Python image must contain Python, pip and pytest. Project dependencies are provided by a separate prepared wheel cache.
 
+A Windows pipx installation exposes `cli-agent-test-cache.exe` for Windows-side commands, but it is not sufficient for Python preparation. Install `cli-agent-mcp` through pipx inside WSL as well and invoke the Linux `cli-agent-test-cache` there. Calling the Windows `.exe` from a WSL shell still runs Windows Python and is rejected.
+
 Python cache preparation **must run inside WSL**:
 
 ```bash
@@ -198,7 +200,33 @@ If `--maven-cache-root` is omitted, the legacy immutable image seed at `/opt/cli
 
 ### Gradle
 
-The Gradle image must contain Gradle. Offline dependencies/plugins can be baked into `/opt/cli-agent-test-cache/gradle`. Before the test, this seed cache is copied into writable tmpfs at `/tmp/gradle`. The validator runs:
+The Gradle image must contain Gradle. By default both validator and preparation CLI use:
+
+```text
+~/.cli-agent/dependency-cache/gradle
+```
+
+Prepare the cache as the normal user:
+
+```powershell
+cli-agent-test-cache prepare-gradle C:\dev\my-project
+```
+
+The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, version catalogs and verification metadata. Source-only changes therefore keep the same key.
+
+Preparation uses a fresh isolated Gradle user home and executes:
+
+```text
+gradle --no-daemon --refresh-dependencies \
+  --gradle-user-home <cache>/gradle-home \
+  testClasses
+```
+
+To support private repositories such as a company JFrog, the preparation command copies only the user's Gradle configuration files (`gradle.properties`, root init scripts and regular files in `init.d`) from the normal Gradle user home into that temporary isolated home. Those files may contain credentials and are therefore removed before the prepared cache is promoted to its final location. The MCP/test container receives only the resulting Gradle cache state, never those copied user configuration files.
+
+If no matching ready cache exists, `run_java_tests(..., build_system="gradle")` returns `reason = "dependencies_not_prepared"`. There is no network fallback.
+
+When a cache exists, its prepared Gradle user home is validated and streamed into disposable container tmpfs at `/tmp/gradle`. The validator then runs:
 
 ```text
 gradle --offline --no-daemon --gradle-user-home /tmp/gradle test
@@ -210,7 +238,7 @@ or:
 gradle --offline --no-daemon --gradle-user-home /tmp/gradle test --tests <selector>
 ```
 
-Dependency preparation that requires network access or credentials should be performed separately in a trusted preparation pipeline. The resulting test image may contain dependency caches, but should not contain credentials.
+The host cache is never bind-mounted or writable by test code. If an organization uses a non-default cache root, configure `--gradle-cache-root` once and pass the same root to `prepare-gradle --cache-root ...`.
 
 ## Output and secret handling
 
@@ -285,6 +313,7 @@ The server supports administrator-controlled settings:
 --max-file-bytes 16777216
 --max-output-chars 200000
 --maven-cache-root D:/optional/shared/cli-agent-maven-cache
+--gradle-cache-root D:/optional/shared/cli-agent-gradle-cache
 --python-cache-root D:/optional/shared/cli-agent-python-cache
 ```
 
