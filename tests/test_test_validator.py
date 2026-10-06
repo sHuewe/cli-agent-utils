@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from cli_agent_mcp.docker_backend import DockerBackend, DockerCommandResult
+from cli_agent_mcp.maven_cache import cache_entry, maven_dependency_key, write_ready_metadata
 from cli_agent_mcp.test_validator import DockerTestValidator
 from cli_agent_mcp.test_validator_redaction import OutputRedactor
 from cli_agent_mcp.test_validator_server import _workspace_from_core_environment
@@ -75,6 +76,17 @@ class FakeBackend:
             return DockerCommandResult(0, inspect_payload(), "")
         if command == "exec":
             return DockerCommandResult(0, self.exec_output, "")
+        return DockerCommandResult(0, "ok", "")
+
+    def stream_tar_directory(
+        self,
+        source,
+        arguments,
+        *,
+        timeout,
+    ) -> DockerCommandResult:
+        args = list(arguments)
+        self.calls.append((["stream-tar", str(source), *args], None))
         return DockerCommandResult(0, "ok", "")
 
 
@@ -324,3 +336,77 @@ def test_sandbox_verification_rejects_image_declared_volume(tmp_path: Path) -> N
 
     with pytest.raises(ValidationError, match="no_image_volumes"):
         validator._verify_container_policy("container")
+
+
+def test_maven_dependency_key_changes_with_relevant_pom(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<project>A</project>", encoding="utf-8")
+    first = maven_dependency_key(tmp_path)
+
+    (tmp_path / "pom.xml").write_text("<project>B</project>", encoding="utf-8")
+    second = maven_dependency_key(tmp_path)
+
+    assert first.startswith("maven-")
+    assert first != second
+
+
+def test_maven_dependency_key_ignores_source_changes(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    source = tmp_path / "src" / "main" / "java"
+    source.mkdir(parents=True)
+    java_file = source / "Example.java"
+    java_file.write_text("class Example {}", encoding="utf-8")
+    first = maven_dependency_key(tmp_path)
+
+    java_file.write_text("class Example { int x; }", encoding="utf-8")
+    second = maven_dependency_key(tmp_path)
+
+    assert first == second
+
+
+def test_maven_uses_prepared_cache_selected_by_dependency_key(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    cache_root = tmp_path / "dependency-cache"
+    entry = cache_entry(cache_root, tmp_path)
+    entry.repository.mkdir(parents=True)
+    artifact = entry.repository / "com" / "example" / "demo" / "1.0"
+    artifact.mkdir(parents=True)
+    (artifact / "demo-1.0.jar").write_bytes(b"jar")
+    write_ready_metadata(entry.directory, entry.key)
+
+    backend = FakeBackend()
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        maven_cache_root=cache_root,
+    )
+    validator = DockerTestValidator(tmp_path, configured, backend=backend)
+
+    result = validator.run_java_tests(".", build_system="maven")
+
+    assert result["success"] is True
+    assert result["dependency_cache"] == {
+        "key": entry.key,
+        "source": "prepared-host-cache",
+    }
+    transfer = next(args for args, _ in backend.calls if args[0] == "stream-tar")
+    assert str(entry.repository) in transfer
+    assert "/tmp/m2" in transfer
+
+
+def test_maven_reports_missing_prepared_dependency_cache(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    cache_root = tmp_path / "dependency-cache"
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        maven_cache_root=cache_root,
+    )
+    validator = DockerTestValidator(tmp_path, configured, backend=FakeBackend())
+
+    result = validator.run_java_tests(".", build_system="maven")
+
+    assert result["success"] is False
+    assert result["reason"] == "dependencies_not_prepared"
+    assert result["dependency_cache_key"].startswith("maven-")
