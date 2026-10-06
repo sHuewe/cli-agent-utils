@@ -8,6 +8,7 @@ from pathlib import Path, PurePath, PureWindowsPath
 from typing import Any, Literal
 
 from .docker_backend import DockerBackend, DockerCommandResult
+from .gradle_cache import gradle_cache_entry, validate_gradle_cache_tree
 from .maven_cache import cache_entry, validate_repository_tree
 from .python_cache import (
     python_cache_entry,
@@ -289,6 +290,7 @@ class DockerTestValidator:
         dependency_repository: Path | None = None,
         dependency_cache_key: str | None = None,
         python_wheels: Path | None = None,
+        gradle_home: Path | None = None,
     ) -> dict[str, Any]:
         project = self._resolve_project(project_path)
         snapshot = create_project_snapshot(
@@ -444,6 +446,65 @@ class DockerTestValidator:
                         project_path,
                         redactor,
                         streamed_python.stderr or streamed_python.stdout,
+                        verified_policy=verified_policy,
+                    )
+                    return result_payload
+
+            if gradle_home is not None:
+                validate_gradle_cache_tree(gradle_home)
+                prepared_gradle_dir = self._docker(
+                    [
+                        "exec",
+                        "--user",
+                        "65532:65532",
+                        container_name,
+                        "mkdir",
+                        "-p",
+                        "/tmp/gradle",
+                    ],
+                    timeout=self.settings.setup_timeout_seconds,
+                )
+                if prepared_gradle_dir.returncode != 0:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        prepared_gradle_dir.stderr or prepared_gradle_dir.stdout,
+                        verified_policy=verified_policy,
+                    )
+                    return result_payload
+                try:
+                    streamed_gradle = self.backend.stream_tar_directory(
+                        gradle_home,
+                        [
+                            "exec",
+                            "--interactive",
+                            "--user",
+                            "65532:65532",
+                            "--workdir",
+                            "/tmp/gradle",
+                            container_name,
+                            "tar",
+                            "-xf",
+                            "-",
+                        ],
+                        timeout=self.settings.setup_timeout_seconds,
+                    )
+                except (FileNotFoundError, OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        f"Gradle-Dependency-Cache konnte nicht übertragen werden: {exc}",
+                        verified_policy=verified_policy,
+                    )
+                    return result_payload
+                if streamed_gradle.returncode != 0:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        streamed_gradle.stderr or streamed_gradle.stdout,
                         verified_policy=verified_policy,
                     )
                     return result_payload
@@ -613,10 +674,17 @@ class DockerTestValidator:
                     else (
                         {
                             "key": dependency_cache_key,
-                            "source": "prepared-wsl-wheel-cache",
+                            "source": "prepared-gradle-cache",
                         }
-                        if python_wheels is not None
-                        else None
+                        if gradle_home is not None
+                        else (
+                            {
+                                "key": dependency_cache_key,
+                                "source": "prepared-wsl-wheel-cache",
+                            }
+                            if python_wheels is not None
+                            else None
+                        )
                     )
                 ),
                 "sandbox_policy": {
@@ -742,6 +810,7 @@ class DockerTestValidator:
         selector = self._validate_selector(test_selector, java=True)
         dependency_repository: Path | None = None
         dependency_cache_key: str | None = None
+        gradle_home: Path | None = None
         if selected == "maven":
             command = [
                 "mvn",
@@ -794,15 +863,37 @@ class DockerTestValidator:
             ]
             if selector:
                 command.extend(["--tests", selector])
-            pre_test_command = [
-                "sh",
-                "-c",
-                (
-                    "mkdir -p /tmp/gradle; "
-                    "if [ -d /opt/cli-agent-test-cache/gradle ]; then "
-                    "cp -R /opt/cli-agent-test-cache/gradle/. /tmp/gradle/; fi"
-                ),
-            ]
+            gradle_home: Path | None = None
+            if self.settings.gradle_cache_root is not None:
+                entry = gradle_cache_entry(self.settings.gradle_cache_root, project)
+                dependency_cache_key = entry.key
+                if not entry.is_ready():
+                    return {
+                        "success": False,
+                        "framework": "gradle",
+                        "project_path": project_path,
+                        "reason": "dependencies_not_prepared",
+                        "dependency_cache_key": entry.key,
+                        "message": (
+                            "Für diesen Gradle-Dependency-Stand ist kein "
+                            "vorbereiteter Offline-Cache vorhanden. Führe "
+                            "außerhalb des Agents 'cli-agent-test-cache "
+                            "prepare-gradle <projekt>' aus und starte den Test "
+                            "anschließend erneut."
+                        ),
+                    }
+                gradle_home = entry.gradle_home
+                pre_test_command = None
+            else:
+                pre_test_command = [
+                    "sh",
+                    "-c",
+                    (
+                        "mkdir -p /tmp/gradle; "
+                        "if [ -d /opt/cli-agent-test-cache/gradle ]; then "
+                        "cp -R /opt/cli-agent-test-cache/gradle/. /tmp/gradle/; fi"
+                    ),
+                ]
             image = self.settings.gradle_image
             framework = "gradle"
         return self._run_tests(
@@ -813,4 +904,5 @@ class DockerTestValidator:
             pre_test_command=pre_test_command,
             dependency_repository=dependency_repository,
             dependency_cache_key=dependency_cache_key,
+            gradle_home=gradle_home,
         )
