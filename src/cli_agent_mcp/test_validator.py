@@ -75,8 +75,27 @@ class DockerTestValidator:
             raise TestValidationError(
                 "Der Test-Selector darf keine Steuerzeichen enthalten."
             )
-        if java and not _JAVA_SELECTOR.fullmatch(value):
-            raise TestValidationError("Ungültiger Java-Test-Selector.")
+        if java:
+            if not _JAVA_SELECTOR.fullmatch(value):
+                raise TestValidationError("Ungültiger Java-Test-Selector.")
+            return value
+        if value.startswith("-"):
+            raise TestValidationError(
+                "Python-Test-Selectoren dürfen keine pytest-Optionen sein."
+            )
+        path_part = value.split("::", 1)[0]
+        path_candidate = PurePath(path_part)
+        windows_path = PureWindowsPath(path_part)
+        if (
+            path_candidate.is_absolute()
+            or windows_path.is_absolute()
+            or windows_path.drive
+            or ".." in path_candidate.parts
+            or ".." in windows_path.parts
+        ):
+            raise TestValidationError(
+                "Python-Test-Selector muss innerhalb des Projekts liegen."
+            )
         return value
 
     @staticmethod
@@ -245,6 +264,7 @@ class DockerTestValidator:
         image: str,
         command: list[str],
         framework: str,
+        pre_test_command: list[str] | None = None,
     ) -> dict[str, Any]:
         project = self._resolve_project(project_path)
         snapshot = create_project_snapshot(
@@ -332,6 +352,31 @@ class DockerTestValidator:
                     verified_policy=verified_policy,
                 )
                 return result_payload
+
+            if pre_test_command:
+                prepared = self._docker(
+                    [
+                        "exec",
+                        "--user",
+                        "65532:65532",
+                        "--workdir",
+                        "/work",
+                        "--env",
+                        "HOME=/tmp/home",
+                        container_name,
+                        *pre_test_command,
+                    ],
+                    timeout=self.settings.setup_timeout_seconds,
+                )
+                if prepared.returncode != 0:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        prepared.stderr or prepared.stdout,
+                        verified_policy=verified_policy,
+                    )
+                    return result_payload
 
             try:
                 tested = self._docker(
@@ -455,16 +500,46 @@ class DockerTestValidator:
         selected = self._detect_java_build_system(project, build_system)
         selector = self._validate_selector(test_selector, java=True)
         if selected == "maven":
-            command = ["mvn", "-o", "-B"]
+            command = [
+                "mvn",
+                "-o",
+                "-B",
+                "-Dmaven.repo.local=/tmp/m2",
+            ]
             if selector:
                 command.append(f"-Dtest={selector}")
             command.append("test")
+            pre_test_command = [
+                "sh",
+                "-c",
+                (
+                    "mkdir -p /tmp/m2; "
+                    "if [ -d /opt/cli-agent-test-cache/maven ]; then "
+                    "cp -R /opt/cli-agent-test-cache/maven/. /tmp/m2/; fi"
+                ),
+            ]
             image = self.settings.maven_image
             framework = "maven"
         else:
-            command = ["gradle", "--offline", "--no-daemon", "test"]
+            command = [
+                "gradle",
+                "--offline",
+                "--no-daemon",
+                "--gradle-user-home",
+                "/tmp/gradle",
+                "test",
+            ]
             if selector:
                 command.extend(["--tests", selector])
+            pre_test_command = [
+                "sh",
+                "-c",
+                (
+                    "mkdir -p /tmp/gradle; "
+                    "if [ -d /opt/cli-agent-test-cache/gradle ]; then "
+                    "cp -R /opt/cli-agent-test-cache/gradle/. /tmp/gradle/; fi"
+                ),
+            ]
             image = self.settings.gradle_image
             framework = "gradle"
         return self._run_tests(
@@ -472,4 +547,5 @@ class DockerTestValidator:
             image=image,
             command=command,
             framework=framework,
+            pre_test_command=pre_test_command,
         )
