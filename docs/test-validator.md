@@ -8,10 +8,9 @@ The MCP exposes exactly:
 
 - `run_python_tests(project_path=".", test_selector=None)`
 - `run_java_tests(project_path=".", test_selector=None, build_system="auto")`
-- `run_maven_build(project_path=".")`
-- `run_gradle_build(project_path=".")`
+- `run_java_build(project_path=".", build_system="auto")`
 
-There is no arbitrary command, shell, Docker or package-install tool in the MCP contract. The build tools also do not accept arbitrary Maven goals, Gradle tasks or additional command-line arguments.
+There is no arbitrary command, shell, Docker or package-install tool in the MCP contract. The Java build tool also does not accept arbitrary Maven goals, Gradle tasks or additional command-line arguments.
 
 ## Workspace permission
 
@@ -332,3 +331,17 @@ The server supports administrator-controlled settings:
 ```
 
 These are launch-time administrator settings, not MCP tool arguments, so the model cannot relax them.
+
+
+## Unified Java build tool
+
+`run_java_build(project_path=".", build_system="auto")` uses exactly the same Maven/Gradle auto-detection as `run_java_tests`. A project containing both Maven and Gradle descriptors is considered ambiguous and requires an explicit `build_system`.
+
+The model sees only this unified build tool. Internally it dispatches to the fixed Maven or Gradle build implementation:
+
+```text
+Maven  -> mvn -o -B -Dmaven.repo.local=/tmp/m2 -DskipTests package
+Gradle -> gradle --offline --no-daemon --gradle-user-home /tmp/gradle assemble
+```
+
+The separate Maven/Gradle build helpers are implementation details and are not exposed as MCP tools.
