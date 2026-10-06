@@ -89,8 +89,17 @@ def prepare_maven(
     root = cache_root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     entry = MavenCacheEntry(root=root, key=key)
-    if entry.is_ready() and not force:
-        return entry
+    if entry.directory.is_symlink():
+        raise RuntimeError(
+            "Der Maven-Cache-Eintrag darf kein Symlink sein."
+        )
+    if entry.directory.exists() and not force:
+        if entry.is_ready():
+            return entry
+        raise RuntimeError(
+            "Der Maven-Cache-Eintrag existiert, ist aber nicht vollständig. "
+            "Verwende --force zum Neuaufbau."
+        )
 
     executable = shutil.which(maven_command) or maven_command
     temporary = Path(tempfile.mkdtemp(prefix=f".{key}-", dir=root))
@@ -115,14 +124,6 @@ def prepare_maven(
         write_ready_metadata(temporary, key)
 
         if entry.directory.exists():
-            if not force:
-                shutil.rmtree(temporary, ignore_errors=True)
-                if entry.is_ready():
-                    return entry
-                raise RuntimeError(
-                    "Der Maven-Cache-Eintrag existiert, ist aber nicht vollständig. "
-                    "Verwende --force zum Neuaufbau."
-                )
             shutil.rmtree(entry.directory)
         temporary.replace(entry.directory)
         return entry
