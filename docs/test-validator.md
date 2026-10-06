@@ -62,7 +62,7 @@ Required properties include:
 - no unexpected image/volume mounts,
 - `/tmp`, `/work` and `/output` as tmpfs.
 
-Project data is then streamed into `/work` through `docker cp -`; the real workspace is never mounted.
+Project data is then streamed as an in-memory TAR archive through `docker exec -i ... tar -xf -` into `/work`; the real workspace is never mounted.
 
 The Docker socket is never mounted into the test container.
 
@@ -72,7 +72,7 @@ Docker is a strong practical isolation layer but not a virtual-machine security 
 
 ## Images and dependencies
 
-All images must be digest-pinned and already present locally. `--pull never` is mandatory.
+All images must be digest-pinned and already present locally. `--pull never` is mandatory. The images must also provide a POSIX `sh`, `tar`, `cat`, `cp` and `mkdir`, which the fixed sandbox runner uses for lifecycle, snapshot extraction, bounded output capture and offline-cache preparation.
 
 ### Python
 
