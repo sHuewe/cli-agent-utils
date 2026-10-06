@@ -127,6 +127,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.wsl_distribution and not args.wsl:
+        raise ValueError("--wsl-distribution benötigt --wsl.")
     workspace = _workspace_from_core_environment()
     settings = TestValidatorSettings(
         python_image=args.python_image,
