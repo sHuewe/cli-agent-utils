@@ -171,6 +171,12 @@ class DockerTestValidator:
                     f"size={self.settings.work_tmpfs_size},"
                     "uid=65532,gid=65532,mode=0700"
                 ),
+                "--tmpfs",
+                (
+                    "/output:rw,nosuid,nodev,"
+                    f"size={max(1_048_576, self.settings.max_output_chars * 4 + 65_536)},"
+                    "uid=65532,gid=65532,mode=0700"
+                ),
                 "--network",
                 "none",
                 "--cap-drop",
@@ -231,11 +237,12 @@ class DockerTestValidator:
             "only_expected_mounts": all(
                 isinstance(mount, dict)
                 and mount.get("Type") == "tmpfs"
-                and mount.get("Destination") in {"/tmp", "/work"}
+                and mount.get("Destination") in {"/tmp", "/work", "/output"}
                 for mount in mounts
             ),
             "tmpfs_work": "/work" in tmpfs,
             "tmpfs_tmp": "/tmp" in tmpfs,
+            "tmpfs_output": "/output" in tmpfs,
         }
         if not all(checks.values()):
             failed = ", ".join(
@@ -389,6 +396,10 @@ class DockerTestValidator:
                         "--env",
                         "HOME=/tmp/home",
                         container_name,
+                        "sh",
+                        "-c",
+                        'exec "$@" > /output/test.log 2>&1',
+                        "cli-agent-test-command",
                         *command,
                     ],
                     timeout=self.settings.test_timeout_seconds,
@@ -407,8 +418,29 @@ class DockerTestValidator:
                 )
                 return result_payload
 
-            output = "\n".join(
-                part for part in (tested.stdout, tested.stderr) if part
+            captured = self._docker(
+                [
+                    "exec",
+                    "--user",
+                    "65532:65532",
+                    container_name,
+                    "cat",
+                    "/output/test.log",
+                ],
+                timeout=min(30, self.settings.setup_timeout_seconds),
+            )
+            output = (
+                captured.stdout
+                if captured.returncode == 0
+                else "\n".join(
+                    part
+                    for part in (
+                        tested.stdout,
+                        tested.stderr,
+                        captured.stderr,
+                    )
+                    if part
+                )
             )
             result_payload = {
                 "success": tested.returncode == 0,
