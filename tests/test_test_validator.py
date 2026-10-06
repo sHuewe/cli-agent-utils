@@ -11,8 +11,8 @@ from cli_agent_mcp.test_validator_redaction import OutputRedactor
 from cli_agent_mcp.test_validator_server import _workspace_from_core_environment
 from cli_agent_mcp.test_validator_snapshot import create_project_snapshot
 from cli_agent_mcp.test_validator_types import (
-    TestValidationError,
-    TestValidatorSettings,
+    TestValidationError as ValidationError,
+    TestValidatorSettings as ValidatorSettings,
 )
 
 PINNED_PYTHON = "registry.internal/python-tests@sha256:" + "a" * 64
@@ -20,8 +20,8 @@ PINNED_MAVEN = "registry.internal/maven-tests@sha256:" + "b" * 64
 PINNED_GRADLE = "registry.internal/gradle-tests@sha256:" + "c" * 64
 
 
-def settings() -> TestValidatorSettings:
-    return TestValidatorSettings(
+def settings() -> ValidatorSettings:
+    return ValidatorSettings(
         python_image=PINNED_PYTHON,
         maven_image=PINNED_MAVEN,
         gradle_image=PINNED_GRADLE,
@@ -126,7 +126,7 @@ def test_snapshot_rejects_symlink_when_supported(tmp_path: Path) -> None:
     except (OSError, NotImplementedError):
         pytest.skip("symlinks are unavailable on this platform")
 
-    with pytest.raises(TestValidationError, match="Symlinks"):
+    with pytest.raises(ValidationError, match="Symlinks"):
         create_project_snapshot(
             tmp_path,
             max_file_bytes=1024 * 1024,
@@ -230,7 +230,7 @@ def test_java_auto_detection_rejects_ambiguous_project(tmp_path: Path) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
     validator = DockerTestValidator(tmp_path, settings(), backend=FakeBackend())
 
-    with pytest.raises(TestValidationError, match="mehrdeutig"):
+    with pytest.raises(ValidationError, match="mehrdeutig"):
         validator.run_java_tests(".")
 
 
@@ -251,13 +251,13 @@ def test_workspace_environment_requires_read_or_write(
     monkeypatch.setenv("CLI_AGENT_WORKSPACE_ACCESS", "none")
     monkeypatch.setenv("CLI_AGENT_WORKSPACE_DIRECTORY", str(tmp_path))
 
-    with pytest.raises(TestValidationError, match="Read-Zugriff"):
+    with pytest.raises(ValidationError, match="Read-Zugriff"):
         _workspace_from_core_environment()
 
 
 def test_validator_settings_require_pinned_images() -> None:
     with pytest.raises(ValueError, match="sha256"):
-        TestValidatorSettings(
+        ValidatorSettings(
             python_image="python:latest",
             maven_image=PINNED_MAVEN,
             gradle_image=PINNED_GRADLE,
@@ -267,7 +267,7 @@ def test_validator_settings_require_pinned_images() -> None:
 def test_python_selector_cannot_be_used_as_pytest_option(tmp_path: Path) -> None:
     validator = DockerTestValidator(tmp_path, settings(), backend=FakeBackend())
 
-    with pytest.raises(TestValidationError, match="pytest-Optionen"):
+    with pytest.raises(ValidationError, match="pytest-Optionen"):
         validator.run_python_tests(".", "--collect-only")
 
 
@@ -322,5 +322,5 @@ def test_sandbox_verification_rejects_image_declared_volume(tmp_path: Path) -> N
         backend=VolumeBackend(),
     )
 
-    with pytest.raises(TestValidationError, match="no_image_volumes"):
+    with pytest.raises(ValidationError, match="no_image_volumes"):
         validator._verify_container_policy("container")
