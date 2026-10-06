@@ -12,9 +12,25 @@ Currently included:
 
 ## Installation
 
+On Windows, a normal pipx installation exposes the console scripts globally through the pipx app directory:
+
 ```powershell
 py -m pipx install .
+Get-Command cli-agent-test-validator-mcp
+Get-Command cli-agent-test-cache
 ```
+
+This Windows installation is sufficient for the MCP server, `prepare-maven` and `prepare-gradle`.
+
+`prepare-python` is different: it deliberately requires a real Linux Python process under WSL so that Linux-compatible wheels are built for the Docker sandbox. Therefore install this package a second time inside WSL:
+
+```bash
+python3 -m pip install --user pipx
+python3 -m pipx ensurepath
+pipx install .
+```
+
+When installing from Git rather than a checkout, use the same repository/ref in Windows and WSL. Running the Windows `cli-agent-test-cache.exe` from a WSL shell does not count as WSL preparation; `prepare-python` verifies that its Python interpreter itself runs under WSL.
 
 For development:
 
@@ -79,7 +95,7 @@ Three immutable image references are configured administratively. Each image mus
 
 - a Python image containing Python, `pip` and `pytest`; project dependencies are supplied from a separately prepared Linux wheel cache,
 - a Maven image containing Maven; project dependencies can be supplied from a separately prepared per-dependency cache,
-- a Gradle image containing Gradle and the dependencies required for offline builds.
+- a Gradle image containing Gradle; project dependencies can be supplied from a separately prepared per-dependency Gradle user home.
 
 Every reference must include a complete SHA-256 digest:
 
@@ -121,7 +137,15 @@ The command uses the user's normal Maven configuration and credentials, but writ
 
 The test validator never receives Maven/JFrog credentials. It calculates the same key, streams only that prepared repository into container tmpfs, and executes Maven offline. Source changes do not invalidate the cache; relevant POM/configuration changes produce a new key and require preparation again.
 
-Gradle still supports an immutable image seed cache at `/opt/cli-agent-test-cache/gradle`.
+For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache/gradle` by default. Prepare the current build configuration once as the normal user:
+
+```powershell
+cli-agent-test-cache prepare-gradle C:\dev\my-project
+```
+
+Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation and removed before the cache is marked ready. This allows private repository/JFrog credentials to be used during preparation without exposing those configuration files to the validator. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
+
+Relevant Gradle build/configuration changes generate a new dependency key. Source-only changes keep the existing cache.
 
 The images must already exist in the Docker daemon because the validator uses `--pull never`.
 
@@ -222,7 +246,7 @@ gradle --offline --no-daemon --gradle-user-home /tmp/gradle test [--tests <selec
 
 If both Maven and Gradle descriptors exist, set `build_system` explicitly.
 
-If the Maven cache for the current dependency key is missing, the tool returns `reason = "dependencies_not_prepared"` and the required key. Run `cli-agent-test-cache prepare-maven <project>` as the user, then retry. The machine-wide admin policy does not need to change per project.
+If the Maven or Gradle cache for the current dependency key is missing, the tool returns `reason = "dependencies_not_prepared"` and the required key. Run `cli-agent-test-cache prepare-maven <project>` or `prepare-gradle <project>` as the user, then retry. The machine-wide admin policy does not need to change per project.
 
 See [docs/test-validator.md](docs/test-validator.md) for the full security and configuration details.
 
