@@ -346,7 +346,18 @@ class DockerTestValidator:
                 return result_payload
 
             copied = self._docker(
-                ["cp", "-", f"{container_name}:/work"],
+                [
+                    "exec",
+                    "--interactive",
+                    "--user",
+                    "65532:65532",
+                    "--workdir",
+                    "/work",
+                    container_name,
+                    "tar",
+                    "-xf",
+                    "-",
+                ],
                 timeout=self.settings.setup_timeout_seconds,
                 input_bytes=snapshot.archive,
             )
@@ -452,7 +463,7 @@ class DockerTestValidator:
                 "snapshot": {
                     "file_count": len(snapshot.files),
                     "total_bytes": snapshot.total_bytes,
-                    "transport": "in-memory-tar",
+                    "transport": "in-memory-tar-via-docker-exec",
                     "host_bind_mount": False,
                 },
                 "sandbox_policy": {
