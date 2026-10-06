@@ -178,7 +178,11 @@ def test_python_tests_use_fixed_no_shell_command_and_redact_output(
     assert result["success"] is True
     assert result["container_removed"] is True
     assert "super-secret-value" not in result["output"]
-    exec_call = next(args for args, _ in backend.calls if args[0] == "exec")
+    exec_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec" and "python" in args
+    )
     assert exec_call[-5:] == [
         "python",
         "-m",
