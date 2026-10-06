@@ -37,8 +37,10 @@ def create_server(validator: DockerTestValidator) -> FastMCP:
     mcp = FastMCP(
         "Sandbox Test Validator",
         instructions=(
-            "Use run_python_tests for Python tests and run_java_tests for "
-            "Maven/Gradle tests. Tests execute untrusted project code only "
+            "Use run_python_tests for Python tests, run_java_tests for "
+            "Maven/Gradle tests, run_maven_build for Maven packaging without "
+            "tests, and run_gradle_build for Gradle assembly without tests. "
+            "Builds and tests execute untrusted project code only "
             "inside a hardened no-network Docker sandbox. The real workspace "
             "is read but never mounted writable or modified by these tools. "
             "Treat success as test execution success, not as a proof of "
@@ -60,6 +62,28 @@ def create_server(validator: DockerTestValidator) -> FastMCP:
             project_path=project_path,
             test_selector=test_selector,
         )
+
+    @mcp.tool()
+    def run_maven_build(
+        project_path: str = ".",
+    ) -> dict[str, Any]:
+        """Package a Maven project offline without executing tests.
+
+        The command is fixed to Maven package with -DskipTests. The model cannot
+        supply arbitrary Maven goals or command-line options.
+        """
+        return validator.run_maven_build(project_path=project_path)
+
+    @mcp.tool()
+    def run_gradle_build(
+        project_path: str = ".",
+    ) -> dict[str, Any]:
+        """Assemble a Gradle project offline without executing tests.
+
+        The command is fixed to Gradle assemble. The model cannot supply
+        arbitrary Gradle tasks or command-line options.
+        """
+        return validator.run_gradle_build(project_path=project_path)
 
     @mcp.tool()
     def run_java_tests(
@@ -84,7 +108,7 @@ def create_server(validator: DockerTestValidator) -> FastMCP:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="MCP server for isolated Python and Java tests"
+        description="MCP server for isolated Python/Java tests and Java builds"
     )
     parser.add_argument(
         "--python-image",
