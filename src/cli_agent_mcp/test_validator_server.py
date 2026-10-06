@@ -122,6 +122,16 @@ def parse_args() -> argparse.Namespace:
         default=16 * 1024 * 1024,
     )
     parser.add_argument("--max-output-chars", type=int, default=200_000)
+    parser.add_argument(
+        "--maven-cache-root",
+        type=Path,
+        default=None,
+        help=(
+            "Shared root created by cli-agent-test-cache prepare-maven. "
+            "The validator selects a project dependency cache below this root "
+            "by deterministic dependency key."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -144,6 +154,7 @@ def main() -> None:
         max_project_bytes=args.max_project_bytes,
         max_file_bytes=args.max_file_bytes,
         max_output_chars=args.max_output_chars,
+        maven_cache_root=args.maven_cache_root,
     )
     backend = DockerBackend(
         wsl=args.wsl,
