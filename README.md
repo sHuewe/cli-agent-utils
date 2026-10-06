@@ -215,6 +215,8 @@ workspace_access = "read"
 
 ### Tool behavior
 
+For Java programming tasks, `run_java_build` is the primary validation tool after code changes. The agent should call it first. If it succeeds, the implementation is considered validated for a normal coding task and `run_java_tests` should not be run merely as an extra validation step. Test tools are reserved for work that actually concerns test cases, such as creating, modifying, debugging or explicitly verifying tests.
+
 Python:
 
 ```text
@@ -230,7 +232,7 @@ python -m pytest -q [selector]
 
 When Python dependencies are declared in common `requirements*.txt`, `pyproject.toml` project dependencies, or test/dev dependency groups, a matching WSL-prepared wheel cache is required first.
 
-Java auto-detects Maven (`pom.xml`) or Gradle (`build.gradle` / `build.gradle.kts`):
+For Java code changes, prefer `run_java_build`. Java test execution is intended only when the task concerns test cases. Java auto-detects Maven (`pom.xml`) or Gradle (`build.gradle` / `build.gradle.kts`):
 
 ```text
 run_java_tests(project_path=".")
