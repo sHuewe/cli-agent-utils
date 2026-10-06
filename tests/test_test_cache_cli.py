@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cli_agent_mcp.maven_cache import cache_entry
-from cli_agent_mcp.test_cache_cli import prepare_maven
+from cli_agent_mcp.maven_cache import cache_entry, default_maven_cache_root
+from cli_agent_mcp.test_cache_cli import build_parser, prepare_maven
 
 
 def test_prepare_maven_builds_isolated_repository_and_marks_ready(
@@ -82,3 +82,9 @@ def test_cache_key_matches_validator_lookup(tmp_path: Path) -> None:
     entry = cache_entry(cache_root, project)
 
     assert entry.directory == cache_root.resolve() / entry.key
+
+
+def test_prepare_parser_uses_shared_default_cache_root() -> None:
+    args = build_parser().parse_args(["prepare-maven", "."])
+
+    assert args.cache_root == default_maven_cache_root()
