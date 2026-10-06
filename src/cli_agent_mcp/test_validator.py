@@ -194,6 +194,7 @@ class DockerTestValidator:
             )
         config = payload[0].get("Config") or {}
         host = payload[0].get("HostConfig") or {}
+        mounts = payload[0].get("Mounts") or []
         tmpfs = host.get("Tmpfs") or {}
         security_opt = host.get("SecurityOpt") or []
         cap_drop = host.get("CapDrop") or []
@@ -208,6 +209,12 @@ class DockerTestValidator:
             ),
             "not_privileged": host.get("Privileged") is False,
             "no_host_binds": not bool(host.get("Binds")),
+            "only_expected_mounts": all(
+                isinstance(mount, dict)
+                and mount.get("Type") == "tmpfs"
+                and mount.get("Destination") in {"/tmp", "/work"}
+                for mount in mounts
+            ),
             "tmpfs_work": "/work" in tmpfs,
             "tmpfs_tmp": "/tmp" in tmpfs,
         }
@@ -251,7 +258,6 @@ class DockerTestValidator:
         container_name = f"cli-agent-test-validator-{uuid.uuid4().hex[:12]}"
         created = False
         verified_policy: dict[str, Any] | None = None
-        cleanup_ok = False
         try:
             try:
                 available = self._docker(
@@ -371,22 +377,16 @@ class DockerTestValidator:
                     "container_user": "65532:65532",
                     "root_filesystem": "read-only",
                 },
-                "container_removed": False,
             }
         finally:
             if created:
                 try:
-                    removed = self._docker(
+                    self._docker(
                         ["rm", "--force", container_name],
                         timeout=20,
                     )
-                    cleanup_ok = removed.returncode == 0
                 except (FileNotFoundError, subprocess.TimeoutExpired):
-                    cleanup_ok = False
-            # Results are assembled before finally. Exposing cleanup state by
-            # mutation would make control flow brittle; cleanup failures remain
-            # host-side operational failures and never retain the workspace
-            # because it exists only in container tmpfs.
+                    pass
 
     def _failure(
         self,
