@@ -86,13 +86,15 @@ The validator deliberately does not run `pip install` and has no network access.
 
 ### Maven
 
-The Maven image must contain Maven. For real projects, configure one shared host cache root in the trusted MCP launch configuration:
+The Maven image must contain Maven. By default both the validator and the preparation CLI use:
 
 ```text
---maven-cache-root C:/Users/<user>/.cli-agent/dependency-cache/maven
+~/.cli-agent/dependency-cache/maven
 ```
 
-The cache root is not selected by the model and does not vary per project in the admin policy. For each Maven project the validator calculates a deterministic key from:
+No cache path therefore has to be added to the admin policy for each project or user. If an organization wants another location, it can configure one shared root once with `--maven-cache-root`; the user then passes the same root to `cli-agent-test-cache prepare-maven --cache-root ...`.
+
+The cache root is never selected by the model. For each Maven project the validator calculates a deterministic key from:
 
 - every relevant `pom.xml` below the selected project, excluding generated/cache directories,
 - root `.mvn/maven.config`,
@@ -193,7 +195,6 @@ args = [
     "--python-image", "registry.internal/python-tests@sha256:<digest>",
     "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
     "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
-    "--maven-cache-root", "C:/Users/<user>/.cli-agent/dependency-cache/maven",
 ]
 ```
 
@@ -219,7 +220,6 @@ args = [
     "--python-image", "registry.internal/python-tests@sha256:<digest>",
     "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
     "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
-    "--maven-cache-root", "C:/Users/<user>/.cli-agent/dependency-cache/maven",
     "--wsl",
     "--wsl-distribution", "Ubuntu",
 ]
@@ -242,7 +242,7 @@ The server supports administrator-controlled settings:
 --max-project-bytes 67108864
 --max-file-bytes 16777216
 --max-output-chars 200000
---maven-cache-root C:/Users/<user>/.cli-agent/dependency-cache/maven
+--maven-cache-root D:/optional/shared/cli-agent-maven-cache
 ```
 
 These are launch-time administrator settings, not MCP tool arguments, so the model cannot relax them.
