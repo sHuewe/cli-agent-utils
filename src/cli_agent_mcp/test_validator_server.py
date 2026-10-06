@@ -8,6 +8,7 @@ from typing import Any, Literal
 from mcp.server.fastmcp import FastMCP
 
 from .docker_backend import DockerBackend
+from .maven_cache import default_maven_cache_root
 from .test_validator import DockerTestValidator
 from .test_validator_types import TestValidationError, TestValidatorSettings
 
@@ -125,9 +126,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--maven-cache-root",
         type=Path,
-        default=None,
+        default=default_maven_cache_root(),
         help=(
-            "Shared root created by cli-agent-test-cache prepare-maven. "
+            "Shared root created by cli-agent-test-cache prepare-maven "
+            "(default: ~/.cli-agent/dependency-cache/maven). "
             "The validator selects a project dependency cache below this root "
             "by deterministic dependency key."
         ),
