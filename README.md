@@ -50,14 +50,16 @@ cli-agent-test-cache
 
 ## Sandbox Test Validator MCP
 
-The test validator is the recommended validator for automated code tests. It exposes only two model-visible tools:
+The test validator is the recommended validator for automated code checks. It exposes four model-visible tools:
 
 ```text
 run_python_tests
 run_java_tests
+run_maven_build
+run_gradle_build
 ```
 
-It does **not** expose an arbitrary shell or generic Docker command.
+It does **not** expose an arbitrary shell, generic Docker command, arbitrary Maven goal, or arbitrary Gradle task.
 
 ### Security model
 
@@ -135,7 +137,7 @@ The command uses the user's normal Maven configuration and credentials, but writ
 %USERPROFILE%\.cli-agent\dependency-cache\maven\maven-<sha256>\repository
 ```
 
-The test validator never receives Maven/JFrog credentials. It calculates the same key, streams only that prepared repository into container tmpfs, and executes Maven offline. Source changes do not invalidate the cache; relevant POM/configuration changes produce a new key and require preparation again.
+The test validator never receives Maven/JFrog credentials. It calculates the same key, streams only that prepared repository into container tmpfs, and executes Maven offline. Cache preparation now runs through the Maven `package` lifecycle with `-DskipTests`, so build/package plugins needed by `run_maven_build` are prepared as well. Source changes do not invalidate the cache; relevant POM/configuration changes produce a new key and require preparation again.
 
 For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache/gradle` by default. Prepare the current build configuration once as the normal user:
 
@@ -143,7 +145,7 @@ For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache
 cli-agent-test-cache prepare-gradle C:\dev\my-project
 ```
 
-Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup. A project Gradle wrapper is preferred when present; otherwise Gradle from PATH is used. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation and removed before the cache is marked ready. This allows private repository/JFrog credentials to be used during preparation without exposing those configuration files to the validator. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
+Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup and prepares both `assemble` and `testClasses` without executing tests. A project Gradle wrapper is preferred when present; otherwise Gradle from PATH is used. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation and removed before the cache is marked ready. This allows private repository/JFrog credentials to be used during preparation without exposing those configuration files to the validator. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
 
 Relevant Gradle build/configuration changes generate a new dependency key. Source-only changes keep the existing cache.
 
@@ -237,12 +239,28 @@ run_java_tests(project_path=".", test_selector="com.example.ExampleTest#works")
 run_java_tests(project_path=".", build_system="gradle")
 ```
 
-The fixed commands are:
+The fixed test commands are:
 
 ```text
 mvn -o -B -Dmaven.repo.local=/tmp/m2 [-Dtest=<selector>] test
 gradle --offline --no-daemon --gradle-user-home /tmp/gradle test [--tests <selector>]
 ```
+
+Java also has separate build-only tools. They never run tests:
+
+```text
+run_maven_build(project_path=".")
+run_gradle_build(project_path=".")
+```
+
+Their commands are fixed to:
+
+```text
+mvn -o -B -Dmaven.repo.local=/tmp/m2 -DskipTests package
+gradle --offline --no-daemon --gradle-user-home /tmp/gradle assemble
+```
+
+There is deliberately no Python build tool.
 
 If both Maven and Gradle descriptors exist, set `build_system` explicitly.
 
