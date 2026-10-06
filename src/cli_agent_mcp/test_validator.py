@@ -227,13 +227,21 @@ class DockerTestValidator:
             "network_none": host.get("NetworkMode") == "none",
             "read_only_root": host.get("ReadonlyRootfs") is True,
             "non_root_user": config.get("User") == "65532:65532",
-            "capabilities_dropped": "ALL" in cap_drop,
+            "capabilities_dropped": any(
+                str(value).casefold() == "all" for value in cap_drop
+            ),
             "no_new_privileges": any(
                 str(value).startswith("no-new-privileges")
                 for value in security_opt
             ),
             "not_privileged": host.get("Privileged") is False,
+            "no_host_namespaces": (
+                host.get("PidMode") != "host"
+                and host.get("IpcMode") != "host"
+                and host.get("UTSMode") != "host"
+            ),
             "no_host_binds": not bool(host.get("Binds")),
+            "no_image_volumes": not bool(config.get("Volumes")),
             "only_expected_mounts": all(
                 isinstance(mount, dict)
                 and mount.get("Type") == "tmpfs"
