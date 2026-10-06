@@ -44,7 +44,7 @@ def test_prepare_maven_builds_isolated_repository_and_marks_ready(
     assert (entry.repository / "artifact.jar").is_file()
     assert len(calls) == 2
     assert calls[0][-1] == "dependency:go-offline"
-    assert calls[1][-2:] == ["-DskipTests", "test"]
+    assert calls[1][-2:] == ["-DskipTests", "package"]
 
 
 def test_prepare_maven_reuses_ready_cache_without_running_maven(
@@ -204,7 +204,7 @@ def test_prepare_gradle_builds_isolated_gradle_home_and_removes_user_config(
     assert not (entry.gradle_home / "gradle.properties").exists()
     assert len(calls) == 1
     assert "--refresh-dependencies" in calls[0]
-    assert calls[0][-1] == "testClasses"
+    assert calls[0][-2:] == ["assemble", "testClasses"]
 
 
 def test_gradle_cache_entry_matches_preparation_key(tmp_path: Path) -> None:
