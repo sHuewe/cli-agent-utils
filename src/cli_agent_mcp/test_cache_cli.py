@@ -37,8 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="cli-agent-test-cache",
         description=(
             "Prepare dependency caches for the offline cli-agent test validator. "
-            "This command runs as the current user and may use normal Maven or "
-            "pip/PyPI/JFrog configuration. Python preparation requires WSL."
+            "This command runs as the current user and may use normal Maven, "
+            "Gradle or pip/PyPI/JFrog configuration. Python preparation requires WSL."
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -89,8 +89,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     prepare_gradle.add_argument(
         "--gradle-command",
-        default="gradle",
-        help="Gradle executable used for preparation (default: gradle).",
+        default=None,
+        help=(
+            "Gradle executable used for preparation. By default a project "
+            "Gradle wrapper is preferred, then gradle from PATH."
+        ),
     )
     prepare_gradle.add_argument(
         "--source-gradle-user-home",
@@ -231,7 +234,7 @@ def prepare_gradle(
     project: Path,
     cache_root: Path,
     *,
-    gradle_command: str = "gradle",
+    gradle_command: str | None = None,
     source_gradle_user_home: Path | None = None,
     timeout: int = 1800,
     force: bool = False,
@@ -256,7 +259,16 @@ def prepare_gradle(
             "Verwende --force zum Neuaufbau."
         )
 
-    executable = shutil.which(gradle_command) or gradle_command
+    command_prefix: list[str]
+    if gradle_command:
+        command_prefix = [shutil.which(gradle_command) or gradle_command]
+    elif sys.platform == "win32" and (project / "gradlew.bat").is_file():
+        command_prefix = ["cmd.exe", "/d", "/c", str(project / "gradlew.bat")]
+    elif (project / "gradlew").is_file():
+        command_prefix = [str(project / "gradlew")]
+    else:
+        command_prefix = [shutil.which("gradle") or "gradle"]
+
     temporary = Path(tempfile.mkdtemp(prefix=f".{key}-", dir=root))
     gradle_home = temporary / "gradle-home"
     gradle_home.mkdir(parents=True)
@@ -269,7 +281,7 @@ def prepare_gradle(
     try:
         _run_gradle(
             [
-                executable,
+                *command_prefix,
                 "--no-daemon",
                 "--refresh-dependencies",
                 "--gradle-user-home",
