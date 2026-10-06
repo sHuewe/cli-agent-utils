@@ -59,7 +59,7 @@ For every test run the validator:
 - creates the project snapshot as an in-memory TAR archive,
 - rejects symlinks and non-regular filesystem entries,
 - never bind-mounts the real workspace into the test container,
-- creates disposable `/work` and `/tmp` tmpfs mounts,
+- creates disposable `/work`, `/tmp` and bounded `/output` tmpfs mounts,
 - always uses Docker `--network none`,
 - requires digest-pinned images and uses `--pull never`,
 - runs as UID/GID `65532:65532`,
