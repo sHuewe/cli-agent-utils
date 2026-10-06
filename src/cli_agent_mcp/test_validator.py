@@ -8,6 +8,7 @@ from pathlib import Path, PurePath, PureWindowsPath
 from typing import Any, Literal
 
 from .docker_backend import DockerBackend, DockerCommandResult
+from .maven_cache import cache_entry, validate_repository_tree
 from .test_validator_redaction import OutputRedactor, discover_secret_values
 from .test_validator_snapshot import create_project_snapshot
 from .test_validator_types import TestValidationError, TestValidatorSettings
@@ -280,6 +281,8 @@ class DockerTestValidator:
         command: list[str],
         framework: str,
         pre_test_command: list[str] | None = None,
+        dependency_repository: Path | None = None,
+        dependency_cache_key: str | None = None,
     ) -> dict[str, Any]:
         project = self._resolve_project(project_path)
         snapshot = create_project_snapshot(
@@ -379,6 +382,65 @@ class DockerTestValidator:
                 )
                 return result_payload
 
+            if dependency_repository is not None:
+                validate_repository_tree(dependency_repository)
+                prepared_dir = self._docker(
+                    [
+                        "exec",
+                        "--user",
+                        "65532:65532",
+                        container_name,
+                        "mkdir",
+                        "-p",
+                        "/tmp/m2",
+                    ],
+                    timeout=self.settings.setup_timeout_seconds,
+                )
+                if prepared_dir.returncode != 0:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        prepared_dir.stderr or prepared_dir.stdout,
+                        verified_policy=verified_policy,
+                    )
+                    return result_payload
+                try:
+                    streamed = self.backend.stream_tar_directory(
+                        dependency_repository,
+                        [
+                            "exec",
+                            "--interactive",
+                            "--user",
+                            "65532:65532",
+                            "--workdir",
+                            "/tmp/m2",
+                            container_name,
+                            "tar",
+                            "-xf",
+                            "-",
+                        ],
+                        timeout=self.settings.setup_timeout_seconds,
+                    )
+                except (FileNotFoundError, OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        f"Maven-Dependency-Cache konnte nicht übertragen werden: {exc}",
+                        verified_policy=verified_policy,
+                    )
+                    return result_payload
+                if streamed.returncode != 0:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        streamed.stderr or streamed.stdout,
+                        verified_policy=verified_policy,
+                    )
+                    return result_payload
+
             if pre_test_command:
                 prepared = self._docker(
                     [
@@ -476,6 +538,14 @@ class DockerTestValidator:
                     "transport": "in-memory-tar-via-docker-exec",
                     "host_bind_mount": False,
                 },
+                "dependency_cache": (
+                    {
+                        "key": dependency_cache_key,
+                        "source": "prepared-host-cache",
+                    }
+                    if dependency_repository is not None
+                    else None
+                ),
                 "sandbox_policy": {
                     "verified": True,
                     **(verified_policy or {}),
@@ -552,6 +622,8 @@ class DockerTestValidator:
             )
         selected = self._detect_java_build_system(project, build_system)
         selector = self._validate_selector(test_selector, java=True)
+        dependency_repository: Path | None = None
+        dependency_cache_key: str | None = None
         if selected == "maven":
             command = [
                 "mvn",
@@ -562,15 +634,35 @@ class DockerTestValidator:
             if selector:
                 command.append(f"-Dtest={selector}")
             command.append("test")
-            pre_test_command = [
-                "sh",
-                "-c",
-                (
-                    "mkdir -p /tmp/m2; "
-                    "if [ -d /opt/cli-agent-test-cache/maven ]; then "
-                    "cp -R /opt/cli-agent-test-cache/maven/. /tmp/m2/; fi"
-                ),
-            ]
+            if self.settings.maven_cache_root is not None:
+                entry = cache_entry(self.settings.maven_cache_root, project)
+                dependency_cache_key = entry.key
+                if not entry.is_ready():
+                    return {
+                        "success": False,
+                        "framework": "maven",
+                        "project_path": project_path,
+                        "reason": "dependencies_not_prepared",
+                        "dependency_cache_key": entry.key,
+                        "message": (
+                            "Für diesen Maven-Dependency-Stand ist kein vorbereiteter "
+                            "Offline-Cache vorhanden. Führe außerhalb des Agents "
+                            "'cli-agent-test-cache prepare-maven <projekt> "
+                            f"--cache-root {self.settings.maven_cache_root}' aus."
+                        ),
+                    }
+                dependency_repository = entry.repository
+                pre_test_command = None
+            else:
+                pre_test_command = [
+                    "sh",
+                    "-c",
+                    (
+                        "mkdir -p /tmp/m2; "
+                        "if [ -d /opt/cli-agent-test-cache/maven ]; then "
+                        "cp -R /opt/cli-agent-test-cache/maven/. /tmp/m2/; fi"
+                    ),
+                ]
             image = self.settings.maven_image
             framework = "maven"
         else:
@@ -601,4 +693,6 @@ class DockerTestValidator:
             command=command,
             framework=framework,
             pre_test_command=pre_test_command,
+            dependency_repository=dependency_repository,
+            dependency_cache_key=dependency_cache_key,
         )
