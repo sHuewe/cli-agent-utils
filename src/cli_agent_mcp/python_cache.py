@@ -73,6 +73,7 @@ class PythonCacheEntry:
             value.get("schema") != _CACHE_SCHEMA
             or value.get("key") != self.key
             or value.get("ready") is not True
+            or value.get("prepared_under_wsl") is not True
         ):
             return None
         return value
