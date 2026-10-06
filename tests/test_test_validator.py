@@ -199,14 +199,25 @@ def test_java_maven_selector_is_translated_without_shell(
 
     assert result["success"] is True
     assert result["framework"] == "maven"
-    exec_call = next(args for args, _ in backend.calls if args[0] == "exec")
-    assert exec_call[-5:] == [
+    exec_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec" and "mvn" in args
+    )
+    assert exec_call[-6:] == [
         "mvn",
         "-o",
         "-B",
+        "-Dmaven.repo.local=/tmp/m2",
         "-Dtest=com.example.ExampleTest#works",
         "test",
     ]
+    cache_setup = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec" and "/opt/cli-agent-test-cache/maven" in " ".join(args)
+    )
+    assert "sh" in cache_setup
 
 
 def test_java_auto_detection_rejects_ambiguous_project(tmp_path: Path) -> None:
@@ -246,3 +257,44 @@ def test_validator_settings_require_pinned_images() -> None:
             maven_image=PINNED_MAVEN,
             gradle_image=PINNED_GRADLE,
         )
+
+
+def test_python_selector_cannot_be_used_as_pytest_option(tmp_path: Path) -> None:
+    validator = DockerTestValidator(tmp_path, settings(), backend=FakeBackend())
+
+    with pytest.raises(TestValidationError, match="pytest-Optionen"):
+        validator.run_python_tests(".", "--collect-only")
+
+
+def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    backend = FakeBackend()
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    result = validator.run_java_tests(
+        ".",
+        "com.example.ExampleTest.works",
+        build_system="gradle",
+    )
+
+    assert result["success"] is True
+    test_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec" and "gradle" in args
+    )
+    assert test_call[-8:] == [
+        "gradle",
+        "--offline",
+        "--no-daemon",
+        "--gradle-user-home",
+        "/tmp/gradle",
+        "test",
+        "--tests",
+        "com.example.ExampleTest.works",
+    ]
+    assert any(
+        "/opt/cli-agent-test-cache/gradle" in " ".join(args)
+        for args, _ in backend.calls
+        if args[0] == "exec"
+    )
