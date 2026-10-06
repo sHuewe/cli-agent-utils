@@ -76,13 +76,55 @@ All images must be digest-pinned and already present locally. `--pull never` is 
 
 ### Python
 
-The configured Python image must already contain:
+The configured Python image must contain Python, pip and pytest. Project dependencies are provided by a separate prepared wheel cache.
 
-- Python,
-- pytest,
-- the dependencies needed by the project.
+Python cache preparation **must run inside WSL**:
 
-The validator deliberately does not run `pip install` and has no network access. Test execution uses `PYTHONPATH=/work:/work/src` so common flat and `src/` layouts can import the current project sources without modifying the host workspace.
+```bash
+cd /mnt/c/dev/my-project
+cli-agent-test-cache prepare-python .
+```
+
+The command checks that it is actually running under WSL and refuses preparation on native Windows. This avoids accidentally generating Windows-only wheels for the Linux Docker sandbox. The command also prints:
+
+```text
+Python dependency preparation: WSL is required.
+Prepared under WSL: yes
+```
+
+Preparation uses the current WSL Python and its normal pip configuration. Private indexes such as a company JFrog/PyPI repository can therefore remain configured in the user's WSL pip configuration; those credentials are not passed to the MCP or test container.
+
+By default, `prepare-python` resolves the Windows user's profile from WSL and writes the wheel cache to the same physical directory that the Windows MCP sees as:
+
+```text
+~/.cli-agent/dependency-cache/python/python-<sha256>/wheels
+```
+
+If this automatic mapping is unsuitable, pass an explicit WSL-visible path with `--cache-root` and configure the corresponding Windows path once with `--python-cache-root`.
+
+The dependency key tracks common Python dependency inputs including recursively included `requirements.txt` / `requirements-dev.txt` / `requirements-test*.txt`, `pyproject.toml`, and common lock files. Source-only changes therefore keep the same cache key; dependency-file changes produce a new one.
+
+Preparation builds wheels using pip:
+
+```text
+python -m pip wheel --wheel-dir <cache>/wheels ...
+```
+
+This step may use network access and private package credentials because it is deliberately a user-run action outside the MCP sandbox. Source distributions may execute their normal Python build backend while wheels are being produced.
+
+The validator itself remains offline. It streams only the prepared wheel directory into `/tmp/python-wheels` and installs into disposable tmpfs with:
+
+```text
+python -m pip install \
+  --no-index \
+  --find-links /tmp/python-wheels \
+  --target /tmp/python-deps \
+  ...
+```
+
+The test process uses `PYTHONPATH=/tmp/python-deps:/work:/work/src`. No pip index configuration or credentials are copied into the sandbox.
+
+If the matching cache is missing, `run_python_tests` returns `reason = "dependencies_not_prepared"` and explicitly states that `cli-agent-test-cache prepare-python <project>` must be run under WSL.
 
 ### Maven
 
@@ -243,6 +285,7 @@ The server supports administrator-controlled settings:
 --max-file-bytes 16777216
 --max-output-chars 200000
 --maven-cache-root D:/optional/shared/cli-agent-maven-cache
+--python-cache-root D:/optional/shared/cli-agent-python-cache
 ```
 
 These are launch-time administrator settings, not MCP tool arguments, so the model cannot relax them.
