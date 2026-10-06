@@ -286,6 +286,7 @@ def prepare_gradle(
                 "--refresh-dependencies",
                 "--gradle-user-home",
                 str(gradle_home),
+                "assemble",
                 "testClasses",
             ],
             cwd=project,
