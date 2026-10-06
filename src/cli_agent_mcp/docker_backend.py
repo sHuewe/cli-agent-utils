@@ -131,6 +131,7 @@ class DockerBackend:
                             f"Unsupported filesystem entry in streamed directory: {path}"
                         )
             process.stdin.close()
+            process.stdin = None
             stdout, stderr = process.communicate(timeout=timeout)
         except BaseException:
             process.kill()
