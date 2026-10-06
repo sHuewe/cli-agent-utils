@@ -8,8 +8,10 @@ The MCP exposes exactly:
 
 - `run_python_tests(project_path=".", test_selector=None)`
 - `run_java_tests(project_path=".", test_selector=None, build_system="auto")`
+- `run_maven_build(project_path=".")`
+- `run_gradle_build(project_path=".")`
 
-There is no arbitrary command, shell, Docker or package-install tool in the MCP contract.
+There is no arbitrary command, shell, Docker or package-install tool in the MCP contract. The build tools also do not accept arbitrary Maven goals, Gradle tasks or additional command-line arguments.
 
 ## Workspace permission
 
@@ -171,12 +173,12 @@ Preparation intentionally runs outside the MCP sandbox. Maven can therefore use 
 
 ```text
 mvn -B -Dmaven.repo.local=<cache>/repository dependency:go-offline
-mvn -B -Dmaven.repo.local=<cache>/repository -DskipTests test
+mvn -B -Dmaven.repo.local=<cache>/repository -DskipTests package
 ```
 
 The preparation command stores only the generated Maven repository and a small readiness marker under `maven-<sha256>`; it does not copy `settings.xml` or JFrog credentials into the prepared cache.
 
-During a test the validator computes the same key. If no matching ready cache exists, it returns:
+During a test or build the validator computes the same key. If no matching ready cache exists, it returns:
 
 ```text
 reason = "dependencies_not_prepared"
@@ -194,7 +196,13 @@ or, with a selector:
 mvn -o -B -Dmaven.repo.local=/tmp/m2 -Dtest=<selector> test
 ```
 
-The host cache is never bind-mounted and is never writable by test code. Test-time modifications happen only in container tmpfs and disappear with the container.
+The host cache is never bind-mounted and is never writable by project code. Maven build-only validation uses the same cache and fixed command:
+
+```text
+mvn -o -B -Dmaven.repo.local=/tmp/m2 -DskipTests package
+```
+
+This intentionally skips test execution while still compiling/package-building the project. Test-time modifications happen only in container tmpfs and disappear with the container.
 
 If `--maven-cache-root` is omitted, the legacy immutable image seed at `/opt/cli-agent-test-cache/maven` remains available for compatibility.
 
@@ -219,14 +227,14 @@ Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `g
 ```text
 gradle --no-daemon --refresh-dependencies \
   --gradle-user-home <cache>/gradle-home \
-  testClasses
+  assemble testClasses
 ```
 
 To support private repositories such as a company JFrog, the preparation command copies only the user's Gradle configuration files (`gradle.properties`, root init scripts and regular files in `init.d`) from the normal Gradle user home into that temporary isolated home. Those files may contain credentials and are therefore removed before the prepared cache is promoted to its final location. The MCP/test container receives only the resulting Gradle cache state, never those copied user configuration files.
 
 If no matching ready cache exists, `run_java_tests(..., build_system="gradle")` returns `reason = "dependencies_not_prepared"`. There is no network fallback.
 
-When a cache exists, its prepared Gradle user home is validated and streamed into disposable container tmpfs at `/tmp/gradle`. The validator then runs:
+When a cache exists, its prepared Gradle user home is validated and streamed into disposable container tmpfs at `/tmp/gradle`. The validator test tool then runs:
 
 ```text
 gradle --offline --no-daemon --gradle-user-home /tmp/gradle test
@@ -238,7 +246,13 @@ or:
 gradle --offline --no-daemon --gradle-user-home /tmp/gradle test --tests <selector>
 ```
 
-The host cache is never bind-mounted or writable by test code. If an organization uses a non-default cache root, configure `--gradle-cache-root` once and pass the same root to `prepare-gradle --cache-root ...`.
+The separate Gradle build tool uses the same prepared cache but runs only:
+
+```text
+gradle --offline --no-daemon --gradle-user-home /tmp/gradle assemble
+```
+
+`assemble` is deliberately used instead of `build`, because Gradle `build` normally depends on verification tasks and may execute tests. The host cache is never bind-mounted or writable by project code. If an organization uses a non-default cache root, configure `--gradle-cache-root` once and pass the same root to `prepare-gradle --cache-root ...`.
 
 ## Output and secret handling
 
