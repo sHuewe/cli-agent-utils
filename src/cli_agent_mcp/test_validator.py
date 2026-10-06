@@ -258,6 +258,7 @@ class DockerTestValidator:
         container_name = f"cli-agent-test-validator-{uuid.uuid4().hex[:12]}"
         created = False
         verified_policy: dict[str, Any] | None = None
+        result_payload: dict[str, Any] | None = None
         try:
             try:
                 available = self._docker(
@@ -265,37 +266,41 @@ class DockerTestValidator:
                     timeout=10,
                 )
             except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-                return self._failure(
+                result_payload = self._failure(
                     framework,
                     project_path,
                     redactor,
                     f"Docker ist nicht verfügbar: {exc}",
                 )
+                return result_payload
             if available.returncode != 0:
-                return self._failure(
+                result_payload = self._failure(
                     framework,
                     project_path,
                     redactor,
                     available.stderr or available.stdout,
                 )
+                return result_payload
 
             try:
                 created_result = self._create_container(container_name, image)
             except subprocess.TimeoutExpired:
-                return self._failure(
+                result_payload = self._failure(
                     framework,
                     project_path,
                     redactor,
                     "Docker-Container-Erstellung lief in ein Timeout.",
                 )
+                return result_payload
             created = created_result.returncode == 0
             if not created:
-                return self._failure(
+                result_payload = self._failure(
                     framework,
                     project_path,
                     redactor,
                     created_result.stderr or created_result.stdout,
                 )
+                return result_payload
 
             verified_policy = self._verify_container_policy(container_name)
 
@@ -304,13 +309,15 @@ class DockerTestValidator:
                 timeout=self.settings.setup_timeout_seconds,
             )
             if started.returncode != 0:
-                return self._failure(
+                result_payload = self._failure(
                     framework,
                     project_path,
                     redactor,
                     started.stderr or started.stdout,
                     verified_policy=verified_policy,
                 )
+                return result_payload
+                return result_payload
 
             copied = self._docker(
                 ["cp", "-", f"{container_name}:/work"],
@@ -318,7 +325,7 @@ class DockerTestValidator:
                 input_bytes=snapshot.archive,
             )
             if copied.returncode != 0:
-                return self._failure(
+                result_payload = self._failure(
                     framework,
                     project_path,
                     redactor,
@@ -342,7 +349,7 @@ class DockerTestValidator:
                     timeout=self.settings.test_timeout_seconds,
                 )
             except subprocess.TimeoutExpired:
-                return self._failure(
+                result_payload = self._failure(
                     framework,
                     project_path,
                     redactor,
@@ -353,11 +360,12 @@ class DockerTestValidator:
                     verified_policy=verified_policy,
                     timed_out=True,
                 )
+                return result_payload
 
             output = "\n".join(
                 part for part in (tested.stdout, tested.stderr) if part
             )
-            return {
+            result_payload = {
                 "success": tested.returncode == 0,
                 "framework": framework,
                 "project_path": project_path,
@@ -378,15 +386,20 @@ class DockerTestValidator:
                     "root_filesystem": "read-only",
                 },
             }
+            return result_payload
         finally:
+            removed: bool | None = None
             if created:
                 try:
-                    self._docker(
+                    cleanup = self._docker(
                         ["rm", "--force", container_name],
                         timeout=20,
                     )
+                    removed = cleanup.returncode == 0
                 except (FileNotFoundError, subprocess.TimeoutExpired):
-                    pass
+                    removed = False
+            if result_payload is not None:
+                result_payload["container_removed"] = removed
 
     def _failure(
         self,
