@@ -86,7 +86,10 @@ def _iter_project_poms(project: Path) -> tuple[Path, ...]:
                     f"Maven-Projektpfad konnte nicht geprüft werden: {path}"
                 ) from exc
             if stat.S_ISLNK(mode):
-                continue
+                raise TestValidationError(
+                    f"Symlink in Maven-Konfiguration ist nicht erlaubt: "
+                    f"{path.relative_to(project)}"
+                )
             if stat.S_ISDIR(mode):
                 if entry.name in _IGNORED_DIRECTORIES:
                     continue
@@ -103,13 +106,19 @@ def maven_dependency_key(project: Path) -> str:
     if not root.is_dir():
         raise TestValidationError(f"Maven-Projekt existiert nicht: {root}")
     root_pom = root / "pom.xml"
+    if root_pom.is_symlink():
+        raise TestValidationError("Die Root-pom.xml darf kein Symlink sein.")
     if not root_pom.is_file():
         raise TestValidationError("Maven-Projekt benötigt eine pom.xml.")
 
     files = list(_iter_project_poms(root))
     for relative_name in _ROOT_MAVEN_FILES:
         candidate = root / relative_name
-        if candidate.is_file() and not candidate.is_symlink():
+        if candidate.is_symlink():
+            raise TestValidationError(
+                f"Maven-Konfigurationsdatei darf kein Symlink sein: {relative_name}"
+            )
+        if candidate.is_file():
             files.append(candidate)
     files = sorted(set(files), key=lambda path: path.relative_to(root).as_posix())
 
