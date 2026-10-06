@@ -35,6 +35,7 @@ _RELEVANT_NAMES = {
     "settings.gradle.kts",
     "gradle.properties",
     "gradle-wrapper.properties",
+    "gradle-wrapper.jar",
     "libs.versions.toml",
     "verification-metadata.xml",
 }
