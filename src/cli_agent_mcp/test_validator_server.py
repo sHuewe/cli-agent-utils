@@ -8,6 +8,7 @@ from typing import Any, Literal
 from mcp.server.fastmcp import FastMCP
 
 from .docker_backend import DockerBackend
+from .gradle_cache import default_gradle_cache_root
 from .maven_cache import default_maven_cache_root
 from .python_cache import default_python_cache_root
 from .test_validator import DockerTestValidator
@@ -135,6 +136,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--gradle-cache-root",
+        type=Path,
+        default=default_gradle_cache_root(),
+        help=(
+            "Shared root created by cli-agent-test-cache prepare-gradle "
+            "(default: ~/.cli-agent/dependency-cache/gradle)."
+        ),
+    )
+    parser.add_argument(
         "--maven-cache-root",
         type=Path,
         default=default_maven_cache_root(),
@@ -168,6 +178,7 @@ def main() -> None:
         max_file_bytes=args.max_file_bytes,
         max_output_chars=args.max_output_chars,
         maven_cache_root=args.maven_cache_root,
+        gradle_cache_root=args.gradle_cache_root,
         python_cache_root=args.python_cache_root,
     )
     backend = DockerBackend(
