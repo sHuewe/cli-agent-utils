@@ -214,7 +214,7 @@ cli-agent-test-cache prepare-gradle C:\dev\my-project
 
 The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, version catalogs and verification metadata. Source-only changes therefore keep the same key.
 
-Preparation uses a fresh isolated Gradle user home and executes:
+Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. It uses a fresh isolated Gradle user home and executes:
 
 ```text
 gradle --no-daemon --refresh-dependencies \
