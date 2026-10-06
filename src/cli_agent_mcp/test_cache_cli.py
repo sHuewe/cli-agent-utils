@@ -7,11 +7,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .maven_cache import MavenCacheEntry, maven_dependency_key, write_ready_metadata
-
-
-def default_maven_cache_root() -> Path:
-    return Path.home() / ".cli-agent" / "dependency-cache" / "maven"
+from .maven_cache import (
+    MavenCacheEntry,
+    default_maven_cache_root,
+    maven_dependency_key,
+    write_ready_metadata,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
