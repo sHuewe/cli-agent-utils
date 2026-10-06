@@ -551,3 +551,87 @@ def test_gradle_uses_prepared_cache_offline(tmp_path: Path) -> None:
     assert "--offline" in test_call
     assert "--gradle-user-home" in test_call
     assert "/tmp/gradle" in test_call
+
+
+def test_maven_build_packages_without_running_tests(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    backend = FakeBackend()
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    result = validator.run_maven_build(".")
+
+    assert result["success"] is True
+    assert result["operation"] == "build"
+    assert result["tests_executed"] is False
+    build_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec" and "mvn" in args
+    )
+    assert build_call[-6:] == [
+        "mvn",
+        "-o",
+        "-B",
+        "-Dmaven.repo.local=/tmp/m2",
+        "-DskipTests",
+        "package",
+    ]
+
+
+def test_gradle_build_assembles_without_running_tests(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    backend = FakeBackend()
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    result = validator.run_gradle_build(".")
+
+    assert result["success"] is True
+    assert result["operation"] == "build"
+    assert result["tests_executed"] is False
+    build_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec" and "gradle" in args
+    )
+    assert build_call[-6:] == [
+        "gradle",
+        "--offline",
+        "--no-daemon",
+        "--gradle-user-home",
+        "/tmp/gradle",
+        "assemble",
+    ]
+
+
+def test_maven_build_requires_prepared_cache_when_configured(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        maven_cache_root=tmp_path / "maven-cache",
+    )
+    validator = DockerTestValidator(tmp_path, configured, backend=FakeBackend())
+
+    result = validator.run_maven_build(".")
+
+    assert result["success"] is False
+    assert result["operation"] == "build"
+    assert result["reason"] == "dependencies_not_prepared"
+
+
+def test_gradle_build_requires_prepared_cache_when_configured(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        gradle_cache_root=tmp_path / "gradle-cache",
+    )
+    validator = DockerTestValidator(tmp_path, configured, backend=FakeBackend())
+
+    result = validator.run_gradle_build(".")
+
+    assert result["success"] is False
+    assert result["operation"] == "build"
+    assert result["reason"] == "dependencies_not_prepared"
