@@ -50,13 +50,12 @@ cli-agent-test-cache
 
 ## Sandbox Test Validator MCP
 
-The test validator is the recommended validator for automated code checks. It exposes four model-visible tools:
+The test validator is the recommended validator for automated code checks. It exposes three model-visible tools:
 
 ```text
 run_python_tests
 run_java_tests
-run_maven_build
-run_gradle_build
+run_java_build
 ```
 
 It does **not** expose an arbitrary shell, generic Docker command, arbitrary Maven goal, or arbitrary Gradle task.
@@ -246,14 +245,15 @@ mvn -o -B -Dmaven.repo.local=/tmp/m2 [-Dtest=<selector>] test
 gradle --offline --no-daemon --gradle-user-home /tmp/gradle test [--tests <selector>]
 ```
 
-Java also has separate build-only tools. They never run tests:
+Java also has one unified build-only tool:
 
 ```text
-run_maven_build(project_path=".")
-run_gradle_build(project_path=".")
+run_java_build(project_path=".")
+run_java_build(project_path=".", build_system="maven")
+run_java_build(project_path=".", build_system="gradle")
 ```
 
-Their commands are fixed to:
+It uses the same auto-detection rules as `run_java_tests`. The underlying commands are fixed to:
 
 ```text
 mvn -o -B -Dmaven.repo.local=/tmp/m2 -DskipTests package
