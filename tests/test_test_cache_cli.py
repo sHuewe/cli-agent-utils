@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from cli_agent_mcp.gradle_cache import gradle_cache_entry
 from cli_agent_mcp.maven_cache import cache_entry, default_maven_cache_root
 from cli_agent_mcp.python_cache import python_cache_entry
-from cli_agent_mcp.test_cache_cli import build_parser, prepare_maven, prepare_python
+from cli_agent_mcp.test_cache_cli import (
+    build_parser,
+    prepare_gradle,
+    prepare_maven,
+    prepare_python,
+)
 
 
 def test_prepare_maven_builds_isolated_repository_and_marks_ready(
@@ -153,3 +159,61 @@ def test_python_cache_entry_matches_preparation_key(tmp_path: Path) -> None:
 
     assert entry.directory == cache_root.resolve() / entry.key
     assert entry.key.startswith("python-")
+
+
+def test_prepare_gradle_builds_isolated_gradle_home_and_removes_user_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "build.gradle").write_text("plugins {}", encoding="utf-8")
+    cache_root = tmp_path / "gradle-cache"
+    user_home = tmp_path / "user-gradle"
+    user_home.mkdir()
+    (user_home / "gradle.properties").write_text(
+        "repoToken=secret\n",
+        encoding="utf-8",
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
+        calls.append(command)
+        gradle_home = Path(command[command.index("--gradle-user-home") + 1])
+        cache_dir = gradle_home / "caches"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / "artifact.bin").write_bytes(b"cache")
+
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._run_gradle",
+        fake_run,
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.shutil.which",
+        lambda _command: "gradle",
+    )
+
+    entry = prepare_gradle(
+        project,
+        cache_root,
+        source_gradle_user_home=user_home,
+    )
+
+    assert entry.is_ready()
+    assert (entry.gradle_home / "caches" / "artifact.bin").is_file()
+    assert not (entry.gradle_home / "gradle.properties").exists()
+    assert len(calls) == 1
+    assert "--refresh-dependencies" in calls[0]
+    assert calls[0][-1] == "testClasses"
+
+
+def test_gradle_cache_entry_matches_preparation_key(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "build.gradle.kts").write_text("plugins {}", encoding="utf-8")
+    cache_root = tmp_path / "gradle-cache"
+
+    entry = gradle_cache_entry(cache_root, project)
+
+    assert entry.directory == cache_root.resolve() / entry.key
+    assert entry.key.startswith("gradle-")
