@@ -56,7 +56,7 @@ Do not configure these variables manually.
 For every test run the validator:
 
 - accepts only project-relative paths below the fixed workspace,
-- creates the project snapshot as an in-memory TAR archive,
+- creates the project snapshot as an in-memory TAR archive and streams it into the sandbox without a host-side temporary source file,
 - rejects symlinks and non-regular filesystem entries,
 - never bind-mounts the real workspace into the test container,
 - creates disposable `/work`, `/tmp` and bounded `/output` tmpfs mounts,
@@ -74,7 +74,7 @@ Project files such as `.env` are intentionally part of the project snapshot when
 
 ### Required Docker images
 
-Three immutable image references are configured administratively:
+Three immutable image references are configured administratively. Each image must provide a POSIX `sh`, `tar`, `cat`, `cp` and `mkdir` in addition to the language/build tooling:
 
 - a Python image containing Python, `pytest` and all dependencies required for the tested projects,
 - a Maven image containing Maven and the dependencies required for offline builds,
