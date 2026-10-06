@@ -37,14 +37,21 @@ def create_server(validator: DockerTestValidator) -> FastMCP:
     mcp = FastMCP(
         "Sandbox Test Validator",
         instructions=(
-            "Use run_python_tests for Python tests, run_java_tests for "
-            "Maven/Gradle tests, and run_java_build for Maven/Gradle builds "
-            "without tests. "
-            "Builds and tests execute untrusted project code only "
-            "inside a hardened no-network Docker sandbox. The real workspace "
-            "is read but never mounted writable or modified by these tools. "
-            "Treat success as test execution success, not as a proof of "
-            "application security."
+            "For Java programming work, use run_java_build as the primary "
+            "validation step after making code changes. Always try the build "
+            "before considering Java test execution. If run_java_build "
+            "succeeds, treat the implementation change as validated for normal "
+            "programming tasks; do not run tests merely as an additional "
+            "validation step. Use run_java_tests only when the task itself "
+            "concerns test cases, for example when creating, modifying, "
+            "debugging or explicitly verifying tests. Use run_python_tests "
+            "likewise only for tasks that concern Python test cases; this "
+            "server intentionally provides no generic Python build validator. "
+            "Builds and tests execute untrusted project code only inside a "
+            "hardened no-network Docker sandbox. The real workspace is read "
+            "but never mounted writable or modified by these tools. A "
+            "successful build or test run validates only that requested check, "
+            "not application security."
         ),
     )
 
@@ -53,10 +60,13 @@ def create_server(validator: DockerTestValidator) -> FastMCP:
         project_path: str = ".",
         test_selector: str | None = None,
     ) -> dict[str, Any]:
-        """Run pytest in the isolated no-network test sandbox.
+        """Run pytest only when the task concerns Python test cases.
 
-        project_path must be relative to the cli-agent workspace. test_selector
-        may be a normal pytest node id such as tests/test_config.py::test_load.
+        Do not use this tool as a generic validation step after ordinary Python
+        programming changes. Use it when creating, modifying, debugging or
+        explicitly verifying Python tests. project_path must be relative to the
+        cli-agent workspace. test_selector may be a normal pytest node id such
+        as tests/test_config.py::test_load.
         """
         return validator.run_python_tests(
             project_path=project_path,
@@ -68,11 +78,14 @@ def create_server(validator: DockerTestValidator) -> FastMCP:
         project_path: str = ".",
         build_system: Literal["auto", "maven", "gradle"] = "auto",
     ) -> dict[str, Any]:
-        """Build a Maven or Gradle project offline without executing tests.
+        """Primary validation tool after Java programming changes.
 
-        Auto detection uses pom.xml or build.gradle/build.gradle.kts. Maven is
-        fixed to package with -DskipTests; Gradle is fixed to assemble. The
-        model cannot supply arbitrary goals, tasks or command-line options.
+        Call this tool first after implementing Java/Maven/Gradle code changes.
+        If it succeeds, consider the implementation validated for normal coding
+        tasks and do not additionally run tests unless the task itself concerns
+        test cases. Auto detection uses pom.xml or build.gradle/build.gradle.kts.
+        Maven is fixed to package with -DskipTests; Gradle is fixed to assemble.
+        The model cannot supply arbitrary goals, tasks or command-line options.
         """
         return validator.run_java_build(
             project_path=project_path,
@@ -85,11 +98,15 @@ def create_server(validator: DockerTestValidator) -> FastMCP:
         test_selector: str | None = None,
         build_system: Literal["auto", "maven", "gradle"] = "auto",
     ) -> dict[str, Any]:
-        """Run Maven or Gradle tests offline in the isolated Docker sandbox.
+        """Run Java tests only when the task itself concerns test cases.
 
-        Auto detection uses pom.xml or build.gradle/build.gradle.kts. A Java
-        selector is translated to Maven -Dtest or Gradle --tests without
-        exposing an arbitrary shell command.
+        Do not use this tool as a generic validation step after ordinary Java
+        programming changes. For Java code changes, call run_java_build first;
+        a successful build is sufficient validation unless tests are part of
+        the task. Use this tool when creating, modifying, debugging or
+        explicitly verifying Java tests. Auto detection uses pom.xml or
+        build.gradle/build.gradle.kts. A Java selector is translated to Maven
+        -Dtest or Gradle --tests without exposing an arbitrary shell command.
         """
         return validator.run_java_tests(
             project_path=project_path,
