@@ -32,6 +32,7 @@ class TestValidatorSettings:
     max_file_bytes: int = 16 * 1024 * 1024
     max_output_chars: int = 200_000
     maven_cache_root: Path | None = None
+    python_cache_root: Path | None = None
 
     def __post_init__(self) -> None:
         for name, image in (
@@ -58,4 +59,10 @@ class TestValidatorSettings:
                 self,
                 "maven_cache_root",
                 self.maven_cache_root.expanduser().resolve(),
+            )
+        if self.python_cache_root is not None:
+            object.__setattr__(
+                self,
+                "python_cache_root",
+                self.python_cache_root.expanduser().resolve(),
             )
