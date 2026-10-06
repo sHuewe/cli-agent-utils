@@ -88,7 +88,7 @@ registry.internal/maven-tests@sha256:<64-hex-digest>
 registry.internal/gradle-tests@sha256:<64-hex-digest>
 ```
 
-The validator never downloads packages during a test. Python uses the environment already present in its image. Maven runs with `-o`; Gradle runs with `--offline`. Prepare or refresh dependency images separately in a trusted preparation process with network access and credentials, then run tests offline.
+The validator never downloads packages during a test. Python uses the environment already present in its image. Maven runs with `-o`; Gradle runs with `--offline`. Maven and Gradle images may seed offline caches at `/opt/cli-agent-test-cache/maven` and `/opt/cli-agent-test-cache/gradle`; these caches are copied into writable container tmpfs before the build starts. Prepare or refresh dependency images separately in a trusted preparation process with network access and credentials, then run tests offline.
 
 The images must already exist in the Docker daemon because the validator uses `--pull never`.
 
@@ -181,8 +181,8 @@ run_java_tests(project_path=".", build_system="gradle")
 The fixed commands are:
 
 ```text
-mvn -o -B [-Dtest=<selector>] test
-gradle --offline --no-daemon test [--tests <selector>]
+mvn -o -B -Dmaven.repo.local=/tmp/m2 [-Dtest=<selector>] test
+gradle --offline --no-daemon --gradle-user-home /tmp/gradle test [--tests <selector>]
 ```
 
 If both Maven and Gradle descriptors exist, set `build_system` explicitly.
