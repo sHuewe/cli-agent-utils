@@ -317,7 +317,6 @@ class DockerTestValidator:
                     verified_policy=verified_policy,
                 )
                 return result_payload
-                return result_payload
 
             copied = self._docker(
                 ["cp", "-", f"{container_name}:/work"],
@@ -332,6 +331,7 @@ class DockerTestValidator:
                     copied.stderr or copied.stdout,
                     verified_policy=verified_policy,
                 )
+                return result_payload
 
             try:
                 tested = self._docker(
