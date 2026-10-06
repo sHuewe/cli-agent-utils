@@ -43,11 +43,13 @@ def inspect_payload() -> str:
                     "Tmpfs": {
                         "/tmp": "rw,nosuid,nodev",
                         "/work": "rw,nosuid,nodev",
+                        "/output": "rw,nosuid,nodev",
                     },
                 },
                 "Mounts": [
                     {"Type": "tmpfs", "Destination": "/tmp"},
                     {"Type": "tmpfs", "Destination": "/work"},
+                    {"Type": "tmpfs", "Destination": "/output"},
                 ],
             }
         ]
@@ -174,6 +176,7 @@ def test_python_tests_use_fixed_no_shell_command_and_redact_output(
     create_call = next(args for args, _ in backend.calls if args[0] == "create")
     assert create_call[create_call.index("--network") + 1] == "none"
     assert "--read-only" in create_call
+    assert any(value.startswith("/output:") for value in create_call)
     assert ["--cap-drop", "ALL"] == create_call[
         create_call.index("--cap-drop") : create_call.index("--cap-drop") + 2
     ]
