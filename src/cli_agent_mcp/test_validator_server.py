@@ -38,8 +38,8 @@ def create_server(validator: DockerTestValidator) -> FastMCP:
         "Sandbox Test Validator",
         instructions=(
             "Use run_python_tests for Python tests, run_java_tests for "
-            "Maven/Gradle tests, run_maven_build for Maven packaging without "
-            "tests, and run_gradle_build for Gradle assembly without tests. "
+            "Maven/Gradle tests, and run_java_build for Maven/Gradle builds "
+            "without tests. "
             "Builds and tests execute untrusted project code only "
             "inside a hardened no-network Docker sandbox. The real workspace "
             "is read but never mounted writable or modified by these tools. "
@@ -64,26 +64,20 @@ def create_server(validator: DockerTestValidator) -> FastMCP:
         )
 
     @mcp.tool()
-    def run_maven_build(
+    def run_java_build(
         project_path: str = ".",
+        build_system: Literal["auto", "maven", "gradle"] = "auto",
     ) -> dict[str, Any]:
-        """Package a Maven project offline without executing tests.
+        """Build a Maven or Gradle project offline without executing tests.
 
-        The command is fixed to Maven package with -DskipTests. The model cannot
-        supply arbitrary Maven goals or command-line options.
+        Auto detection uses pom.xml or build.gradle/build.gradle.kts. Maven is
+        fixed to package with -DskipTests; Gradle is fixed to assemble. The
+        model cannot supply arbitrary goals, tasks or command-line options.
         """
-        return validator.run_maven_build(project_path=project_path)
-
-    @mcp.tool()
-    def run_gradle_build(
-        project_path: str = ".",
-    ) -> dict[str, Any]:
-        """Assemble a Gradle project offline without executing tests.
-
-        The command is fixed to Gradle assemble. The model cannot supply
-        arbitrary Gradle tasks or command-line options.
-        """
-        return validator.run_gradle_build(project_path=project_path)
+        return validator.run_java_build(
+            project_path=project_path,
+            build_system=build_system,
+        )
 
     @mcp.tool()
     def run_java_tests(
