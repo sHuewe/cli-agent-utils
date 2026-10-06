@@ -86,7 +86,57 @@ The validator deliberately does not run `pip install` and has no network access.
 
 ### Maven
 
-The Maven image must contain Maven. Offline dependencies/plugins can be baked into `/opt/cli-agent-test-cache/maven`. Before the test, this seed cache is copied into writable tmpfs at `/tmp/m2`. The validator runs:
+The Maven image must contain Maven. For real projects, configure one shared host cache root in the trusted MCP launch configuration:
+
+```text
+--maven-cache-root C:/Users/<user>/.cli-agent/dependency-cache/maven
+```
+
+The cache root is not selected by the model and does not vary per project in the admin policy. For each Maven project the validator calculates a deterministic key from:
+
+- every relevant `pom.xml` below the selected project, excluding generated/cache directories,
+- root `.mvn/maven.config`,
+- root `.mvn/extensions.xml`,
+- root `.mvn/jvm.config`,
+- the cache schema version.
+
+Ordinary source changes therefore keep the same dependency key. Dependency/build-configuration changes produce a new key.
+
+Prepare the cache as the normal user:
+
+```powershell
+cli-agent-test-cache prepare-maven C:\dev\my-project
+```
+
+The default preparation root is:
+
+```text
+~/.cli-agent/dependency-cache/maven
+```
+
+Use `--cache-root` if the administrator configured a different root:
+
+```powershell
+cli-agent-test-cache prepare-maven C:\dev\my-project `
+  --cache-root D:\cli-agent-dependency-cache\maven
+```
+
+Preparation intentionally runs outside the MCP sandbox. Maven can therefore use the user's normal `settings.xml`, corporate JFrog mirror and credentials. It builds an isolated local repository using:
+
+```text
+mvn -B -Dmaven.repo.local=<cache>/repository dependency:go-offline
+mvn -B -Dmaven.repo.local=<cache>/repository -DskipTests test
+```
+
+The preparation command stores only the generated Maven repository and a small readiness marker under `maven-<sha256>`; it does not copy `settings.xml` or JFrog credentials into the prepared cache.
+
+During a test the validator computes the same key. If no matching ready cache exists, it returns:
+
+```text
+reason = "dependencies_not_prepared"
+```
+
+No network fallback occurs. When the cache exists, its repository tree is validated, streamed directly from the host through Docker stdin into `/tmp/m2`, and Maven runs:
 
 ```text
 mvn -o -B -Dmaven.repo.local=/tmp/m2 test
@@ -97,6 +147,10 @@ or, with a selector:
 ```text
 mvn -o -B -Dmaven.repo.local=/tmp/m2 -Dtest=<selector> test
 ```
+
+The host cache is never bind-mounted and is never writable by test code. Test-time modifications happen only in container tmpfs and disappear with the container.
+
+If `--maven-cache-root` is omitted, the legacy immutable image seed at `/opt/cli-agent-test-cache/maven` remains available for compatibility.
 
 ### Gradle
 
@@ -139,6 +193,7 @@ args = [
     "--python-image", "registry.internal/python-tests@sha256:<digest>",
     "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
     "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
+    "--maven-cache-root", "C:/Users/<user>/.cli-agent/dependency-cache/maven",
 ]
 ```
 
@@ -164,6 +219,7 @@ args = [
     "--python-image", "registry.internal/python-tests@sha256:<digest>",
     "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
     "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
+    "--maven-cache-root", "C:/Users/<user>/.cli-agent/dependency-cache/maven",
     "--wsl",
     "--wsl-distribution", "Ubuntu",
 ]
@@ -186,6 +242,7 @@ The server supports administrator-controlled settings:
 --max-project-bytes 67108864
 --max-file-bytes 16777216
 --max-output-chars 200000
+--maven-cache-root C:/Users/<user>/.cli-agent/dependency-cache/maven
 ```
 
 These are launch-time administrator settings, not MCP tool arguments, so the model cannot relax them.
