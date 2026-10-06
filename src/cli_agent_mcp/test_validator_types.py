@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 
 class TestValidationError(RuntimeError):
@@ -30,6 +31,7 @@ class TestValidatorSettings:
     max_project_bytes: int = 64 * 1024 * 1024
     max_file_bytes: int = 16 * 1024 * 1024
     max_output_chars: int = 200_000
+    maven_cache_root: Path | None = None
 
     def __post_init__(self) -> None:
         for name, image in (
@@ -51,3 +53,9 @@ class TestValidatorSettings:
             raise ValueError("Projekt- und Dateigrößenlimits müssen positiv sein.")
         if self.max_output_chars <= 0:
             raise ValueError("max_output_chars muss positiv sein.")
+        if self.maven_cache_root is not None:
+            object.__setattr__(
+                self,
+                "maven_cache_root",
+                self.maven_cache_root.expanduser().resolve(),
+            )
