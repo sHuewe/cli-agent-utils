@@ -77,7 +77,7 @@ Project files such as `.env` are intentionally part of the project snapshot when
 
 Three immutable image references are configured administratively. Each image must provide a POSIX `sh`, `tar`, `cat`, `cp` and `mkdir` in addition to the language/build tooling:
 
-- a Python image containing Python, `pytest` and all dependencies required for the tested projects,
+- a Python image containing Python, `pip` and `pytest`; project dependencies are supplied from a separately prepared Linux wheel cache,
 - a Maven image containing Maven; project dependencies can be supplied from a separately prepared per-dependency cache,
 - a Gradle image containing Gradle and the dependencies required for offline builds.
 
@@ -89,7 +89,23 @@ registry.internal/maven-tests@sha256:<64-hex-digest>
 registry.internal/gradle-tests@sha256:<64-hex-digest>
 ```
 
-The validator never downloads packages during a test. Python uses the environment already present in its image. Maven runs with `-o`; Gradle runs with `--offline`.
+The validator never downloads packages during a test. Python installs only from a prepared local wheel cache with `--no-index`; Maven runs with `-o`; Gradle runs with `--offline`.
+
+For Python, dependency preparation follows the same model but **must be executed inside WSL**. This is intentional: the Docker validator runs Linux containers, so preparing with Windows pip could create Windows-only wheels. Run from the project inside WSL:
+
+```bash
+cli-agent-test-cache prepare-python .
+```
+
+The command prints that WSL is required and records that the cache was prepared under WSL. It uses the WSL user's normal pip configuration, including configured private PyPI/JFrog indexes and credentials, and builds a separate wheel cache. By default the cache is written to the Windows user's corresponding `~/.cli-agent/dependency-cache/python` directory so that the Windows-hosted MCP sees the same files. The validator itself never receives pip/JFrog credentials.
+
+During tests the wheel cache is streamed into the sandbox and dependencies are installed only with:
+
+```text
+python -m pip install --no-index --find-links /tmp/python-wheels --target /tmp/python-deps ...
+```
+
+If the Python dependency files change and the matching cache is missing, the MCP returns `dependencies_not_prepared` and explicitly tells the user to run `prepare-python` under WSL.
 
 For Maven, the validator and preparation CLI use the same per-user cache root by default: `~/.cli-agent/dependency-cache/maven`. The admin policy therefore does **not** need a project-specific or user-specific cache path. An administrator can override the root once with `--maven-cache-root` if required. Each project dependency state gets a deterministic key derived from all relevant `pom.xml` files and root `.mvn` configuration. The user prepares that key outside the agent with the normal Maven/JFrog setup:
 
@@ -181,11 +197,13 @@ run_python_tests(project_path=".")
 run_python_tests(project_path=".", test_selector="tests/test_config.py::test_load")
 ```
 
-The fixed command is equivalent to:
+The fixed test command is equivalent to:
 
 ```text
 python -m pytest -q [selector]
 ```
+
+When Python dependencies are declared in common `requirements*.txt`, `pyproject.toml` project dependencies, or test/dev dependency groups, a matching WSL-prepared wheel cache is required first.
 
 Java auto-detects Maven (`pom.xml`) or Gradle (`build.gradle` / `build.gradle.kts`):
 
