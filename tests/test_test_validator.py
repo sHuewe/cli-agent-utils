@@ -7,6 +7,11 @@ import pytest
 
 from cli_agent_mcp.docker_backend import DockerBackend, DockerCommandResult
 from cli_agent_mcp.maven_cache import cache_entry, maven_dependency_key, write_ready_metadata
+from cli_agent_mcp.python_cache import (
+    python_cache_entry,
+    python_dependency_plan,
+    write_python_ready_metadata,
+)
 from cli_agent_mcp.test_validator import DockerTestValidator
 from cli_agent_mcp.test_validator_redaction import OutputRedactor
 from cli_agent_mcp.test_validator_server import _workspace_from_core_environment
@@ -414,3 +419,74 @@ def test_maven_reports_missing_prepared_dependency_cache(tmp_path: Path) -> None
     assert result["success"] is False
     assert result["reason"] == "dependencies_not_prepared"
     assert result["dependency_cache_key"].startswith("maven-")
+
+
+def test_python_reports_missing_wsl_prepared_dependency_cache(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "demo-package==1.0\n",
+        encoding="utf-8",
+    )
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        python_cache_root=tmp_path / "python-cache",
+    )
+    validator = DockerTestValidator(tmp_path, configured, backend=FakeBackend())
+
+    result = validator.run_python_tests(".")
+
+    assert result["success"] is False
+    assert result["reason"] == "dependencies_not_prepared"
+    assert result["preparation_environment"] == "WSL required"
+    assert "prepare-python" in result["message"]
+
+
+def test_python_uses_wsl_prepared_wheels_offline(tmp_path: Path) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "demo-package==1.0\n",
+        encoding="utf-8",
+    )
+    cache_root = tmp_path / "python-cache"
+    entry = python_cache_entry(cache_root, tmp_path)
+    entry.wheels.mkdir(parents=True)
+    (entry.wheels / "demo_package-1.0-py3-none-any.whl").write_bytes(b"wheel")
+    write_python_ready_metadata(
+        entry.directory,
+        entry.key,
+        python_dependency_plan(tmp_path),
+    )
+
+    backend = FakeBackend()
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        python_cache_root=cache_root,
+    )
+    validator = DockerTestValidator(tmp_path, configured, backend=backend)
+
+    result = validator.run_python_tests(".")
+
+    assert result["success"] is True
+    assert result["dependency_cache"] == {
+        "key": entry.key,
+        "source": "prepared-wsl-wheel-cache",
+    }
+    transfer = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "stream-tar" and str(entry.wheels) in args
+    )
+    assert "/tmp/python-wheels" in transfer
+    install = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec"
+        and "--no-index" in args
+        and "/tmp/python-wheels" in args
+    )
+    assert "--target" in install
+    assert "/tmp/python-deps" in install
