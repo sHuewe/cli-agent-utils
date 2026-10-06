@@ -93,7 +93,6 @@ def prepare_maven(
 
     executable = shutil.which(maven_command) or maven_command
     temporary = Path(tempfile.mkdtemp(prefix=f".{key}-", dir=root))
-    temporary_entry = MavenCacheEntry(root=temporary.parent, key=temporary.name)
     repository = temporary / "repository"
     repository.mkdir(parents=True)
     try:
@@ -112,7 +111,7 @@ def prepare_maven(
             cwd=project,
             timeout=timeout,
         )
-        write_ready_metadata(temporary_entry)
+        write_ready_metadata(temporary, key)
 
         if entry.directory.exists():
             if not force:
