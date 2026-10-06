@@ -57,7 +57,13 @@ class MavenCacheEntry:
         return self.directory / "cache.json"
 
     def is_ready(self) -> bool:
-        if not self.repository.is_dir() or not self.metadata_file.is_file():
+        if (
+            self.directory.is_symlink()
+            or self.repository.is_symlink()
+            or self.metadata_file.is_symlink()
+            or not self.repository.is_dir()
+            or not self.metadata_file.is_file()
+        ):
             return False
         try:
             metadata = json.loads(self.metadata_file.read_text(encoding="utf-8"))
