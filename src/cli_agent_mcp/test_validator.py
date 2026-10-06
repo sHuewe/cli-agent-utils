@@ -906,3 +906,137 @@ class DockerTestValidator:
             dependency_cache_key=dependency_cache_key,
             gradle_home=gradle_home,
         )
+
+    def run_maven_build(
+        self,
+        project_path: str = ".",
+    ) -> dict[str, Any]:
+        """Build/package a Maven project offline without executing tests."""
+        project = self._resolve_project(project_path)
+        if not (project / "pom.xml").is_file():
+            raise TestValidationError(
+                "run_maven_build benötigt eine pom.xml."
+            )
+
+        command = [
+            "mvn",
+            "-o",
+            "-B",
+            "-Dmaven.repo.local=/tmp/m2",
+            "-DskipTests",
+            "package",
+        ]
+        dependency_repository: Path | None = None
+        dependency_cache_key: str | None = None
+        pre_test_command: list[str] | None = None
+        if self.settings.maven_cache_root is not None:
+            entry = cache_entry(self.settings.maven_cache_root, project)
+            dependency_cache_key = entry.key
+            if not entry.is_ready():
+                return {
+                    "success": False,
+                    "framework": "maven",
+                    "operation": "build",
+                    "project_path": project_path,
+                    "reason": "dependencies_not_prepared",
+                    "dependency_cache_key": entry.key,
+                    "message": (
+                        "Für diesen Maven-Dependency-Stand ist kein vorbereiteter "
+                        "Offline-Cache vorhanden. Führe außerhalb des Agents "
+                        "'cli-agent-test-cache prepare-maven <projekt>' aus und "
+                        "starte den Build anschließend erneut."
+                    ),
+                }
+            dependency_repository = entry.repository
+        else:
+            pre_test_command = [
+                "sh",
+                "-c",
+                (
+                    "mkdir -p /tmp/m2; "
+                    "if [ -d /opt/cli-agent-test-cache/maven ]; then "
+                    "cp -R /opt/cli-agent-test-cache/maven/. /tmp/m2/; fi"
+                ),
+            ]
+
+        result = self._run_tests(
+            project_path=project_path,
+            image=self.settings.maven_image,
+            command=command,
+            framework="maven",
+            pre_test_command=pre_test_command,
+            dependency_repository=dependency_repository,
+            dependency_cache_key=dependency_cache_key,
+        )
+        result["operation"] = "build"
+        result["tests_executed"] = False
+        return result
+
+    def run_gradle_build(
+        self,
+        project_path: str = ".",
+    ) -> dict[str, Any]:
+        """Assemble a Gradle project offline without executing tests."""
+        project = self._resolve_project(project_path)
+        if not (
+            (project / "build.gradle").is_file()
+            or (project / "build.gradle.kts").is_file()
+        ):
+            raise TestValidationError(
+                "run_gradle_build benötigt build.gradle oder build.gradle.kts."
+            )
+
+        command = [
+            "gradle",
+            "--offline",
+            "--no-daemon",
+            "--gradle-user-home",
+            "/tmp/gradle",
+            "assemble",
+        ]
+        gradle_home: Path | None = None
+        dependency_cache_key: str | None = None
+        pre_test_command: list[str] | None = None
+        if self.settings.gradle_cache_root is not None:
+            entry = gradle_cache_entry(self.settings.gradle_cache_root, project)
+            dependency_cache_key = entry.key
+            if not entry.is_ready():
+                return {
+                    "success": False,
+                    "framework": "gradle",
+                    "operation": "build",
+                    "project_path": project_path,
+                    "reason": "dependencies_not_prepared",
+                    "dependency_cache_key": entry.key,
+                    "message": (
+                        "Für diesen Gradle-Dependency-Stand ist kein "
+                        "vorbereiteter Offline-Cache vorhanden. Führe außerhalb "
+                        "des Agents 'cli-agent-test-cache prepare-gradle "
+                        "<projekt>' aus und starte den Build anschließend erneut."
+                    ),
+                }
+            gradle_home = entry.gradle_home
+        else:
+            pre_test_command = [
+                "sh",
+                "-c",
+                (
+                    "mkdir -p /tmp/gradle; "
+                    "if [ -d /opt/cli-agent-test-cache/gradle ]; then "
+                    "cp -R /opt/cli-agent-test-cache/gradle/. /tmp/gradle/; fi"
+                ),
+            ]
+
+        result = self._run_tests(
+            project_path=project_path,
+            image=self.settings.gradle_image,
+            command=command,
+            framework="gradle",
+            pre_test_command=pre_test_command,
+            dependency_cache_key=dependency_cache_key,
+            gradle_home=gradle_home,
+        )
+        result["operation"] = "build"
+        result["tests_executed"] = False
+        return result
+
