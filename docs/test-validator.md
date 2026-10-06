@@ -82,7 +82,7 @@ The configured Python image must already contain:
 - pytest,
 - the dependencies needed by the project.
 
-The validator deliberately does not run `pip install` and has no network access.
+The validator deliberately does not run `pip install` and has no network access. Test execution uses `PYTHONPATH=/work:/work/src` so common flat and `src/` layouts can import the current project sources without modifying the host workspace.
 
 ### Maven
 
