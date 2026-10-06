@@ -9,6 +9,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .docker_backend import DockerBackend
 from .maven_cache import default_maven_cache_root
+from .python_cache import default_python_cache_root
 from .test_validator import DockerTestValidator
 from .test_validator_types import TestValidationError, TestValidatorSettings
 
@@ -124,6 +125,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-output-chars", type=int, default=200_000)
     parser.add_argument(
+        "--python-cache-root",
+        type=Path,
+        default=default_python_cache_root(),
+        help=(
+            "Shared root created by cli-agent-test-cache prepare-python "
+            "(default: ~/.cli-agent/dependency-cache/python). "
+            "Python cache preparation itself must run inside WSL."
+        ),
+    )
+    parser.add_argument(
         "--maven-cache-root",
         type=Path,
         default=default_maven_cache_root(),
@@ -157,6 +168,7 @@ def main() -> None:
         max_file_bytes=args.max_file_bytes,
         max_output_chars=args.max_output_chars,
         maven_cache_root=args.maven_cache_root,
+        python_cache_root=args.python_cache_root,
     )
     backend = DockerBackend(
         wsl=args.wsl,
