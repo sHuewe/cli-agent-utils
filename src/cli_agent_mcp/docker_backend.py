@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import subprocess  # nosec B404
+import tarfile
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from dataclasses import dataclass
 
 
@@ -82,4 +84,60 @@ class DockerBackend:
             returncode=completed.returncode,
             stdout=stdout,
             stderr=stderr,
+        )
+
+
+    def stream_tar_directory(
+        self,
+        source: Path,
+        arguments: Sequence[str],
+        *,
+        timeout: float,
+    ) -> DockerCommandResult:
+        """Stream a host directory as TAR to a Docker command without a temp archive."""
+        command = self.command(*arguments)
+        process = subprocess.Popen(  # nosec B603
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        assert process.stdin is not None
+        try:
+            with tarfile.open(fileobj=process.stdin, mode="w|") as archive:
+                for path in sorted(source.rglob("*")):
+                    if path.is_symlink():
+                        raise ValueError(
+                            f"Symlink in streamed directory is not allowed: {path}"
+                        )
+                    relative = path.relative_to(source).as_posix()
+                    if path.is_dir():
+                        info = archive.gettarinfo(str(path), arcname=relative)
+                        info.uid = 65532
+                        info.gid = 65532
+                        info.uname = ""
+                        info.gname = ""
+                        archive.addfile(info)
+                    elif path.is_file():
+                        info = archive.gettarinfo(str(path), arcname=relative)
+                        info.uid = 65532
+                        info.gid = 65532
+                        info.uname = ""
+                        info.gname = ""
+                        with path.open("rb") as handle:
+                            archive.addfile(info, handle)
+                    else:
+                        raise ValueError(
+                            f"Unsupported filesystem entry in streamed directory: {path}"
+                        )
+            process.stdin.close()
+            stdout, stderr = process.communicate(timeout=timeout)
+        except BaseException:
+            process.kill()
+            process.communicate()
+            raise
+        return DockerCommandResult(
+            returncode=process.returncode,
+            stdout=stdout.decode("utf-8", errors="replace"),
+            stderr=stderr.decode("utf-8", errors="replace"),
         )
