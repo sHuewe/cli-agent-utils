@@ -6,6 +6,10 @@ from pathlib import Path
 import pytest
 
 from cli_agent_mcp.docker_backend import DockerBackend, DockerCommandResult
+from cli_agent_mcp.gradle_cache import (
+    gradle_cache_entry,
+    write_gradle_ready_metadata,
+)
 from cli_agent_mcp.maven_cache import cache_entry, maven_dependency_key, write_ready_metadata
 from cli_agent_mcp.python_cache import (
     python_cache_entry,
@@ -490,3 +494,60 @@ def test_python_uses_wsl_prepared_wheels_offline(tmp_path: Path) -> None:
     )
     assert "--target" in install
     assert "/tmp/python-deps" in install
+
+
+def test_gradle_reports_missing_prepared_dependency_cache(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        gradle_cache_root=tmp_path / "gradle-cache",
+    )
+    validator = DockerTestValidator(tmp_path, configured, backend=FakeBackend())
+
+    result = validator.run_java_tests(".", build_system="gradle")
+
+    assert result["success"] is False
+    assert result["reason"] == "dependencies_not_prepared"
+    assert result["dependency_cache_key"].startswith("gradle-")
+
+
+def test_gradle_uses_prepared_cache_offline(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    cache_root = tmp_path / "gradle-cache"
+    entry = gradle_cache_entry(cache_root, tmp_path)
+    (entry.gradle_home / "caches").mkdir(parents=True)
+    (entry.gradle_home / "caches" / "artifact.bin").write_bytes(b"cache")
+    write_gradle_ready_metadata(entry.directory, entry.key)
+
+    backend = FakeBackend()
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        gradle_cache_root=cache_root,
+    )
+    validator = DockerTestValidator(tmp_path, configured, backend=backend)
+
+    result = validator.run_java_tests(".", build_system="gradle")
+
+    assert result["success"] is True
+    assert result["dependency_cache"] == {
+        "key": entry.key,
+        "source": "prepared-gradle-cache",
+    }
+    transfer = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "stream-tar" and str(entry.gradle_home) in args
+    )
+    assert "/tmp/gradle" in transfer
+    test_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec" and "gradle" in args
+    )
+    assert "--offline" in test_call
+    assert "--gradle-user-home" in test_call
+    assert "/tmp/gradle" in test_call
