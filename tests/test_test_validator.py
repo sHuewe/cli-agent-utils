@@ -635,3 +635,36 @@ def test_gradle_build_requires_prepared_cache_when_configured(tmp_path: Path) ->
     assert result["success"] is False
     assert result["operation"] == "build"
     assert result["reason"] == "dependencies_not_prepared"
+
+
+def test_java_build_auto_detects_maven(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    backend = FakeBackend()
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    result = validator.run_java_build(".")
+
+    assert result["success"] is True
+    assert result["framework"] == "maven"
+    assert result["operation"] == "build"
+
+
+def test_java_build_auto_detects_gradle(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    backend = FakeBackend()
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    result = validator.run_java_build(".")
+
+    assert result["success"] is True
+    assert result["framework"] == "gradle"
+    assert result["operation"] == "build"
+
+
+def test_java_build_rejects_ambiguous_project(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    validator = DockerTestValidator(tmp_path, settings(), backend=FakeBackend())
+
+    with pytest.raises(ValidationError, match="mehrdeutig"):
+        validator.run_java_build(".")
