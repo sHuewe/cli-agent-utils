@@ -4,6 +4,12 @@ The Sandbox Test Validator runs Python and Java test suites in a short-lived Doc
 
 ## Tools
 
+### Validation workflow
+
+For ordinary Java programming changes, `run_java_build` is the primary validation step and should be attempted first. If it succeeds, the code change is considered validated for the programming task. `run_java_tests` must not be used merely as an additional generic validation step after a successful build.
+
+The test tools are intended only for tasks that concern test cases themselves, for example creating, changing, debugging or explicitly verifying tests. The same principle applies to `run_python_tests`; this MCP intentionally has no generic Python build validator.
+
 The MCP exposes exactly:
 
 - `run_python_tests(project_path=".", test_selector=None)`
