@@ -215,7 +215,7 @@ def prepare_maven(
             timeout=timeout,
         )
         _run(
-            [*common, "-DskipTests", "test"],
+            [*common, "-DskipTests", "package"],
             cwd=project,
             timeout=timeout,
         )
