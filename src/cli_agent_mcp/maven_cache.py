@@ -28,6 +28,10 @@ _IGNORED_DIRECTORIES = {
     "target",
     "venv",
 }
+def default_maven_cache_root() -> Path:
+    return Path.home() / ".cli-agent" / "dependency-cache" / "maven"
+
+
 _ROOT_MAVEN_FILES = (
     ".mvn/maven.config",
     ".mvn/extensions.xml",
