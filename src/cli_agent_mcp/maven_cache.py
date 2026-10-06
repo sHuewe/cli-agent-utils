@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import stat
+import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -176,12 +177,12 @@ def validate_repository_tree(repository: Path) -> int:
     return total_bytes
 
 
-def write_ready_metadata(entry: MavenCacheEntry) -> None:
-    entry.metadata_file.write_text(
+def write_ready_metadata(directory: Path, key: str) -> None:
+    (directory / "cache.json").write_text(
         json.dumps(
             {
                 "schema": _CACHE_SCHEMA,
-                "key": entry.key,
+                "key": key,
                 "ready": True,
             },
             indent=2,
@@ -190,3 +191,36 @@ def write_ready_metadata(entry: MavenCacheEntry) -> None:
         + "\n",
         encoding="utf-8",
     )
+
+
+def add_repository_to_tar(
+    repository: Path,
+    archive: tarfile.TarFile,
+) -> None:
+    root = repository.resolve()
+    validate_repository_tree(root)
+
+    def walk(directory: Path) -> None:
+        entries = sorted(os.scandir(directory), key=lambda item: item.name)
+        for entry in entries:
+            path = Path(entry.path)
+            mode = entry.stat(follow_symlinks=False).st_mode
+            relative = path.relative_to(root).as_posix()
+            if stat.S_ISDIR(mode):
+                info = archive.gettarinfo(str(path), arcname=relative)
+                info.uid = 65532
+                info.gid = 65532
+                info.uname = ""
+                info.gname = ""
+                archive.addfile(info)
+                walk(path)
+            elif stat.S_ISREG(mode):
+                info = archive.gettarinfo(str(path), arcname=relative)
+                info.uid = 65532
+                info.gid = 65532
+                info.uname = ""
+                info.gname = ""
+                with path.open("rb") as handle:
+                    archive.addfile(info, handle)
+
+    walk(root)
