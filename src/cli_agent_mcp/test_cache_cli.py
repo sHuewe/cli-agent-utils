@@ -7,6 +7,15 @@ import sys
 import tempfile
 from pathlib import Path
 
+from .gradle_cache import (
+    GradleCacheEntry,
+    default_gradle_cache_root,
+    default_source_gradle_user_home,
+    gradle_dependency_key,
+    remove_seeded_gradle_user_configuration,
+    seed_gradle_user_configuration,
+    write_gradle_ready_metadata,
+)
 from .maven_cache import (
     MavenCacheEntry,
     default_maven_cache_root,
@@ -59,6 +68,46 @@ def build_parser() -> argparse.ArgumentParser:
         help="Timeout per Maven preparation command in seconds.",
     )
     prepare.add_argument(
+        "--force",
+        action="store_true",
+        help="Rebuild an already prepared cache entry.",
+    )
+
+    prepare_gradle = subparsers.add_parser(
+        "prepare-gradle",
+        help="Prepare a project-specific Gradle user home for offline tests.",
+    )
+    prepare_gradle.add_argument("project", type=Path)
+    prepare_gradle.add_argument(
+        "--cache-root",
+        type=Path,
+        default=default_gradle_cache_root(),
+        help=(
+            "Shared Gradle cache root. Configure the same absolute path as "
+            "--gradle-cache-root for cli-agent-test-validator-mcp."
+        ),
+    )
+    prepare_gradle.add_argument(
+        "--gradle-command",
+        default="gradle",
+        help="Gradle executable used for preparation (default: gradle).",
+    )
+    prepare_gradle.add_argument(
+        "--source-gradle-user-home",
+        type=Path,
+        default=default_source_gradle_user_home(),
+        help=(
+            "Existing user Gradle home used only as a source for "
+            "gradle.properties/init scripts during preparation."
+        ),
+    )
+    prepare_gradle.add_argument(
+        "--timeout",
+        type=int,
+        default=1800,
+        help="Timeout for Gradle dependency preparation in seconds.",
+    )
+    prepare_gradle.add_argument(
         "--force",
         action="store_true",
         help="Rebuild an already prepared cache entry.",
@@ -178,6 +227,88 @@ def prepare_maven(
         raise
 
 
+def prepare_gradle(
+    project: Path,
+    cache_root: Path,
+    *,
+    gradle_command: str = "gradle",
+    source_gradle_user_home: Path | None = None,
+    timeout: int = 1800,
+    force: bool = False,
+) -> GradleCacheEntry:
+    project = project.expanduser().resolve()
+    if not project.is_dir():
+        raise ValueError(f"Projektverzeichnis existiert nicht: {project}")
+    if timeout <= 0:
+        raise ValueError("--timeout muss positiv sein.")
+
+    key = gradle_dependency_key(project)
+    root = cache_root.expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    entry = GradleCacheEntry(root=root, key=key)
+    if entry.directory.is_symlink():
+        raise RuntimeError("Der Gradle-Cache-Eintrag darf kein Symlink sein.")
+    if entry.directory.exists() and not force:
+        if entry.is_ready():
+            return entry
+        raise RuntimeError(
+            "Der Gradle-Cache-Eintrag existiert, ist aber nicht vollständig. "
+            "Verwende --force zum Neuaufbau."
+        )
+
+    executable = shutil.which(gradle_command) or gradle_command
+    temporary = Path(tempfile.mkdtemp(prefix=f".{key}-", dir=root))
+    gradle_home = temporary / "gradle-home"
+    gradle_home.mkdir(parents=True)
+    source_home = (
+        source_gradle_user_home.expanduser().resolve()
+        if source_gradle_user_home is not None
+        else default_source_gradle_user_home()
+    )
+    copied = seed_gradle_user_configuration(source_home, gradle_home)
+    try:
+        _run_gradle(
+            [
+                executable,
+                "--no-daemon",
+                "--refresh-dependencies",
+                "--gradle-user-home",
+                str(gradle_home),
+                "testClasses",
+            ],
+            cwd=project,
+            timeout=timeout,
+        )
+        remove_seeded_gradle_user_configuration(gradle_home, copied)
+        copied = ()
+        write_gradle_ready_metadata(temporary, key)
+        if entry.directory.exists():
+            shutil.rmtree(entry.directory)
+        temporary.replace(entry.directory)
+        return entry
+    except BaseException:
+        if copied:
+            try:
+                remove_seeded_gradle_user_configuration(gradle_home, copied)
+            except Exception:
+                pass
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+
+
+def _run_gradle(command: list[str], *, cwd: Path, timeout: int) -> None:
+    completed = subprocess.run(  # nosec B603
+        command,
+        cwd=cwd,
+        check=False,
+        timeout=timeout,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"Gradle-Vorbereitung endete mit Code {completed.returncode}."
+        )
+
+
 def prepare_python(
     project: Path,
     cache_root: Path | None,
@@ -274,6 +405,20 @@ def main() -> None:
             )
             print(f"Maven dependency key: {entry.key}")
             print(f"Cache repository: {entry.repository}")
+            print("Cache ready for offline validator use.")
+            return
+
+        if args.command == "prepare-gradle":
+            entry = prepare_gradle(
+                args.project,
+                args.cache_root,
+                gradle_command=args.gradle_command,
+                source_gradle_user_home=args.source_gradle_user_home,
+                timeout=args.timeout,
+                force=args.force,
+            )
+            print(f"Gradle dependency key: {entry.key}")
+            print(f"Cache Gradle user home: {entry.gradle_home}")
             print("Cache ready for offline validator use.")
             return
 
