@@ -9,6 +9,11 @@ from typing import Any, Literal
 
 from .docker_backend import DockerBackend, DockerCommandResult
 from .maven_cache import cache_entry, validate_repository_tree
+from .python_cache import (
+    python_cache_entry,
+    python_dependency_plan,
+    validate_python_cache_tree,
+)
 from .test_validator_redaction import OutputRedactor, discover_secret_values
 from .test_validator_snapshot import create_project_snapshot
 from .test_validator_types import TestValidationError, TestValidatorSettings
@@ -283,6 +288,7 @@ class DockerTestValidator:
         pre_test_command: list[str] | None = None,
         dependency_repository: Path | None = None,
         dependency_cache_key: str | None = None,
+        python_wheels: Path | None = None,
     ) -> dict[str, Any]:
         project = self._resolve_project(project_path)
         snapshot = create_project_snapshot(
@@ -382,6 +388,66 @@ class DockerTestValidator:
                 )
                 return result_payload
 
+            if python_wheels is not None:
+                validate_python_cache_tree(python_wheels)
+                prepared_python_dir = self._docker(
+                    [
+                        "exec",
+                        "--user",
+                        "65532:65532",
+                        container_name,
+                        "mkdir",
+                        "-p",
+                        "/tmp/python-wheels",
+                        "/tmp/python-deps",
+                    ],
+                    timeout=self.settings.setup_timeout_seconds,
+                )
+                if prepared_python_dir.returncode != 0:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        prepared_python_dir.stderr or prepared_python_dir.stdout,
+                        verified_policy=verified_policy,
+                    )
+                    return result_payload
+                try:
+                    streamed_python = self.backend.stream_tar_directory(
+                        python_wheels,
+                        [
+                            "exec",
+                            "--interactive",
+                            "--user",
+                            "65532:65532",
+                            "--workdir",
+                            "/tmp/python-wheels",
+                            container_name,
+                            "tar",
+                            "-xf",
+                            "-",
+                        ],
+                        timeout=self.settings.setup_timeout_seconds,
+                    )
+                except (FileNotFoundError, OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        f"Python-Wheel-Cache konnte nicht übertragen werden: {exc}",
+                        verified_policy=verified_policy,
+                    )
+                    return result_payload
+                if streamed_python.returncode != 0:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        streamed_python.stderr or streamed_python.stdout,
+                        verified_policy=verified_policy,
+                    )
+                    return result_payload
+
             if dependency_repository is not None:
                 validate_repository_tree(dependency_repository)
                 prepared_dir = self._docker(
@@ -477,7 +543,7 @@ class DockerTestValidator:
                         "--env",
                         "HOME=/tmp/home",
                         "--env",
-                        "PYTHONPATH=/work:/work/src",
+                        "PYTHONPATH=/tmp/python-deps:/work:/work/src",
                         container_name,
                         "sh",
                         "-c",
@@ -544,7 +610,14 @@ class DockerTestValidator:
                         "source": "prepared-host-cache",
                     }
                     if dependency_repository is not None
-                    else None
+                    else (
+                        {
+                            "key": dependency_cache_key,
+                            "source": "prepared-wsl-wheel-cache",
+                        }
+                        if python_wheels is not None
+                        else None
+                    )
                 ),
                 "sandbox_policy": {
                     "verified": True,
@@ -598,15 +671,60 @@ class DockerTestValidator:
         project_path: str = ".",
         test_selector: str | None = None,
     ) -> dict[str, Any]:
+        project = self._resolve_project(project_path)
         selector = self._validate_selector(test_selector, java=False)
         command = ["python", "-m", "pytest", "-q"]
         if selector:
             command.append(selector)
+
+        python_wheels: Path | None = None
+        dependency_cache_key: str | None = None
+        pre_test_command: list[str] | None = None
+        plan = python_dependency_plan(project)
+        if plan.has_dependencies and self.settings.python_cache_root is not None:
+            entry = python_cache_entry(self.settings.python_cache_root, project)
+            dependency_cache_key = entry.key
+            if not entry.is_ready():
+                return {
+                    "success": False,
+                    "framework": "pytest",
+                    "project_path": project_path,
+                    "reason": "dependencies_not_prepared",
+                    "dependency_cache_key": entry.key,
+                    "message": (
+                        "Für diesen Python-Dependency-Stand ist kein vorbereiteter "
+                        "Linux-Wheel-Cache vorhanden. Führe unter WSL außerhalb "
+                        "des Agents 'cli-agent-test-cache prepare-python <projekt>' "
+                        "aus und starte den Test anschließend erneut."
+                    ),
+                    "preparation_environment": "WSL required",
+                }
+            python_wheels = entry.wheels
+            install = [
+                "python",
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "--no-index",
+                "--find-links",
+                "/tmp/python-wheels",
+                "--target",
+                "/tmp/python-deps",
+            ]
+            for requirement in plan.requirement_files:
+                install.extend(["-r", requirement])
+            install.extend(plan.dependency_specs)
+            pre_test_command = install
+
         return self._run_tests(
             project_path=project_path,
             image=self.settings.python_image,
             command=command,
             framework="pytest",
+            pre_test_command=pre_test_command,
+            dependency_cache_key=dependency_cache_key,
+            python_wheels=python_wheels,
         )
 
     def run_java_tests(
