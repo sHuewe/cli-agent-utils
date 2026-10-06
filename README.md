@@ -91,7 +91,7 @@ registry.internal/gradle-tests@sha256:<64-hex-digest>
 
 The validator never downloads packages during a test. Python uses the environment already present in its image. Maven runs with `-o`; Gradle runs with `--offline`.
 
-For Maven, a shared host cache root can be configured once by the administrator. Each project dependency state gets a deterministic key derived from all relevant `pom.xml` files and root `.mvn` configuration. The user prepares that key outside the agent with the normal Maven/JFrog setup:
+For Maven, the validator and preparation CLI use the same per-user cache root by default: `~/.cli-agent/dependency-cache/maven`. The admin policy therefore does **not** need a project-specific or user-specific cache path. An administrator can override the root once with `--maven-cache-root` if required. Each project dependency state gets a deterministic key derived from all relevant `pom.xml` files and root `.mvn` configuration. The user prepares that key outside the agent with the normal Maven/JFrog setup:
 
 ```powershell
 cli-agent-test-cache prepare-maven C:\dev\my-project
@@ -130,7 +130,6 @@ args = [
     "--python-image", "registry.internal/python-tests@sha256:<digest>",
     "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
     "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
-    "--maven-cache-root", "C:/Users/<user>/.cli-agent/dependency-cache/maven",
 ]
 ```
 
@@ -141,7 +140,6 @@ args = [
     "--python-image", "registry.internal/python-tests@sha256:<digest>",
     "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
     "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
-    "--maven-cache-root", "C:/Users/<user>/.cli-agent/dependency-cache/maven",
     "--wsl",
     "--wsl-distribution", "Ubuntu",
 ]
