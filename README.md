@@ -143,7 +143,7 @@ For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache
 cli-agent-test-cache prepare-gradle C:\dev\my-project
 ```
 
-Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation and removed before the cache is marked ready. This allows private repository/JFrog credentials to be used during preparation without exposing those configuration files to the validator. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
+Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup. A project Gradle wrapper is preferred when present; otherwise Gradle from PATH is used. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation and removed before the cache is marked ready. This allows private repository/JFrog credentials to be used during preparation without exposing those configuration files to the validator. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
 
 Relevant Gradle build/configuration changes generate a new dependency key. Source-only changes keep the existing cache.
 
