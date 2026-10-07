@@ -173,7 +173,8 @@ def discover_secret_values(
                 continue
             text = content.decode("utf-8", errors="replace")
 
-            if path.suffix.casefold() == ".json":
+            suffix = path.suffix.casefold()
+            if suffix == ".json":
                 try:
                     parsed = json.loads(text)
                 except (json.JSONDecodeError, RecursionError):
@@ -182,6 +183,16 @@ def discover_secret_values(
                     for candidate in _iter_json_secret_values(parsed):
                         add(candidate)
                     continue
+
+            if suffix in {".yaml", ".yml"}:
+                for line in text.splitlines():
+                    for candidate in _iter_secret_values_from_line(line):
+                        if candidate in {"|", "|-", "|+", ">", ">-", ">+"}:
+                            raise SecretDiscoveryLimitError(
+                                "Ein sensitiver YAML-Schlüssel verwendet einen "
+                                "Block-Scalar; sichere Secret-Erkennung ist "
+                                "nicht vollständig möglich."
+                            )
 
             for line in text.splitlines():
                 for candidate in _iter_secret_values_from_line(line):
@@ -264,43 +275,53 @@ class _ExactSecretMatcher:
 
 
 
+def _pem_private_key_label(line: str) -> str | None:
+    marker = line.strip()
+    if not marker.startswith(_PRIVATE_KEY_BEGIN) or not marker.endswith("-----"):
+        return None
+    label = marker[len(_PRIVATE_KEY_BEGIN) : -5].strip()
+    if not label.endswith("PRIVATE KEY"):
+        return None
+    return label
+
+
 def _redact_private_keys(value: str) -> str:
-    """Redact PEM private-key blocks with one forward marker scan."""
+    """Redact PEM private-key blocks with a linear line-oriented scan."""
     result: list[str] = []
-    cursor = 0
-    scan = 0
-    active_start: int | None = None
+    pending: list[str] = []
     active_label: str | None = None
 
-    while True:
-        marker_start = value.find("-----", scan)
-        if marker_start < 0:
-            break
-        marker_end_start = value.find("-----", marker_start + 5)
-        if marker_end_start < 0:
-            break
-        marker_end = marker_end_start + 5
-        marker = value[marker_start:marker_end]
-
+    for line in value.splitlines(keepends=True):
+        label = _pem_private_key_label(line)
         if active_label is None:
-            if marker.startswith(_PRIVATE_KEY_BEGIN):
-                label = marker[
-                    len(_PRIVATE_KEY_BEGIN) : -5
-                ].strip()
-                if label.endswith("PRIVATE KEY"):
-                    active_start = marker_start
-                    active_label = label
-        elif marker == f"{_PRIVATE_KEY_END_PREFIX}{active_label}-----":
-            assert active_start is not None
-            result.append(value[cursor:active_start])
-            result.append("<redacted-private-key>")
-            cursor = marker_end
-            active_start = None
+            if label is None:
+                result.append(line)
+            else:
+                active_label = label
+                pending = [line]
+            continue
+
+        if line.strip() == f"{_PRIVATE_KEY_END_PREFIX}{active_label}-----":
+            newline = "\n" if line.endswith(("\n", "\r")) else ""
+            result.append("<redacted-private-key>" + newline)
+            pending = []
             active_label = None
+            continue
 
-        scan = marker_end
+        if label is not None:
+            # The previous BEGIN had no matching END before a new complete
+            # private-key BEGIN marker. Preserve that unmatched text and start
+            # tracking the newer block so a later valid key cannot be hidden
+            # behind malformed output.
+            result.extend(pending)
+            active_label = label
+            pending = [line]
+            continue
 
-    result.append(value[cursor:])
+        pending.append(line)
+
+    if pending:
+        result.extend(pending)
     return "".join(result)
 
 class OutputRedactor:
