@@ -839,3 +839,26 @@ def test_gradle_dependency_key_changes_with_legacy_lockfile(
     second = gradle_dependency_key(tmp_path)
 
     assert first != second
+
+
+
+def test_gradle_dependency_key_changes_with_custom_named_toml_catalog(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "build.gradle.kts").write_text("", encoding="utf-8")
+    gradle_dir = tmp_path / "gradle"
+    gradle_dir.mkdir()
+    catalog = gradle_dir / "catalog.toml"
+    catalog.write_text(
+        '[versions]\njunit = "5.11.0"\n',
+        encoding="utf-8",
+    )
+
+    first = gradle_dependency_key(tmp_path)
+    catalog.write_text(
+        '[versions]\njunit = "5.12.0"\n',
+        encoding="utf-8",
+    )
+    second = gradle_dependency_key(tmp_path)
+
+    assert first != second
