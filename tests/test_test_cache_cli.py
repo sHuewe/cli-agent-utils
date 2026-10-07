@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cli_agent_mcp.gradle_cache import gradle_cache_entry
+from cli_agent_mcp.gradle_cache import (
+    gradle_cache_entry,
+    sanitize_gradle_home_for_promotion,
+)
 from cli_agent_mcp.maven_cache import cache_entry
 from cli_agent_mcp.python_cache import python_cache_entry
 from cli_agent_mcp.test_cache_cli import (
@@ -276,6 +279,48 @@ def test_prepare_gradle_builds_isolated_gradle_home_and_removes_user_config(
         "testClasses",
         "_cliAgentResolveRuntimeDependencies",
     ]
+
+
+
+def test_gradle_promotion_rejects_repository_url_credentials(
+    tmp_path: Path,
+) -> None:
+    import pytest
+
+    gradle_home = tmp_path / "gradle-home"
+    metadata = (
+        gradle_home
+        / "caches"
+        / "modules-2"
+        / "metadata-2.107"
+        / "resource-at-url.bin"
+    )
+    metadata.parent.mkdir(parents=True)
+    metadata.write_bytes(
+        b"prefix https://build-user:super-secret-token@repo.example/artifacts suffix"
+    )
+
+    with pytest.raises(Exception, match="eingebetteten Zugangsdaten"):
+        sanitize_gradle_home_for_promotion(gradle_home)
+
+
+def test_gradle_promotion_keeps_repository_metadata_without_url_credentials(
+    tmp_path: Path,
+) -> None:
+    gradle_home = tmp_path / "gradle-home"
+    metadata = (
+        gradle_home
+        / "caches"
+        / "modules-2"
+        / "metadata-2.107"
+        / "resource-at-url.bin"
+    )
+    metadata.parent.mkdir(parents=True)
+    metadata.write_bytes(b"prefix https://repo.example/artifacts suffix")
+
+    sanitize_gradle_home_for_promotion(gradle_home)
+
+    assert metadata.is_file()
 
 
 def test_gradle_cache_entry_matches_preparation_key(tmp_path: Path) -> None:
