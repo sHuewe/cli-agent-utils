@@ -475,7 +475,7 @@ def test_python_reports_missing_wsl_prepared_dependency_cache(
     assert result["success"] is False
     assert result["reason"] == "dependencies_not_prepared"
     assert result["preparation_environment"] == "WSL required"
-    assert "prepare-python" in result["message"]
+    assert "prepare-python" in result["message_to_user"]
 
 
 def test_python_uses_wsl_prepared_wheels_offline(tmp_path: Path) -> None:
