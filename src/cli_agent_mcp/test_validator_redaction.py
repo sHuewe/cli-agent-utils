@@ -4,9 +4,16 @@ import io
 import json
 import re
 import tarfile
+import tomllib
 from collections import deque
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
+from typing import Any
+
+import javaproperties
+import yaml
+from dotenv import dotenv_values
+from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
 _SENSITIVE_KEY = re.compile(
     r"(?i)(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
@@ -20,15 +27,15 @@ _GENERIC_PATTERNS = (
     ),
 )
 _PRIVATE_KEY_BEGIN = "-----BEGIN "
-_PRIVATE_KEY_SUFFIX = "PRIVATE KEY-----"
 _PRIVATE_KEY_END_PREFIX = "-----END "
 _TEXT_CONFIG_SUFFIXES = {".env", ".properties", ".yaml", ".yml", ".json", ".toml"}
 _MAX_DISCOVERED_SECRET_VALUES = 4096
 _MAX_DISCOVERED_SECRET_CHARS = 1024 * 1024
+_MAX_STRUCTURED_NODES = 100_000
 _SUPPRESSED_OUTPUT = (
-    "[Testausgabe unterdrückt: Die Secret-Erkennung hat ihr Sicherheitslimit "
-    "erreicht. Der Test wurde ausgeführt, aber seine Ausgabe wird nicht an "
-    "das Modell zurückgegeben.]"
+    "[Testausgabe unterdrückt: Die Secret-Erkennung konnte nicht vollständig "
+    "und sicher durchgeführt werden. Der Test wurde ausgeführt, aber seine "
+    "Ausgabe wird nicht an das Modell zurückgegeben.]"
 )
 
 
@@ -43,118 +50,180 @@ def _candidate_config_file(path: Path) -> bool:
     return path.suffix.casefold() in _TEXT_CONFIG_SUFFIXES
 
 
-def _iter_sensitive_assignment_values(line: str) -> Iterator[str]:
-    """Yield raw values assigned to sensitive keys, including short markers."""
-    key_chars = set(
-        "abcdefghijklmnopqrstuvwxyz"
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "0123456789_.-"
-    )
-    length = len(line)
-    index = 0
-
-    while index < length:
-        char = line[index]
-        if char not in {":", "="}:
-            index += 1
-            continue
-
-        left = index - 1
-        while left >= 0 and line[left].isspace():
-            left -= 1
-        if left >= 0 and line[left] in {"'", '"'}:
-            left -= 1
-        key_end = left + 1
-        while left >= 0 and line[left] in key_chars:
-            left -= 1
-        key = line[left + 1 : key_end]
-
-        right = index + 1
-        while right < length and line[right].isspace():
-            right += 1
-
-        if key and _SENSITIVE_KEY.search(key) and right < length:
-            quote = line[right] if line[right] in {"'", '"'} else None
-            if quote is not None:
-                value_start = right + 1
-                value_end = value_start
-                escaped = False
-                while value_end < length:
-                    current = line[value_end]
-                    if current == quote and not escaped:
-                        break
-                    if current == "\\" and not escaped:
-                        escaped = True
-                    else:
-                        escaped = False
-                    value_end += 1
-            else:
-                value_start = right
-                value_end = value_start
-                while (
-                    value_end < length
-                    and not line[value_end].isspace()
-                    and line[value_end] not in "#;,}{]["
-                ):
-                    value_end += 1
-
-            yield line[value_start:value_end].strip()
-            index = max(
-                index + 1,
-                value_end + (1 if quote is not None and value_end < length else 0),
-            )
-            continue
-
-        index += 1
+def _is_sensitive_key(value: object) -> bool:
+    return isinstance(value, str) and _SENSITIVE_KEY.search(value) is not None
 
 
-def _iter_secret_values_from_line(line: str) -> Iterator[str]:
-    for value in _iter_sensitive_assignment_values(line):
-        if len(value) >= 4:
-            yield value
-
-def _secret_values_from_line(line: str) -> tuple[str, ...]:
-    """Best-effort parser for simple assignment-style text configuration."""
-    return tuple(_iter_secret_values_from_line(line))
+def _contains_sensitive_key_hint(text: str) -> bool:
+    # This is deliberately conservative and is only used when a format-aware
+    # parser cannot safely parse a candidate config file. False positives only
+    # suppress returned logs; false negatives could expose a secret.
+    return _SENSITIVE_KEY.search(text) is not None
 
 
-def _iter_json_secret_values(value: object) -> Iterator[str]:
-    stack = [value]
+def _iter_scalar_values(value: object) -> Iterator[str]:
+    stack: list[object] = [value]
+    seen: set[int] = set()
+    visited = 0
+
     while stack:
         current = stack.pop()
-        if isinstance(current, dict):
-            for key, item in current.items():
-                if isinstance(key, str) and _SENSITIVE_KEY.search(key):
-                    if isinstance(item, str) and len(item) >= 4:
-                        yield item
-                if isinstance(item, (dict, list)):
-                    stack.append(item)
-        elif isinstance(current, list):
-            stack.extend(
-                item for item in current if isinstance(item, (dict, list))
+        visited += 1
+        if visited > _MAX_STRUCTURED_NODES:
+            raise SecretDiscoveryLimitError(
+                "Konfigurationsstruktur ist zu groß für sichere Secret-Erkennung."
             )
 
+        if isinstance(current, str):
+            yield current
+            continue
+        if current is None:
+            continue
+        if isinstance(current, bool):
+            yield "true" if current else "false"
+            continue
+        if isinstance(current, (int, float)):
+            yield str(current)
+            continue
 
-def _is_yaml_block_scalar_header(value: str) -> bool:
-    """Recognize YAML literal/folded block-scalar headers conservatively."""
-    if not value or value[0] not in {"|", ">"}:
-        return False
-    modifiers = value[1:]
-    if not modifiers:
-        return True
-    if len(modifiers) > 2:
-        return False
+        if isinstance(current, Mapping):
+            identity = id(current)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            stack.extend(current.values())
+            continue
 
-    chomping = 0
-    indentation = 0
-    for char in modifiers:
-        if char in {"+", "-"}:
-            chomping += 1
-        elif char in "123456789":
-            indentation += 1
-        else:
-            return False
-    return chomping <= 1 and indentation <= 1
+        if isinstance(current, (list, tuple, set)):
+            identity = id(current)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            stack.extend(current)
+
+
+def _iter_mapping_secret_values(value: object) -> Iterator[str]:
+    stack: list[object] = [value]
+    seen: set[int] = set()
+    visited = 0
+
+    while stack:
+        current = stack.pop()
+        visited += 1
+        if visited > _MAX_STRUCTURED_NODES:
+            raise SecretDiscoveryLimitError(
+                "Konfigurationsstruktur ist zu groß für sichere Secret-Erkennung."
+            )
+
+        if isinstance(current, Mapping):
+            identity = id(current)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            for key, item in current.items():
+                if _is_sensitive_key(key):
+                    yield from _iter_scalar_values(item)
+                if isinstance(item, (Mapping, list, tuple, set)):
+                    stack.append(item)
+        elif isinstance(current, (list, tuple, set)):
+            identity = id(current)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            stack.extend(current)
+
+
+def _iter_yaml_scalar_values(node: Node) -> Iterator[str]:
+    stack = [node]
+    seen: set[int] = set()
+    visited = 0
+
+    while stack:
+        current = stack.pop()
+        visited += 1
+        if visited > _MAX_STRUCTURED_NODES:
+            raise SecretDiscoveryLimitError(
+                "YAML-Struktur ist zu groß für sichere Secret-Erkennung."
+            )
+
+        identity = id(current)
+        if identity in seen:
+            continue
+        seen.add(identity)
+
+        if isinstance(current, ScalarNode):
+            yield current.value
+        elif isinstance(current, SequenceNode):
+            stack.extend(current.value)
+        elif isinstance(current, MappingNode):
+            for key_node, value_node in current.value:
+                stack.extend((key_node, value_node))
+
+
+def _iter_yaml_secret_values(text: str) -> Iterator[str]:
+    documents = yaml.compose_all(text, Loader=yaml.SafeLoader)
+    visited = 0
+    for document in documents:
+        if document is None:
+            continue
+        stack = [document]
+        seen: set[int] = set()
+
+        while stack:
+            current = stack.pop()
+            visited += 1
+            if visited > _MAX_STRUCTURED_NODES:
+                raise SecretDiscoveryLimitError(
+                    "YAML-Struktur ist zu groß für sichere Secret-Erkennung."
+                )
+
+            identity = id(current)
+            if identity in seen:
+                continue
+            seen.add(identity)
+
+            if isinstance(current, MappingNode):
+                for key_node, value_node in current.value:
+                    if (
+                        isinstance(key_node, ScalarNode)
+                        and _is_sensitive_key(key_node.value)
+                    ):
+                        yield from _iter_yaml_scalar_values(value_node)
+                    stack.append(value_node)
+            elif isinstance(current, SequenceNode):
+                stack.extend(current.value)
+
+
+def _parse_structured_secret_values(path: Path, text: str) -> tuple[str, ...]:
+    suffix = path.suffix.casefold()
+    name = path.name.casefold()
+
+    try:
+        if suffix == ".json":
+            parsed: Any = json.loads(text)
+            return tuple(_iter_mapping_secret_values(parsed))
+        if suffix == ".toml":
+            parsed = tomllib.loads(text)
+            return tuple(_iter_mapping_secret_values(parsed))
+        if suffix in {".yaml", ".yml"}:
+            return tuple(_iter_yaml_secret_values(text))
+        if suffix == ".properties":
+            parsed = javaproperties.loads(text)
+            return tuple(_iter_mapping_secret_values(parsed))
+        if name == ".env" or name.startswith(".env."):
+            parsed = dotenv_values(stream=io.StringIO(text), interpolate=False)
+            return tuple(_iter_mapping_secret_values(parsed))
+    except SecretDiscoveryLimitError:
+        raise
+    except Exception as exc:
+        if _contains_sensitive_key_hint(text):
+            raise SecretDiscoveryLimitError(
+                f"{path.name} konnte trotz möglicher sensitiver Schlüssel "
+                "nicht sicher geparst werden."
+            ) from exc
+        return ()
+
+    return ()
 
 
 def discover_secret_values(
@@ -199,30 +268,8 @@ def discover_secret_values(
                 continue
             text = content.decode("utf-8", errors="replace")
 
-            suffix = path.suffix.casefold()
-            if suffix == ".json":
-                try:
-                    parsed = json.loads(text)
-                except (json.JSONDecodeError, RecursionError):
-                    parsed = None
-                if parsed is not None:
-                    for candidate in _iter_json_secret_values(parsed):
-                        add(candidate)
-                    continue
-
-            if suffix in {".yaml", ".yml"}:
-                for line in text.splitlines():
-                    for candidate in _iter_sensitive_assignment_values(line):
-                        if _is_yaml_block_scalar_header(candidate):
-                            raise SecretDiscoveryLimitError(
-                                "Ein sensitiver YAML-Schlüssel verwendet einen "
-                                "Block-Scalar; sichere Secret-Erkennung ist "
-                                "nicht vollständig möglich."
-                            )
-
-            for line in text.splitlines():
-                for candidate in _iter_secret_values_from_line(line):
-                    add(candidate)
+            for candidate in _parse_structured_secret_values(path, text):
+                add(candidate)
 
     return tuple(sorted(values, key=len, reverse=True))
 
@@ -300,7 +347,6 @@ class _ExactSecretMatcher:
         return "".join(chunks)
 
 
-
 def _pem_private_key_label(line: str) -> str | None:
     marker = line.strip()
     if not marker.startswith(_PRIVATE_KEY_BEGIN) or not marker.endswith("-----"):
@@ -335,10 +381,6 @@ def _redact_private_keys(value: str) -> str:
             continue
 
         if label is not None:
-            # The previous BEGIN had no matching END before a new complete
-            # private-key BEGIN marker. Preserve that unmatched text and start
-            # tracking the newer block so a later valid key cannot be hidden
-            # behind malformed output.
             result.extend(pending)
             active_label = label
             pending = [line]
@@ -349,6 +391,7 @@ def _redact_private_keys(value: str) -> str:
     if pending:
         result.extend(pending)
     return "".join(result)
+
 
 class OutputRedactor:
     def __init__(
