@@ -282,20 +282,13 @@ def _redact_private_keys(value: str) -> str:
             break
 
         header = value[begin : header_end + 5]
-        if not header.endswith(_PRIVATE_KEY_SUFFIX):
+        label = value[begin + len(_PRIVATE_KEY_BEGIN) : header_end].strip()
+        if not label.endswith("PRIVATE KEY"):
             result.append(value[cursor : begin + 1])
             cursor = begin + 1
             continue
 
-        key_type = header[
-            len(_PRIVATE_KEY_BEGIN) : -len(_PRIVATE_KEY_SUFFIX)
-        ].strip()
-        if not key_type:
-            result.append(value[cursor : begin + 1])
-            cursor = begin + 1
-            continue
-
-        end_marker = f"{_PRIVATE_KEY_END_PREFIX}{key_type} {_PRIVATE_KEY_SUFFIX}"
+        end_marker = f"{_PRIVATE_KEY_END_PREFIX}{label}-----"
         end = value.find(end_marker, header_end + 5)
         if end < 0:
             # Unmatched begin markers are not expanded into a potentially
