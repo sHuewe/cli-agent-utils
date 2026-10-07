@@ -248,7 +248,7 @@ The fixed test command is equivalent to:
 python -m pytest -q [selector]
 ```
 
-When Python dependencies are declared in common `requirements*.txt`, `pyproject.toml` project dependencies, or test/dev dependency groups, a matching WSL-prepared wheel cache is required first. Recursive requirements includes are resolved relative to the including file, and PEP 735 `include-group` entries are expanded recursively. Lockfile-based resolution (`uv.lock`, `poetry.lock`, `Pipfile.lock`) and local/editable project references, including compact editable syntax and bare local paths, are rejected explicitly; export pinned dependencies to a supported requirements file instead. Empty/comment-only requirements files are valid and produce an empty wheel manifest.
+When Python dependencies are declared in common `requirements*.txt`, `pyproject.toml` project dependencies, or test/dev dependency groups, a matching WSL-prepared wheel cache is required first. Recursive requirements includes are resolved relative to the including file, and PEP 735 `include-group` entries are expanded recursively. Lockfile-based resolution (`uv.lock`, `poetry.lock`, `Pipfile.lock`) is rejected explicitly; export pinned dependencies to a supported requirements file instead. Relative PEP 508 dependencies from `pyproject.toml` are allowed when they stay inside the selected project and their complete input tree is included in the cache key. References outside the selected project remain rejected. Empty/comment-only requirements files are valid and produce an empty wheel manifest.
 
 For Java code changes, prefer `run_java_build`. Java test execution is intended only when the task concerns test cases. Java auto-detects Maven (`pom.xml`) or Gradle (`build.gradle` / `build.gradle.kts`):
 
