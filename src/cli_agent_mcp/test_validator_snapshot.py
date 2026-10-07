@@ -30,6 +30,28 @@ _ROOT_BUILD_OUTPUT_DIRECTORIES = {
 _IGNORED_FILE_SUFFIXES = {".pyc", ".pyo", ".class", ".log"}
 
 
+def _is_build_output_directory(root: Path, path: Path) -> bool:
+    relative = path.relative_to(root)
+    if len(relative.parts) == 1 and path.name in _ROOT_BUILD_OUTPUT_DIRECTORIES:
+        return True
+
+    parent = path.parent
+    if path.name == "target" and (parent / "pom.xml").is_file():
+        return True
+    if path.name in {"build", ".gradle"} and (
+        (parent / "build.gradle").is_file()
+        or (parent / "build.gradle.kts").is_file()
+    ):
+        return True
+    if path.name == "dist" and (
+        (parent / "pyproject.toml").is_file()
+        or (parent / "setup.py").is_file()
+        or (parent / "setup.cfg").is_file()
+    ):
+        return True
+    return False
+
+
 @dataclass(frozen=True)
 class ProjectSnapshot:
     archive: bytes
@@ -71,10 +93,7 @@ def _safe_tree_files(
                 relative = path.relative_to(root)
                 if entry.name in _IGNORED_DIRECTORY_NAMES:
                     continue
-                if (
-                    len(relative.parts) == 1
-                    and entry.name in _ROOT_BUILD_OUTPUT_DIRECTORIES
-                ):
+                if _is_build_output_directory(root, path):
                     continue
                 walk(path)
                 continue
