@@ -33,39 +33,61 @@ def _candidate_config_file(path: Path) -> bool:
 
 
 def _secret_values_from_line(line: str) -> tuple[str, ...]:
-    colon = line.find(":")
-    equals = line.find("=")
-    delimiters = [index for index in (colon, equals) if index >= 0]
-    if not delimiters:
-        return ()
+    values: list[str] = []
+    key_chars = set(
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789_.-"
+    )
+    length = len(line)
+    index = 0
 
-    index = min(delimiters)
-    key = line[:index].strip().strip("'\"{}[] ")
-    if key.casefold().startswith("export "):
-        key = key[7:].strip()
-    if not key or not _SENSITIVE_KEY.search(key):
-        return ()
+    while index < length:
+        char = line[index]
+        if char not in {":", "="}:
+            index += 1
+            continue
 
-    value = line[index + 1 :].strip()
-    if not value:
-        return ()
+        left = index - 1
+        while left >= 0 and line[left].isspace():
+            left -= 1
+        if left >= 0 and line[left] in {"'", '"'}:
+            left -= 1
+        key_end = left + 1
+        while left >= 0 and line[left] in key_chars:
+            left -= 1
+        key = line[left + 1 : key_end]
 
-    if value[0] in {"'", '"'}:
-        quote = value[0]
-        value = value[1:]
-        end = value.find(quote)
-        if end >= 0:
-            value = value[:end]
-    else:
-        for separator in (" #", ";", ",", "}", "]"):
-            position = value.find(separator)
-            if position >= 0:
-                value = value[:position]
+        right = index + 1
+        while right < length and line[right].isspace():
+            right += 1
 
-    value = value.strip().strip("'\"")
-    if len(value) < 4:
-        return ()
-    return (value,)
+        if key and _SENSITIVE_KEY.search(key) and right < length:
+            quote = line[right] if line[right] in {"'", '"'} else None
+            if quote is not None:
+                value_start = right + 1
+                value_end = line.find(quote, value_start)
+                if value_end < 0:
+                    value_end = length
+            else:
+                value_start = right
+                value_end = value_start
+                while (
+                    value_end < length
+                    and not line[value_end].isspace()
+                    and line[value_end] not in "#;,}{]["
+                ):
+                    value_end += 1
+
+            value = line[value_start:value_end].strip()
+            if len(value) >= 4:
+                values.append(value)
+            index = max(index + 1, value_end + (1 if quote is not None else 0))
+            continue
+
+        index += 1
+
+    return tuple(values)
 
 
 def discover_secret_values(
