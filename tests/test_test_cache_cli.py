@@ -758,3 +758,41 @@ def test_prepare_maven_removes_remote_repository_provenance(
     artifact_dir = entry.repository / "com" / "example" / "demo" / "1.0"
     assert (artifact_dir / "demo-1.0.jar").is_file()
     assert not (artifact_dir / "_remote.repositories").exists()
+
+
+
+def test_prepare_maven_ignores_commented_settings_option(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = tmp_path / "project"
+    config = project / ".mvn"
+    config.mkdir(parents=True)
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    (config / "maven.config").write_text(
+        "# --settings was removed\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
+        lambda: tmp_path / "missing-settings.xml",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.shutil.which",
+        lambda _command: "mvn",
+    )
+
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
+        calls.append(command)
+        repo_arg = next(
+            value for value in command if value.startswith("-Dmaven.repo.local=")
+        )
+        Path(repo_arg.split("=", 1)[1]).mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr("cli_agent_mcp.test_cache_cli._run", fake_run)
+
+    prepare_maven(project, tmp_path / "cache")
+
+    assert len(calls) == 2
