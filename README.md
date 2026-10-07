@@ -111,6 +111,8 @@ The validator never downloads packages during a test. Python installs only from 
 
 For Python, dependency preparation follows the same model but **must be executed inside WSL**. This is intentional: the Docker validator runs Linux containers, so preparing with Windows pip could create Windows-only wheels.
 
+**Operational compatibility requirement:** wheel preparation uses the selected WSL Python interpreter, while test execution uses the administrator-configured Docker image. The validator deliberately does not try to infer or enforce wheel-tag/ABI compatibility between those environments. The administrator is responsible for keeping Python implementation/version, architecture and relevant platform ABI compatible between preparation and the pinned test image. A mismatch can cause the offline install to fail even though a cache exists; it is not treated as a sandbox escape or credential boundary issue.
+
 Cache placement is explicit and consistent across Maven, Gradle and Python. `--target native` is the default and writes to the current environment's `~/.cli-agent/dependency-cache/<type>`. Use this when cli-agent and the MCP run in the same environment as preparation. For example, a fully WSL-hosted setup uses:
 
 ```bash
@@ -139,11 +141,13 @@ For Maven, the validator and preparation CLI use the same per-user cache root by
 cli-agent-test-cache prepare-maven C:\dev\my-project
 ```
 
-The command uses the user's normal Maven configuration and credentials, but writes dependencies into a separate repository below:
+The command uses Maven's normal user/global configuration and credentials, including the user's standard `~/.m2/settings.xml` for mirrors, repositories and server credentials, but writes dependencies into a separate repository below:
 
 ```text
 %USERPROFILE%\.cli-agent\dependency-cache\maven\maven-<sha256>\repository
 ```
+
+Project-provided alternate settings selectors in `.mvn/maven.config` (`-s/--settings` and `-gs/--global-settings`, including compact forms) are rejected because those files are not replayed in the offline sandbox. This does not disable the user's normal Maven settings.
 
 The test validator never receives Maven/JFrog credentials. It calculates the same key, streams only that prepared repository into container tmpfs, and executes Maven offline. Cache preparation now runs through the Maven `package` lifecycle with `-DskipTests`, so build/package plugins needed by `run_maven_build` are prepared as well. Source changes do not invalidate the cache; relevant POM/configuration changes produce a new key and require preparation again.
 
