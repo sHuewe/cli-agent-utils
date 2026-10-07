@@ -27,8 +27,6 @@ _ROOT_BUILD_OUTPUT_DIRECTORIES = {
     "dist",
     "target",
 }
-_IGNORED_FILE_SUFFIXES = {".pyc", ".pyo", ".class", ".log"}
-
 
 def _is_build_output_directory(root: Path, path: Path) -> bool:
     relative = path.relative_to(root)
@@ -102,8 +100,6 @@ def _safe_tree_files(
                     f"Nur reguläre Dateien und Verzeichnisse sind erlaubt: "
                     f"{path.relative_to(root)}"
                 )
-            if path.suffix.casefold() in _IGNORED_FILE_SUFFIXES:
-                continue
             size = entry.stat(follow_symlinks=False).st_size
             if size > max_file_bytes:
                 raise TestValidationError(
