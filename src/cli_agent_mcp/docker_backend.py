@@ -1,11 +1,67 @@
 from __future__ import annotations
 
+import os
 import subprocess  # nosec B404
+import stat
 import tarfile
 import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from dataclasses import dataclass
+
+
+def _is_windows_reparse_point(file_stat: object) -> bool:
+    attributes = getattr(file_stat, "st_file_attributes", 0)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x0400)
+    return bool(attributes & reparse_flag)
+
+
+def _iter_safe_stream_paths(source: Path):
+    try:
+        source_stat = os.stat(source, follow_symlinks=False)
+    except OSError as exc:
+        raise ValueError(f"Streamed directory could not be inspected: {source}") from exc
+    if stat.S_ISLNK(source_stat.st_mode) or _is_windows_reparse_point(source_stat):
+        raise ValueError(
+            f"Symlink/reparse point streamed directory is not allowed: {source}"
+        )
+    if not stat.S_ISDIR(source_stat.st_mode):
+        raise ValueError(f"Streamed path is not a directory: {source}")
+
+    def walk(directory: Path):
+        try:
+            entries = sorted(os.scandir(directory), key=lambda entry: entry.name)
+        except OSError as exc:
+            raise ValueError(
+                f"Streamed directory could not be read: {directory}"
+            ) from exc
+        for entry in entries:
+            path = Path(entry.path)
+            try:
+                entry_stat = entry.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise ValueError(
+                    f"Streamed path could not be inspected: {path}"
+                ) from exc
+            if (
+                stat.S_ISLNK(entry_stat.st_mode)
+                or _is_windows_reparse_point(entry_stat)
+            ):
+                raise ValueError(
+                    "Symlink/reparse point in streamed directory is not allowed: "
+                    f"{path}"
+                )
+            if stat.S_ISDIR(entry_stat.st_mode):
+                yield path
+                yield from walk(path)
+            elif stat.S_ISREG(entry_stat.st_mode):
+                yield path
+            else:
+                raise ValueError(
+                    f"Unsupported filesystem entry in streamed directory: {path}"
+                )
+
+    yield from walk(source)
 
 
 @dataclass(frozen=True)
@@ -111,12 +167,7 @@ class DockerBackend:
         def write_archive() -> None:
             try:
                 with tarfile.open(fileobj=stdin, mode="w|") as archive:
-                    for path in sorted(source.rglob("*")):
-                        if path.is_symlink():
-                            raise ValueError(
-                                "Symlink in streamed directory is not allowed: "
-                                f"{path}"
-                            )
+                    for path in _iter_safe_stream_paths(source):
                         relative = path.relative_to(source).as_posix()
                         if path.is_dir():
                             info = archive.gettarinfo(str(path), arcname=relative)
