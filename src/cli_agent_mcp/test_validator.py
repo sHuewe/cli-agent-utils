@@ -15,7 +15,11 @@ from .python_cache import (
     python_dependency_plan,
     validate_python_cache_tree,
 )
-from .test_validator_redaction import (\n    OutputRedactor,\n    SecretDiscoveryLimitError,\n    discover_secret_values,\n)
+from .test_validator_redaction import (
+    OutputRedactor,
+    SecretDiscoveryLimitError,
+    discover_secret_values,
+)
 from .test_validator_snapshot import create_project_snapshot
 from .test_validator_types import TestValidationError, TestValidatorSettings
 
