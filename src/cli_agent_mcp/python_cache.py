@@ -276,6 +276,43 @@ def _requirement_files(project: Path) -> tuple[Path, ...]:
     return tuple(result[name] for name in sorted(result))
 
 
+def _reject_unsupported_local_requirements(
+    project: Path,
+    requirement_files: tuple[Path, ...],
+) -> None:
+    for path in requirement_files:
+        relative = path.relative_to(project).as_posix()
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise TestValidationError(
+                f"Requirements-Datei konnte nicht gelesen werden: {relative}"
+            ) from exc
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            lowered = line.casefold()
+            if lowered.startswith(("-r ", "--requirement ", "-c ", "--constraint ")):
+                continue
+            if lowered in {".", "-e .", "--editable ."}:
+                raise TestValidationError(
+                    "Lokale Projekt-Referenzen auf das aktuelle Python-Projekt "
+                    "werden nicht unterstützt. Deklariere nur externe "
+                    "Dependencies; der aktuelle Workspace-Code wird direkt getestet."
+                )
+            if (
+                lowered.startswith(("-e ", "--editable ", "file:"))
+                or " @ file:" in lowered
+            ):
+                raise TestValidationError(
+                    "Lokale/editierbare Python-Dependency-Referenzen werden "
+                    f"nicht unterstützt ({relative}: {line!r}). "
+                    "Verwende gepinnte externe Dependencies."
+                )
+
+
+
 def python_dependency_plan(project: Path) -> PythonDependencyPlan:
     root = project.expanduser().resolve()
     if not root.is_dir():
@@ -297,6 +334,7 @@ def python_dependency_plan(project: Path) -> PythonDependencyPlan:
         )
 
     requirement_files = _requirement_files(root)
+    _reject_unsupported_local_requirements(root, requirement_files)
     top_level_requirements = tuple(
         name
         for name in _STANDARD_REQUIREMENTS
@@ -375,6 +413,14 @@ def python_dependency_plan(project: Path) -> PythonDependencyPlan:
             for group in sorted(_OPTIONAL_DEPENDENCY_GROUPS):
                 if group in groups:
                     dependency_specs.extend(expand_group(group))
+
+    for spec in dependency_specs:
+        lowered = spec.strip().casefold()
+        if lowered.startswith("file:") or " @ file:" in lowered:
+            raise TestValidationError(
+                "Lokale Python-Dependency-Referenzen in pyproject.toml werden "
+                "nicht unterstützt. Verwende gepinnte externe Dependencies."
+            )
 
     # Included requirement files affect the key even though pip receives only
     # the top-level files and resolves nested -r/-c entries itself.
