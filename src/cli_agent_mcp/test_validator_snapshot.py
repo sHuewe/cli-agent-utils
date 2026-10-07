@@ -50,6 +50,12 @@ def _is_build_output_directory(root: Path, path: Path) -> bool:
     return False
 
 
+def _is_windows_reparse_point(file_stat: object) -> bool:
+    attributes = getattr(file_stat, "st_file_attributes", 0)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x0400)
+    return bool(attributes & reparse_flag)
+
+
 @dataclass(frozen=True)
 class ProjectSnapshot:
     archive: bytes
@@ -77,11 +83,17 @@ def _safe_tree_files(
         for entry in entries:
             path = Path(entry.path)
             try:
-                mode = entry.stat(follow_symlinks=False).st_mode
+                entry_stat = entry.stat(follow_symlinks=False)
+                mode = entry_stat.st_mode
             except OSError as exc:
                 raise TestValidationError(
                     f"Projektpfad konnte nicht geprüft werden: {path}"
                 ) from exc
+            if _is_windows_reparse_point(entry_stat):
+                raise TestValidationError(
+                    "Windows-Reparse-Points/Junctions sind im Test-Snapshot "
+                    f"nicht erlaubt: {path.relative_to(root)}"
+                )
             if stat.S_ISLNK(mode):
                 raise TestValidationError(
                     f"Symlinks sind im Test-Snapshot nicht erlaubt: "
