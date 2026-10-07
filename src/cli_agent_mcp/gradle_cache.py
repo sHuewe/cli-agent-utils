@@ -10,7 +10,58 @@ from pathlib import Path
 from .cache_identity import project_cache_key
 from .test_validator_types import TestValidationError
 
-_CACHE_SCHEMA = "cli-agent-gradle-cache-v3"
+_CACHE_SCHEMA = "cli-agent-gradle-cache-v4"
+
+_GRADLE_REPOSITORY_URL_METADATA = "resource-at-url.bin"
+_URL_SCHEME_MARKER = b"://"
+_URL_AUTHORITY_TERMINATORS = b"/?#\x00\r\n\t "
+
+
+def _contains_url_userinfo(data: bytes) -> bool:
+    """Return True when a byte buffer contains URL userinfo in an authority."""
+    cursor = 0
+    while True:
+        marker = data.find(_URL_SCHEME_MARKER, cursor)
+        if marker < 0:
+            return False
+        authority_start = marker + len(_URL_SCHEME_MARKER)
+        authority_end = len(data)
+        for delimiter in _URL_AUTHORITY_TERMINATORS:
+            position = data.find(bytes((delimiter,)), authority_start)
+            if position >= 0:
+                authority_end = min(authority_end, position)
+        at = data.find(b"@", authority_start, authority_end)
+        if at >= 0:
+            return True
+        cursor = authority_start
+
+
+def _reject_credential_bearing_repository_metadata(modules: Path) -> None:
+    """Reject Gradle repository metadata that embeds URL userinfo credentials."""
+    for metadata_dir in modules.glob("metadata-*"):
+        if metadata_dir.is_symlink():
+            raise TestValidationError(
+                "Gradle-Metadatenverzeichnisse dürfen keine Symlinks sein."
+            )
+        if not metadata_dir.is_dir():
+            continue
+        for path in metadata_dir.rglob(_GRADLE_REPOSITORY_URL_METADATA):
+            if path.is_symlink() or not path.is_file():
+                raise TestValidationError(
+                    "Gradle-Repository-Metadaten müssen reguläre Dateien sein."
+                )
+            try:
+                payload = path.read_bytes()
+            except OSError as exc:
+                raise TestValidationError(
+                    "Gradle-Repository-Metadaten konnten nicht geprüft werden."
+                ) from exc
+            if _contains_url_userinfo(payload):
+                raise TestValidationError(
+                    "Der vorbereitete Gradle-Cache enthält Repository-URLs mit "
+                    "eingebetteten Zugangsdaten. Verwende eine Gradle-"
+                    "Repository-Konfiguration ohne Credentials in der URL."
+                )
 
 
 @dataclass(frozen=True)
@@ -225,6 +276,7 @@ def sanitize_gradle_home_for_promotion(target_home: Path) -> None:
     try:
         if modules.exists():
             validate_gradle_cache_tree(modules)
+            _reject_credential_bearing_repository_metadata(modules)
             destination = sanitized / "caches" / "modules-2"
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copytree(modules, destination)
