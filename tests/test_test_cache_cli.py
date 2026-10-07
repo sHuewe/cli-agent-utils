@@ -312,7 +312,7 @@ def test_python_nested_requirements_are_resolved_relative_to_including_file(
     assert key.startswith("python-")
 
 
-def test_gradle_dependency_key_changes_with_included_build_logic_source(
+def test_gradle_cache_key_is_stable_across_included_build_logic_changes(
     tmp_path: Path,
 ) -> None:
     project = tmp_path / "project"
@@ -339,7 +339,7 @@ def test_gradle_dependency_key_changes_with_included_build_logic_source(
     )
     second = gradle_dependency_key(project)
 
-    assert first != second
+    assert first == second
 
 
 
@@ -413,7 +413,7 @@ def test_prepare_gradle_runtime_resolver_disables_test_tasks(
 
 
 
-def test_python_compact_recursive_requirement_include(tmp_path: Path) -> None:
+def test_python_cache_key_is_stable_across_requirement_changes(tmp_path: Path) -> None:
     from cli_agent_mcp.python_cache import python_dependency_key
 
     project = tmp_path / "project"
@@ -796,3 +796,73 @@ def test_prepare_maven_ignores_commented_settings_option(
     prepare_maven(project, tmp_path / "cache")
 
     assert len(calls) == 2
+
+
+
+def test_project_cache_keys_depend_on_project_path_not_dependency_content(
+    tmp_path: Path,
+) -> None:
+    from cli_agent_mcp.gradle_cache import gradle_dependency_key
+    from cli_agent_mcp.maven_cache import maven_dependency_key
+    from cli_agent_mcp.python_cache import python_dependency_key
+
+    first_project = tmp_path / "first"
+    second_project = tmp_path / "second"
+    first_project.mkdir()
+    second_project.mkdir()
+
+    for project in (first_project, second_project):
+        (project / "pom.xml").write_text("<project/>\n", encoding="utf-8")
+        (project / "build.gradle").write_text("", encoding="utf-8")
+        (project / "requirements.txt").write_text(
+            "demo-package==1.0\n",
+            encoding="utf-8",
+        )
+
+    assert maven_dependency_key(first_project) != maven_dependency_key(second_project)
+    assert gradle_dependency_key(first_project) != gradle_dependency_key(second_project)
+    assert python_dependency_key(first_project) != python_dependency_key(second_project)
+
+
+def test_prepare_maven_rebuilds_existing_project_cache(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>\n", encoding="utf-8")
+    cache_root = tmp_path / "cache"
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
+        lambda: tmp_path / "missing-settings.xml",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.shutil.which",
+        lambda _command: "mvn",
+    )
+
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
+        calls.append(command)
+        repository_arg = next(
+            value for value in command if value.startswith("-Dmaven.repo.local=")
+        )
+        repository = Path(repository_arg.split("=", 1)[1])
+        repository.mkdir(parents=True, exist_ok=True)
+        (repository / "marker.txt").write_text(
+            str(len(calls)),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("cli_agent_mcp.test_cache_cli._run", fake_run)
+
+    first = prepare_maven(project, cache_root)
+    first_marker = (first.repository / "marker.txt").read_text(encoding="utf-8")
+    second = prepare_maven(project, cache_root)
+    second_marker = (second.repository / "marker.txt").read_text(encoding="utf-8")
+
+    assert first.key == second.key
+    assert first_marker == "2"
+    assert second_marker == "4"
+    assert len(calls) == 4
