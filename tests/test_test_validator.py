@@ -30,6 +30,7 @@ from cli_agent_mcp.python_cache import (
 from cli_agent_mcp.test_validator import DockerTestValidator
 from cli_agent_mcp.test_validator_redaction import (
     OutputRedactor,
+    _secret_values_from_line,
     discover_secret_values,
 )
 from cli_agent_mcp.test_validator_server import _workspace_from_core_environment
@@ -1156,3 +1157,12 @@ def test_snapshot_preserves_empty_directories(tmp_path: Path) -> None:
         member = archive.getmember("tests/fixtures/empty")
 
     assert member.isdir()
+
+
+
+def test_secret_line_parser_handles_compact_json_fields() -> None:
+    values = _secret_values_from_line(
+        '{"name":"demo","api_token":"compact-json-secret","enabled":true}'
+    )
+
+    assert "compact-json-secret" in values
