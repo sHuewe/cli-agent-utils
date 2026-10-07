@@ -83,6 +83,10 @@ class DockerTestValidator:
                 "Der Test-Selector darf keine Steuerzeichen enthalten."
             )
         if java:
+            if value.startswith("-"):
+                raise TestValidationError(
+                    "Java-Test-Selectoren dürfen keine Build-Tool-Optionen sein."
+                )
             if not _JAVA_SELECTOR.fullmatch(value):
                 raise TestValidationError("Ungültiger Java-Test-Selector.")
             return value
