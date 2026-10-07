@@ -304,29 +304,6 @@ def test_python_nested_requirements_are_resolved_relative_to_including_file(
     assert key.startswith("python-")
 
 
-def test_python_dependency_groups_expand_pep735_include_group(
-    tmp_path: Path,
-) -> None:
-    project = tmp_path / "project"
-    project.mkdir()
-    (project / "pyproject.toml").write_text(
-        """
-[dependency-groups]
-base = ["pytest==9.0"]
-test = [{include-group = "base"}, "coverage==7.0"]
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-
-    from cli_agent_mcp.python_cache import python_dependency_plan
-
-    plan = python_dependency_plan(project)
-
-    assert plan.dependency_specs == ("pytest==9.0", "coverage==7.0")
-
-
-
 def test_gradle_dependency_key_changes_with_included_build_logic_source(
     tmp_path: Path,
 ) -> None:
@@ -356,34 +333,6 @@ def test_gradle_dependency_key_changes_with_included_build_logic_source(
 
     assert first != second
 
-
-
-def test_python_plan_rejects_lockfiles(tmp_path: Path) -> None:
-    import pytest
-    from cli_agent_mcp.python_cache import python_dependency_plan
-
-    project = tmp_path / "project"
-    project.mkdir()
-    (project / "pyproject.toml").write_text(
-        '[project]\nname = "demo"\nversion = "1.0"\ndependencies = ["requests>=2"]\n',
-        encoding="utf-8",
-    )
-    (project / "uv.lock").write_text("version = 1\n", encoding="utf-8")
-
-    with pytest.raises(Exception, match="Lockfile-basierte"):
-        python_dependency_plan(project)
-
-
-def test_python_plan_rejects_current_project_reference(tmp_path: Path) -> None:
-    import pytest
-    from cli_agent_mcp.python_cache import python_dependency_plan
-
-    project = tmp_path / "project"
-    project.mkdir()
-    (project / "requirements.txt").write_text(".\n", encoding="utf-8")
-
-    with pytest.raises(Exception, match="aktuelle Python-Projekt"):
-        python_dependency_plan(project)
 
 
 def test_prepare_maven_rejects_semantic_user_settings(
@@ -418,32 +367,6 @@ def test_prepare_maven_rejects_semantic_user_settings(
     with pytest.raises(RuntimeError, match="Build-Semantik"):
         prepare_maven(project, tmp_path / "cache")
 
-
-
-def test_python_plan_rejects_compact_editable_reference(tmp_path: Path) -> None:
-    import pytest
-    from cli_agent_mcp.python_cache import python_dependency_plan
-
-    project = tmp_path / "project"
-    project.mkdir()
-    (project / "requirements.txt").write_text("-e.\n", encoding="utf-8")
-
-    with pytest.raises(Exception, match="Lokale/editierbare"):
-        python_dependency_plan(project)
-
-
-def test_python_plan_rejects_bare_relative_local_path(tmp_path: Path) -> None:
-    import pytest
-    from cli_agent_mcp.python_cache import python_dependency_plan
-
-    project = tmp_path / "project"
-    project.mkdir()
-    vendor = project / "vendor" / "pkg"
-    vendor.mkdir(parents=True)
-    (project / "requirements.txt").write_text("vendor/pkg\n", encoding="utf-8")
-
-    with pytest.raises(Exception, match="Lokale/editierbare"):
-        python_dependency_plan(project)
 
 
 def test_python_cache_allows_empty_requirements(tmp_path: Path) -> None:
@@ -482,105 +405,6 @@ def test_prepare_gradle_runtime_resolver_disables_test_tasks(
 
 
 
-def test_python_key_tracks_project_local_pyproject_dependency(
-    tmp_path: Path,
-) -> None:
-    from cli_agent_mcp.python_cache import python_dependency_key
-
-    project = tmp_path / "project"
-    local = project / "vendor" / "lib"
-    local.mkdir(parents=True)
-    (local / "pyproject.toml").write_text(
-        '[project]\nname = "vendor-lib"\nversion = "1.0"\n',
-        encoding="utf-8",
-    )
-    source = local / "vendor_lib.py"
-    source.write_text("VALUE = 1\n", encoding="utf-8")
-    project.mkdir(exist_ok=True)
-    (project / "pyproject.toml").write_text(
-        """
-[project]
-name = "demo"
-version = "1.0"
-dependencies = ["vendor-lib @ ./vendor/lib"]
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-
-    first = python_dependency_key(project)
-    source.write_text("VALUE = 2\n", encoding="utf-8")
-    second = python_dependency_key(project)
-
-    assert first != second
-
-
-def test_python_local_pyproject_dependency_cannot_escape_project(
-    tmp_path: Path,
-) -> None:
-    import pytest
-    from cli_agent_mcp.python_cache import python_dependency_plan
-
-    project = tmp_path / "project"
-    project.mkdir()
-    outside = tmp_path / "shared-lib"
-    outside.mkdir()
-    (project / "pyproject.toml").write_text(
-        """
-[project]
-name = "demo"
-version = "1.0"
-dependencies = ["shared-lib @ ../shared-lib"]
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(Exception, match="außerhalb"):
-        python_dependency_plan(project)
-
-
-def test_python_dependency_groups_normalize_names(tmp_path: Path) -> None:
-    from cli_agent_mcp.python_cache import python_dependency_plan
-
-    project = tmp_path / "project"
-    project.mkdir()
-    (project / "pyproject.toml").write_text(
-        """
-[dependency-groups]
-Test = ["pytest==9.0"]
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-
-    plan = python_dependency_plan(project)
-
-    assert plan.dependency_specs == ("pytest==9.0",)
-
-
-def test_python_dependency_groups_reject_duplicate_normalized_names(
-    tmp_path: Path,
-) -> None:
-    import pytest
-    from cli_agent_mcp.python_cache import python_dependency_plan
-
-    project = tmp_path / "project"
-    project.mkdir()
-    (project / "pyproject.toml").write_text(
-        """
-[dependency-groups]
-test_group = ["pytest==9.0"]
-test-group = ["coverage==7.0"]
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(Exception, match="Mehrdeutige dependency-group"):
-        python_dependency_plan(project)
-
-
 def test_python_compact_recursive_requirement_include(tmp_path: Path) -> None:
     from cli_agent_mcp.python_cache import python_dependency_key
 
@@ -599,3 +423,90 @@ def test_python_compact_recursive_requirement_include(tmp_path: Path) -> None:
     second = python_dependency_key(project)
 
     assert first != second
+
+
+
+def test_python_plan_requires_requirements_txt(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "1.0"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception, match="requirements.txt"):
+        python_dependency_plan(project)
+
+
+def test_python_plan_rejects_unpinned_requirement(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "requirements.txt").write_text(
+        "requests>=2\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception, match="package==version"):
+        python_dependency_plan(project)
+
+
+def test_python_plan_rejects_direct_url_requirement(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "requirements.txt").write_text(
+        "demo @ https://example.invalid/demo.whl\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception, match="package==version"):
+        python_dependency_plan(project)
+
+
+def test_prepare_python_resolves_requirements_once(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = tmp_path / "project"
+    nested = project / "requirements"
+    nested.mkdir(parents=True)
+    (project / "requirements.txt").write_text(
+        "-r requirements/test.txt\nrequests==2.32.0\n",
+        encoding="utf-8",
+    )
+    (nested / "test.txt").write_text("pytest==9.0.0\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.require_wsl",
+        lambda: None,
+    )
+
+    def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
+        calls.append(command)
+        wheel_dir = Path(command[command.index("--wheel-dir") + 1])
+        wheel_dir.mkdir(parents=True, exist_ok=True)
+        (wheel_dir / "requests-2.32.0-py3-none-any.whl").write_bytes(b"wheel")
+        (wheel_dir / "pytest-9.0.0-py3-none-any.whl").write_bytes(b"wheel")
+
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._run_python",
+        fake_run,
+    )
+
+    prepare_python(
+        project,
+        tmp_path / "cache",
+        python_command="/usr/bin/python3",
+    )
+
+    assert len(calls) == 1
+    assert calls[0][-2:] == ["-r", "requirements.txt"]
