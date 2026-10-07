@@ -86,7 +86,8 @@ For every test run the validator:
 - applies CPU, memory, PID, project-size, file-size, timeout and output limits,
 - verifies the actual Docker container configuration with `docker inspect` before project code is copied or executed,
 - redacts detected project secret values and common credential patterns before returning output to the LLM,
-- removes the short-lived container after the run.
+- removes the short-lived container after the run,
+- enforces transfer timeouts while project/dependency TAR streams are still being written, so a blocked extraction cannot bypass the configured timeout.
 
 Project files such as `.env` are intentionally part of the project snapshot when they are present in the selected project. Test code can therefore read them. Network access is blocked, and direct output of detected secrets is redacted, but redaction is **not** a complete confidentiality boundary against deliberately transformed output.
 
@@ -152,7 +153,7 @@ For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache
 cli-agent-test-cache prepare-gradle C:\dev\my-project
 ```
 
-Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup and prepares both `assemble` and `testClasses` without executing tests. A project Gradle wrapper is preferred when present; otherwise Gradle from PATH is used. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation and removed before the cache is marked ready. This allows private repository/JFrog credentials to be used during preparation without exposing those configuration files to the validator. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
+Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup and prepares `assemble`, `testClasses`, and resolvable runtime classpaths (including `runtimeClasspath`, `testRuntimeClasspath`, and similarly named custom runtime classpaths) without executing tests. A project Gradle wrapper is preferred when present; otherwise Gradle from PATH is used. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation and removed before the cache is marked ready. This allows private repository/JFrog credentials to be used during preparation without exposing those configuration files to the validator. Consequently, the offline sandboxed build must not depend on user-specific init scripts for build semantics. If an organization requires such rules during offline execution, provide them as project configuration or via a separately administered credential-free sandbox configuration rather than relying on the user's Gradle home. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
 
 Relevant Gradle build/configuration changes generate a new dependency key. Source-only changes keep the existing cache.
 
