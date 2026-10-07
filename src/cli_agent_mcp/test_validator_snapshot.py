@@ -7,6 +7,11 @@ import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .filesystem_safety import (
+    _is_same_file,
+    _is_windows_reparse_point,
+    verified_directory_scandir,
+)
 from .test_validator_types import TestValidationError
 
 _IGNORED_DIRECTORY_NAMES = {
@@ -48,23 +53,6 @@ def _is_build_output_directory(root: Path, path: Path) -> bool:
     ):
         return True
     return False
-
-
-def _is_windows_reparse_point(file_stat: object) -> bool:
-    attributes = getattr(file_stat, "st_file_attributes", 0)
-    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x0400)
-    return bool(attributes & reparse_flag)
-
-
-def _is_same_file(
-    expected: os.stat_result,
-    actual: os.stat_result,
-) -> bool:
-    return (
-        expected.st_dev == actual.st_dev
-        and expected.st_ino == actual.st_ino
-        and stat.S_IFMT(expected.st_mode) == stat.S_IFMT(actual.st_mode)
-    )
 
 
 def _open_verified_regular_file(
@@ -119,14 +107,14 @@ class ProjectSnapshot:
     total_bytes: int
 
 
-def _safe_tree_files(
+def _safe_tree_entries(
     root: Path,
     *,
     max_file_bytes: int,
     max_project_bytes: int,
     max_snapshot_entries: int,
 ) -> tuple[tuple[tuple[Path, os.stat_result], ...], int]:
-    files: list[tuple[Path, os.stat_result]] = []
+    entries_for_archive: list[tuple[Path, os.stat_result]] = []
     total_bytes = 0
     entry_count = 0
 
@@ -147,46 +135,17 @@ def _safe_tree_files(
 
     def walk(directory: Path, expected: os.stat_result) -> None:
         nonlocal total_bytes, entry_count
-
-        directory_fd: int | None = None
-        scanner = None
-        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
-        directory_flag = getattr(os, "O_DIRECTORY", 0)
-        nofollow_flag = getattr(os, "O_NOFOLLOW", 0)
-
         try:
-            if directory_flag:
-                directory_fd = os.open(
-                    directory,
-                    flags | directory_flag | nofollow_flag,
-                )
-                opened = os.fstat(directory_fd)
-                if (
-                    not stat.S_ISDIR(opened.st_mode)
-                    or _is_windows_reparse_point(opened)
-                    or not _is_same_file(expected, opened)
-                ):
-                    raise TestValidationError(
-                        "Projektverzeichnis wurde während der "
-                        f"Snapshot-Erstellung verändert: {directory}"
-                    )
-                scanner = os.scandir(directory_fd)
-            else:
-                scanner = os.scandir(directory)
-                opened = os.stat(directory, follow_symlinks=False)
-                if (
-                    stat.S_ISLNK(opened.st_mode)
-                    or _is_windows_reparse_point(opened)
-                    or not stat.S_ISDIR(opened.st_mode)
-                    or not _is_same_file(expected, opened)
-                ):
-                    raise TestValidationError(
-                        "Projektverzeichnis wurde während der "
-                        f"Snapshot-Erstellung verändert: {directory}"
-                    )
-
-            with scanner as entries:
-                for entry in entries:
+            with verified_directory_scandir(
+                directory,
+                expected,
+                error_type=TestValidationError,
+                changed_message=(
+                    "Projektverzeichnis wurde während der "
+                    "Snapshot-Erstellung verändert"
+                ),
+            ) as scanned:
+                for entry in scanned:
                     entry_count += 1
                     if entry_count > max_snapshot_entries:
                         raise TestValidationError(
@@ -216,6 +175,7 @@ def _safe_tree_files(
                             continue
                         if _is_build_output_directory(root, path):
                             continue
+                        entries_for_archive.append((path, entry_stat))
                         walk(path, entry_stat)
                         continue
                     if not stat.S_ISREG(mode):
@@ -234,22 +194,16 @@ def _safe_tree_files(
                         raise TestValidationError(
                             "Projekt überschreitet das Größenlimit."
                         )
-                    files.append((path, entry_stat))
+                    entries_for_archive.append((path, entry_stat))
         except TestValidationError:
             raise
         except OSError as exc:
             raise TestValidationError(
                 f"Projektverzeichnis konnte nicht sicher gelesen werden: {directory}"
             ) from exc
-        finally:
-            if directory_fd is not None:
-                try:
-                    os.close(directory_fd)
-                except OSError:
-                    pass
 
     walk(root, root_stat)
-    return tuple(files), total_bytes
+    return tuple(entries_for_archive), total_bytes
 
 
 def create_project_snapshot(
@@ -260,17 +214,33 @@ def create_project_snapshot(
     max_snapshot_entries: int = 20_000,
 ) -> ProjectSnapshot:
     root = Path(os.path.abspath(project.expanduser()))
-    entries, total_bytes = _safe_tree_files(
+    entries, total_bytes = _safe_tree_entries(
         root,
         max_file_bytes=max_file_bytes,
         max_project_bytes=max_project_bytes,
         max_snapshot_entries=max_snapshot_entries,
     )
-    files = tuple(path for path, _ in entries)
+    files = tuple(
+        path
+        for path, entry_stat in entries
+        if stat.S_ISREG(entry_stat.st_mode)
+    )
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w") as archive:
         for path, expected in entries:
             relative = path.relative_to(root)
+            if stat.S_ISDIR(expected.st_mode):
+                info = tarfile.TarInfo(relative.as_posix())
+                info.type = tarfile.DIRTYPE
+                info.mtime = int(expected.st_mtime)
+                info.mode = stat.S_IMODE(expected.st_mode)
+                info.uid = 65532
+                info.gid = 65532
+                info.uname = ""
+                info.gname = ""
+                archive.addfile(info)
+                continue
+
             handle, opened = _open_verified_regular_file(path, expected)
             with handle:
                 info = tarfile.TarInfo(relative.as_posix())
