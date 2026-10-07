@@ -89,6 +89,18 @@ A Windows pipx installation exposes `cli-agent-test-cache.exe` for Windows-side 
 
 Python cache preparation **must run inside WSL**. Cache placement depends on where the MCP itself runs.
 
+### Python preparation/image compatibility
+
+Wheel preparation intentionally runs with the selected WSL Python interpreter so the user's normal pip/JFrog configuration and credentials stay outside the MCP and test container. Test execution, however, uses the administrator-configured pinned Docker image.
+
+The validator does **not** attempt to derive the target image's Python wheel tags or compare them with the preparation interpreter. Matching the environments is an explicit administrator responsibility. In practice, the administrator must keep the preparation interpreter and test image compatible in at least:
+
+- Python implementation and major/minor version when native wheels require it,
+- CPU architecture,
+- relevant Linux/libc/platform ABI for native wheels.
+
+For example, preparing native CPython 3.14 wheels and testing them in a CPython 3.12 image can make the sandboxed offline `pip install` fail. The cache metadata records preparation information for diagnostics, but cache readiness intentionally does not enforce ABI equality. This is an operational compatibility constraint, not a sandbox or credential-isolation guarantee.
+
 For a cli-agent/MCP installation running natively inside WSL, use the default native target:
 
 ```bash
@@ -211,7 +223,7 @@ cli-agent-test-cache prepare-maven C:\dev\my-project `
   --cache-root D:\cli-agent-dependency-cache\maven
 ```
 
-Preparation intentionally runs outside the MCP sandbox. Maven may use the user's normal `settings.xml` for repository, mirror and credential configuration. If user settings define profiles/active profiles that alter the effective build model, preparation fails closed; move that build semantics into the project POM before using the offline validator. Project-specific alternate settings via `-s` / `--settings` in `.mvn/maven.config` are also rejected. It builds an isolated local repository using:
+Preparation intentionally runs outside the MCP sandbox. Maven may use its normal user/global configuration, including the user's standard `~/.m2/settings.xml`, for repository, mirror and credential configuration. If user settings define profiles/active profiles that alter the effective build model, preparation fails closed; move that build semantics into the project POM before using the offline validator. Project-specific alternate settings via `-s` / `--settings` or `-gs` / `--global-settings` in `.mvn/maven.config` are also rejected, including attached/equals forms such as `-s../settings.xml` or `--global-settings=../settings.xml`. This restriction does not disable Maven's normal user/global settings. It builds an isolated local repository using:
 
 ```text
 mvn -B -Dmaven.repo.local=<cache>/repository dependency:go-offline
