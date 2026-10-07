@@ -9,6 +9,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from .cache_identity import native_project_identity, windows_project_identity
 from .gradle_cache import (
     GradleCacheEntry,
     default_gradle_cache_root,
@@ -82,11 +83,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=1800,
         help="Timeout per Maven preparation command in seconds.",
     )
-    prepare.add_argument(
-        "--force",
-        action="store_true",
-        help="Rebuild an already prepared cache entry.",
-    )
 
     prepare_gradle = subparsers.add_parser(
         "prepare-gradle",
@@ -134,11 +130,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=1800,
         help="Timeout for Gradle dependency preparation in seconds.",
     )
-    prepare_gradle.add_argument(
-        "--force",
-        action="store_true",
-        help="Rebuild an already prepared cache entry.",
-    )
 
     prepare_python = subparsers.add_parser(
         "prepare-python",
@@ -180,11 +171,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=1800,
         help="Timeout per pip wheel command in seconds.",
     )
-    prepare_python.add_argument(
-        "--force",
-        action="store_true",
-        help="Rebuild an already prepared cache entry.",
-    )
     return parser
 
 
@@ -221,6 +207,40 @@ def _resolve_cache_root(
             "--target windows ist nur unter Windows oder WSL verfügbar."
         )
     raise ValueError(f"Unbekanntes Cache-Ziel: {target}")
+
+
+def _project_identity_for_target(project: Path, target: str) -> str:
+    root = project.expanduser().resolve()
+    if target == "native":
+        return native_project_identity(root)
+    if target != "windows":
+        raise ValueError(f"Unbekanntes Cache-Ziel: {target}")
+    if sys.platform == "win32":
+        return native_project_identity(root)
+    if not is_wsl():
+        raise ValueError(
+            "--target windows ist nur unter Windows oder WSL verfügbar."
+        )
+    try:
+        completed = subprocess.run(  # nosec B603
+            ["wslpath", "-w", str(root)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(
+            "Der Windows-Projektpfad konnte aus WSL nicht bestimmt werden."
+        ) from exc
+    windows_path = completed.stdout.strip()
+    if completed.returncode != 0 or not windows_path:
+        raise RuntimeError(
+            "Der Windows-Projektpfad konnte aus WSL nicht bestimmt werden."
+        )
+    return windows_project_identity(windows_path)
 
 
 def _run(command: list[str], *, cwd: Path, timeout: int) -> None:
@@ -326,7 +346,7 @@ def prepare_maven(
     *,
     maven_command: str = "mvn",
     timeout: int = 1800,
-    force: bool = False,
+    project_identity: str | None = None,
 ) -> MavenCacheEntry:
     project = project.expanduser().resolve()
     if not project.is_dir():
@@ -335,7 +355,7 @@ def prepare_maven(
         raise ValueError("--timeout muss positiv sein.")
 
     _reject_semantic_maven_settings(project)
-    key = maven_dependency_key(project)
+    key = maven_dependency_key(project, project_identity=project_identity)
     root = cache_root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     entry = MavenCacheEntry(root=root, key=key)
@@ -343,14 +363,6 @@ def prepare_maven(
         raise RuntimeError(
             "Der Maven-Cache-Eintrag darf kein Symlink sein."
         )
-    if entry.directory.exists() and not force:
-        if entry.is_ready():
-            return entry
-        raise RuntimeError(
-            "Der Maven-Cache-Eintrag existiert, ist aber nicht vollständig. "
-            "Verwende --force zum Neuaufbau."
-        )
-
     executable = shutil.which(maven_command) or maven_command
     temporary = Path(tempfile.mkdtemp(prefix=f".{key}-", dir=root))
     repository = temporary / "repository"
@@ -422,7 +434,7 @@ def prepare_gradle(
     gradle_command: str | None = None,
     source_gradle_user_home: Path | None = None,
     timeout: int = 1800,
-    force: bool = False,
+    project_identity: str | None = None,
 ) -> GradleCacheEntry:
     project = project.expanduser().resolve()
     if not project.is_dir():
@@ -430,20 +442,12 @@ def prepare_gradle(
     if timeout <= 0:
         raise ValueError("--timeout muss positiv sein.")
 
-    key = gradle_dependency_key(project)
+    key = gradle_dependency_key(project, project_identity=project_identity)
     root = cache_root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     entry = GradleCacheEntry(root=root, key=key)
     if entry.directory.is_symlink():
         raise RuntimeError("Der Gradle-Cache-Eintrag darf kein Symlink sein.")
-    if entry.directory.exists() and not force:
-        if entry.is_ready():
-            return entry
-        raise RuntimeError(
-            "Der Gradle-Cache-Eintrag existiert, ist aber nicht vollständig. "
-            "Verwende --force zum Neuaufbau."
-        )
-
     command_prefix: list[str]
     if gradle_command:
         command_prefix = [shutil.which(gradle_command) or gradle_command]
@@ -587,7 +591,7 @@ def prepare_python(
     *,
     python_command: str = sys.executable,
     timeout: int = 1800,
-    force: bool = False,
+    project_identity: str | None = None,
 ) -> PythonCacheEntry:
     require_wsl()
     project = project.expanduser().resolve()
@@ -607,19 +611,11 @@ def prepare_python(
         else default_python_cache_root().resolve()
     )
     root.mkdir(parents=True, exist_ok=True)
-    key = python_dependency_key(project)
+    key = python_dependency_key(project, project_identity=project_identity)
     plan = python_dependency_plan(project)
     entry = PythonCacheEntry(root=root, key=key)
     if entry.directory.is_symlink():
         raise RuntimeError("Der Python-Cache-Eintrag darf kein Symlink sein.")
-    if entry.directory.exists() and not force:
-        if entry.is_ready():
-            return entry
-        raise RuntimeError(
-            "Der Python-Cache-Eintrag existiert, ist aber nicht vollständig. "
-            "Verwende --force zum Neuaufbau."
-        )
-
     temporary = Path(tempfile.mkdtemp(prefix=f".{key}-", dir=root))
     wheels = temporary / "wheels"
     wheels.mkdir(parents=True)
@@ -676,12 +672,16 @@ def main() -> None:
                 explicit=args.cache_root,
                 target=args.target,
             )
+            project_identity = _project_identity_for_target(
+                args.project,
+                args.target,
+            )
             entry = prepare_maven(
                 args.project,
                 cache_root,
                 maven_command=args.maven_command,
                 timeout=args.timeout,
-                force=args.force,
+                project_identity=project_identity,
             )
             print(f"Maven dependency key: {entry.key}")
             print(f"Cache repository: {entry.repository}")
@@ -694,13 +694,17 @@ def main() -> None:
                 explicit=args.cache_root,
                 target=args.target,
             )
+            project_identity = _project_identity_for_target(
+                args.project,
+                args.target,
+            )
             entry = prepare_gradle(
                 args.project,
                 cache_root,
                 gradle_command=args.gradle_command,
                 source_gradle_user_home=args.source_gradle_user_home,
                 timeout=args.timeout,
-                force=args.force,
+                project_identity=project_identity,
             )
             print(f"Gradle dependency key: {entry.key}")
             print(f"Cache Gradle user home: {entry.gradle_home}")
@@ -718,12 +722,16 @@ def main() -> None:
                 explicit=args.cache_root,
                 target=args.target,
             )
+            project_identity = _project_identity_for_target(
+                args.project,
+                args.target,
+            )
             entry = prepare_python(
                 args.project,
                 cache_root,
                 python_command=args.python_command,
                 timeout=args.timeout,
-                force=args.force,
+                project_identity=project_identity,
             )
             print(f"Python dependency key: {entry.key}")
             print(f"Wheel cache: {entry.wheels}")
