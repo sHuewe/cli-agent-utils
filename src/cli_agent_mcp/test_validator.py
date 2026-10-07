@@ -891,7 +891,12 @@ class DockerTestValidator:
                 "-Dmaven.repo.local=/tmp/m2",
             ]
             if selector:
-                command.append(f"-Dtest={selector}")
+                command.extend(
+                    [
+                        f"-Dtest={selector}",
+                        "-Dsurefire.failIfNoSpecifiedTests=false",
+                    ]
+                )
             command.append("test")
             if self.settings.maven_cache_root is not None:
                 entry = cache_entry(self.settings.maven_cache_root, project)
