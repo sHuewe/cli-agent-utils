@@ -1,86 +1,16 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
-import re
 import shutil
 import stat
 from dataclasses import dataclass
 from pathlib import Path
 
+from .cache_identity import project_cache_key
 from .test_validator_types import TestValidationError
 
-_CACHE_SCHEMA = "cli-agent-gradle-cache-v2"
-_IGNORED_DIRECTORIES = {
-    ".git",
-    ".idea",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".tox",
-    ".venv",
-    ".vscode",
-    "__pycache__",
-    "node_modules",
-    "venv",
-}
-_INCLUDE_BUILD_RE = re.compile(
-    r"""includeBuild\s*\(?\s*["']([^"']+)["']\s*\)?"""
-)
-
-
-_RELEVANT_NAMES = {
-    "build.gradle",
-    "build.gradle.kts",
-    "settings.gradle",
-    "settings.gradle.kts",
-    "gradle.properties",
-    "gradle-wrapper.properties",
-    "gradle-wrapper.jar",
-    "libs.versions.toml",
-    "verification-metadata.xml",
-}
-
-
-@dataclass(frozen=True)
-class GradleCacheEntry:
-    root: Path
-    key: str
-
-    @property
-    def directory(self) -> Path:
-        return self.root / self.key
-
-    @property
-    def gradle_home(self) -> Path:
-        return self.directory / "gradle-home"
-
-    @property
-    def metadata_file(self) -> Path:
-        return self.directory / "cache.json"
-
-    def is_ready(self) -> bool:
-        if (
-            self.directory.is_symlink()
-            or self.gradle_home.is_symlink()
-            or self.metadata_file.is_symlink()
-            or not self.gradle_home.is_dir()
-            or not self.metadata_file.is_file()
-        ):
-            return False
-        try:
-            metadata = json.loads(self.metadata_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return False
-        return (
-            isinstance(metadata, dict)
-            and metadata.get("schema") == _CACHE_SCHEMA
-            and metadata.get("key") == self.key
-            and metadata.get("ready") is True
-        )
-
-
+_CACHE_SCHEMA = "cli-agent-gradle-cache-v3"
 def default_gradle_cache_root() -> Path:
     return Path.home() / ".cli-agent" / "dependency-cache" / "gradle"
 
@@ -92,189 +22,11 @@ def default_source_gradle_user_home() -> Path:
     return (Path.home() / ".gradle").resolve()
 
 
-def _strip_gradle_comments(text: str) -> str:
-    result: list[str] = []
-    index = 0
-    quote: str | None = None
-    escaped = False
-    in_line_comment = False
-    in_block_comment = False
-
-    while index < len(text):
-        char = text[index]
-        next_char = text[index + 1] if index + 1 < len(text) else ""
-
-        if in_line_comment:
-            if char == "\n":
-                in_line_comment = False
-                result.append(char)
-            index += 1
-            continue
-
-        if in_block_comment:
-            if char == "*" and next_char == "/":
-                in_block_comment = False
-                index += 2
-            else:
-                if char == "\n":
-                    result.append(char)
-                index += 1
-            continue
-
-        if quote is not None:
-            result.append(char)
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == quote:
-                quote = None
-            index += 1
-            continue
-
-        if char in {'"', "'"}:
-            quote = char
-            result.append(char)
-            index += 1
-            continue
-        if char == "/" and next_char == "/":
-            in_line_comment = True
-            index += 2
-            continue
-        if char == "/" and next_char == "*":
-            in_block_comment = True
-            index += 2
-            continue
-
-        result.append(char)
-        index += 1
-
-    return "".join(result)
-
-
-def _included_build_roots(project: Path) -> tuple[Path, ...]:
-    roots: dict[str, Path] = {}
-    for name in ("settings.gradle", "settings.gradle.kts"):
-        settings = project / name
-        if settings.is_symlink():
-            raise TestValidationError(
-                f"Gradle-Konfiguration darf kein Symlink sein: {name}"
-            )
-        if not settings.is_file():
-            continue
-        try:
-            text = settings.read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            raise TestValidationError(
-                f"Gradle-Konfigurationsdatei konnte nicht gelesen werden: {name}"
-            ) from exc
-        uncommented = _strip_gradle_comments(text)
-        for match in _INCLUDE_BUILD_RE.finditer(uncommented):
-            raw = match.group(1)
-            candidate = (project / raw).resolve()
-            try:
-                relative = candidate.relative_to(project)
-            except ValueError as exc:
-                raise TestValidationError(
-                    f"Gradle includeBuild muss innerhalb des Projekts liegen: {raw!r}"
-                ) from exc
-            if candidate.is_symlink():
-                raise TestValidationError(
-                    f"Gradle includeBuild darf kein Symlink sein: {raw!r}"
-                )
-            if not candidate.is_dir():
-                raise TestValidationError(
-                    f"Gradle includeBuild existiert nicht: {raw!r}"
-                )
-            roots[relative.as_posix()] = candidate
-    return tuple(roots[name] for name in sorted(roots))
-
-
-_GENERATED_DIRECTORY_NAMES = {"build", "dist", "out", "target"}
-
-
-def _is_generated_gradle_directory(project: Path, path: Path) -> bool:
-    if path.name not in _GENERATED_DIRECTORY_NAMES:
-        return False
-
-    # A directory that contains its own Gradle build file is a real project
-    # directory, even if its name happens to be "build", "out", etc.
-    if (
-        (path / "build.gradle").is_file()
-        or (path / "build.gradle.kts").is_file()
-        or (path / "settings.gradle").is_file()
-        or (path / "settings.gradle.kts").is_file()
-    ):
-        return False
-
-    relative = path.relative_to(project)
-    if len(relative.parts) == 1:
-        return True
-
-    parent = path.parent
-    return (
-        (parent / "build.gradle").is_file()
-        or (parent / "build.gradle.kts").is_file()
-    )
-
-
-def _iter_relevant_files(project: Path) -> tuple[Path, ...]:
-    result: list[Path] = []
-
-    def walk(directory: Path, *, include_all_regular_files: bool = False) -> None:
-        try:
-            entries = sorted(os.scandir(directory), key=lambda item: item.name)
-        except OSError as exc:
-            raise TestValidationError(
-                f"Gradle-Projekt konnte nicht gelesen werden: {directory}"
-            ) from exc
-        for entry in entries:
-            path = Path(entry.path)
-            try:
-                mode = entry.stat(follow_symlinks=False).st_mode
-            except OSError as exc:
-                raise TestValidationError(
-                    f"Gradle-Projektpfad konnte nicht geprüft werden: {path}"
-                ) from exc
-            if stat.S_ISLNK(mode):
-                raise TestValidationError(
-                    f"Symlink in Gradle-Konfiguration ist nicht erlaubt: "
-                    f"{path.relative_to(project)}"
-                )
-            if stat.S_ISDIR(mode):
-                if (
-                    entry.name in _IGNORED_DIRECTORIES
-                    or _is_generated_gradle_directory(project, path)
-                ):
-                    continue
-                walk(
-                    path,
-                    include_all_regular_files=(
-                        include_all_regular_files or path == project / "buildSrc"
-                    ),
-                )
-            elif stat.S_ISREG(mode):
-                if (
-                    include_all_regular_files
-                    or entry.name in _RELEVANT_NAMES
-                    or entry.name.endswith(".gradle")
-                    or entry.name.endswith(".gradle.kts")
-                    or entry.name.endswith(".toml")
-                    or entry.name.endswith(".lockfile")
-                    or (
-                        "gradle/dependency-locks/"
-                        in path.relative_to(project).as_posix()
-                    )
-                ):
-                    result.append(path)
-
-    walk(project)
-    for included_root in _included_build_roots(project):
-        walk(included_root, include_all_regular_files=True)
-    return tuple(dict.fromkeys(result))
-
-
-def gradle_dependency_key(project: Path) -> str:
+def gradle_dependency_key(
+    project: Path,
+    *,
+    project_identity: str | None = None,
+) -> str:
     root = project.expanduser().resolve()
     if not root.is_dir():
         raise TestValidationError(f"Gradle-Projekt existiert nicht: {root}")
@@ -285,32 +37,24 @@ def gradle_dependency_key(project: Path) -> str:
         raise TestValidationError(
             "Gradle-Projekt benötigt build.gradle oder build.gradle.kts."
         )
-
-    files = sorted(
-        _iter_relevant_files(root),
-        key=lambda path: path.relative_to(root).as_posix(),
+    return project_cache_key(
+        "gradle",
+        root,
+        project_identity=project_identity,
     )
-    digest = hashlib.sha256()
-    digest.update((_CACHE_SCHEMA + "\0").encode("utf-8"))
-    for path in files:
-        relative = path.relative_to(root).as_posix()
-        try:
-            content = path.read_bytes()
-        except OSError as exc:
-            raise TestValidationError(
-                f"Gradle-Konfigurationsdatei konnte nicht gelesen werden: {relative}"
-            ) from exc
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(len(content).to_bytes(8, "big"))
-        digest.update(content)
-        digest.update(b"\0")
-    return "gradle-" + digest.hexdigest()
 
 
-def gradle_cache_entry(cache_root: Path, project: Path) -> GradleCacheEntry:
+def gradle_cache_entry(
+    cache_root: Path,
+    project: Path,
+    *,
+    project_identity: str | None = None,
+) -> GradleCacheEntry:
     root = cache_root.expanduser().resolve()
-    return GradleCacheEntry(root=root, key=gradle_dependency_key(project))
+    return GradleCacheEntry(
+        root=root,
+        key=gradle_dependency_key(project, project_identity=project_identity),
+    )
 
 
 def validate_gradle_cache_tree(directory: Path) -> int:
