@@ -54,10 +54,17 @@ def _is_sensitive_key(value: object) -> bool:
 
 
 def _contains_sensitive_key_hint(text: str) -> bool:
-    # This is deliberately conservative and is only used when a format-aware
-    # parser cannot safely parse a candidate config file. False positives only
-    # suppress returned logs; false negatives could expose a secret.
     return _SENSITIVE_KEY.search(text) is not None
+
+
+def _contains_sensitive_key_hint_bytes(content: bytes) -> bool:
+    for encoding in ("utf-8-sig", "utf-16", "latin-1"):
+        try:
+            if _contains_sensitive_key_hint(content.decode(encoding)):
+                return True
+        except UnicodeError:
+            continue
+    return False
 
 
 def _iter_scalar_values(value: object) -> Iterator[str]:
@@ -139,29 +146,47 @@ def _iter_yaml_secret_values(text: str) -> Iterator[str]:
             yield from _iter_mapping_secret_values(document)
 
 
-def _parse_structured_secret_values(path: Path, text: str) -> tuple[str, ...]:
+def _parse_dotenv_secret_values(text: str) -> tuple[str, ...]:
+    values: list[str] = []
+    for binding in parse_stream(io.StringIO(text)):
+        if binding.error:
+            if _contains_sensitive_key_hint(binding.original.string):
+                raise SecretDiscoveryLimitError(
+                    "Eine sensitive .env-Zeile konnte nicht sicher geparst werden."
+                )
+            continue
+        if (
+            binding.key is not None
+            and _is_sensitive_key(binding.key)
+            and binding.value is not None
+        ):
+            values.extend(_iter_scalar_values(binding.value))
+    return tuple(values)
+
+
+def _parse_structured_secret_values(path: Path, content: bytes) -> tuple[str, ...]:
     suffix = path.suffix.casefold()
     name = path.name.casefold()
 
     try:
         if suffix == ".json":
-            parsed: Any = json.loads(text)
+            parsed: Any = json.loads(content)
             return tuple(_iter_mapping_secret_values(parsed))
         if suffix == ".toml":
-            parsed = tomllib.loads(text)
+            parsed = tomllib.load(io.BytesIO(content))
             return tuple(_iter_mapping_secret_values(parsed))
         if suffix in {".yaml", ".yml"}:
-            return tuple(_iter_yaml_secret_values(text))
+            return tuple(_iter_yaml_secret_values(content))
         if suffix == ".properties":
-            parsed = javaproperties.loads(text)
+            parsed = javaproperties.loads(content)
             return tuple(_iter_mapping_secret_values(parsed))
         if name == ".env" or name.startswith(".env."):
-            parsed = dotenv_values(stream=io.StringIO(text), interpolate=False)
-            return tuple(_iter_mapping_secret_values(parsed))
+            text = content.decode("utf-8-sig")
+            return _parse_dotenv_secret_values(text)
     except SecretDiscoveryLimitError:
         raise
     except Exception as exc:
-        if _contains_sensitive_key_hint(text):
+        if _contains_sensitive_key_hint_bytes(content):
             raise SecretDiscoveryLimitError(
                 f"{path.name} konnte trotz möglicher sensitiver Schlüssel "
                 "nicht sicher geparst werden."
@@ -169,7 +194,6 @@ def _parse_structured_secret_values(path: Path, text: str) -> tuple[str, ...]:
         return ()
 
     return ()
-
 
 def discover_secret_values(
     archive: bytes,
@@ -211,9 +235,7 @@ def discover_secret_values(
             content = extracted.read(max_file_bytes + 1)
             if len(content) > max_file_bytes:
                 continue
-            text = content.decode("utf-8", errors="replace")
-
-            for candidate in _parse_structured_secret_values(path, text):
+            for candidate in _parse_structured_secret_values(path, content):
                 add(candidate)
 
     return tuple(sorted(values, key=len, reverse=True))
