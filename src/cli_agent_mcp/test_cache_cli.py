@@ -24,7 +24,9 @@ from .maven_cache import (
 )
 from .python_cache import (
     PythonCacheEntry,
-    default_wsl_python_cache_root,
+    default_python_cache_root,
+    default_wsl_windows_cache_root,
+    is_wsl,
     python_dependency_key,
     python_dependency_plan,
     require_wsl,
@@ -50,10 +52,19 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument(
         "--cache-root",
         type=Path,
-        default=default_maven_cache_root(),
+        default=None,
         help=(
-            "Shared Maven cache root. Configure the same absolute path as "
-            "--maven-cache-root for cli-agent-test-validator-mcp."
+            "Explicit shared Maven cache root. Overrides --target."
+        ),
+    )
+    prepare.add_argument(
+        "--target",
+        choices=("native", "windows"),
+        default="native",
+        help=(
+            "Cache location target. 'native' uses this environment's "
+            "~/.cli-agent cache; 'windows' targets the Windows user's cache "
+            "when preparation runs in WSL."
         ),
     )
     prepare.add_argument(
@@ -81,10 +92,19 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_gradle.add_argument(
         "--cache-root",
         type=Path,
-        default=default_gradle_cache_root(),
+        default=None,
         help=(
-            "Shared Gradle cache root. Configure the same absolute path as "
-            "--gradle-cache-root for cli-agent-test-validator-mcp."
+            "Explicit shared Gradle cache root. Overrides --target."
+        ),
+    )
+    prepare_gradle.add_argument(
+        "--target",
+        choices=("native", "windows"),
+        default="native",
+        help=(
+            "Cache location target. 'native' uses this environment's "
+            "~/.cli-agent cache; 'windows' targets the Windows user's cache "
+            "when preparation runs in WSL."
         ),
     )
     prepare_gradle.add_argument(
@@ -129,9 +149,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "Python cache root. By default the Windows user's "
-            "~/.cli-agent/dependency-cache/python directory is resolved "
-            "from WSL so the Windows MCP can read the same cache."
+            "Explicit Python cache root. Overrides --target."
+        ),
+    )
+    prepare_python.add_argument(
+        "--target",
+        choices=("native", "windows"),
+        default="native",
+        help=(
+            "Cache location target. 'native' uses the WSL user's "
+            "~/.cli-agent cache for a WSL-hosted MCP; 'windows' writes to "
+            "the Windows user's corresponding cache for a Windows-hosted MCP."
         ),
     )
     prepare_python.add_argument(
@@ -154,6 +182,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Rebuild an already prepared cache entry.",
     )
     return parser
+
+
+def _resolve_cache_root(
+    cache_name: str,
+    *,
+    explicit: Path | None,
+    target: str,
+) -> Path:
+    if explicit is not None:
+        if target != "native":
+            raise ValueError("--cache-root kann nicht mit --target windows kombiniert werden.")
+        return explicit.expanduser().resolve()
+    if target == "native":
+        defaults = {
+            "maven": default_maven_cache_root,
+            "gradle": default_gradle_cache_root,
+            "python": default_python_cache_root,
+        }
+        return defaults[cache_name]().expanduser().resolve()
+    if target == "windows":
+        if sys.platform == "win32":
+            defaults = {
+                "maven": default_maven_cache_root,
+                "gradle": default_gradle_cache_root,
+                "python": default_python_cache_root,
+            }
+            return defaults[cache_name]().expanduser().resolve()
+        if is_wsl():
+            return default_wsl_windows_cache_root(cache_name).resolve()
+        raise ValueError(
+            "--target windows ist nur unter Windows oder WSL verfügbar."
+        )
+    raise ValueError(f"Unbekanntes Cache-Ziel: {target}")
 
 
 def _run(command: list[str], *, cwd: Path, timeout: int) -> None:
@@ -340,7 +401,7 @@ def prepare_python(
     root = (
         cache_root.expanduser().resolve()
         if cache_root is not None
-        else default_wsl_python_cache_root().resolve()
+        else default_python_cache_root().resolve()
     )
     root.mkdir(parents=True, exist_ok=True)
     key = python_dependency_key(project)
@@ -409,9 +470,14 @@ def main() -> None:
     args = build_parser().parse_args()
     try:
         if args.command == "prepare-maven":
+            cache_root = _resolve_cache_root(
+                "maven",
+                explicit=args.cache_root,
+                target=args.target,
+            )
             entry = prepare_maven(
                 args.project,
-                args.cache_root,
+                cache_root,
                 maven_command=args.maven_command,
                 timeout=args.timeout,
                 force=args.force,
@@ -422,9 +488,14 @@ def main() -> None:
             return
 
         if args.command == "prepare-gradle":
+            cache_root = _resolve_cache_root(
+                "gradle",
+                explicit=args.cache_root,
+                target=args.target,
+            )
             entry = prepare_gradle(
                 args.project,
-                args.cache_root,
+                cache_root,
                 gradle_command=args.gradle_command,
                 source_gradle_user_home=args.source_gradle_user_home,
                 timeout=args.timeout,
@@ -441,9 +512,14 @@ def main() -> None:
                 "Building Linux-compatible wheels with the current user's "
                 "pip/PyPI configuration."
             )
+            cache_root = _resolve_cache_root(
+                "python",
+                explicit=args.cache_root,
+                target=args.target,
+            )
             entry = prepare_python(
                 args.project,
-                args.cache_root,
+                cache_root,
                 python_command=args.python_command,
                 timeout=args.timeout,
                 force=args.force,
