@@ -223,7 +223,7 @@ cli-agent-test-cache prepare-maven C:\dev\my-project `
   --cache-root D:\cli-agent-dependency-cache\maven
 ```
 
-Preparation intentionally runs outside the MCP sandbox. Maven may use its normal user/global configuration, including the user's standard `~/.m2/settings.xml`, for repository, mirror and credential configuration. If user settings define profiles/active profiles that alter the effective build model, preparation fails closed; move that build semantics into the project POM before using the offline validator. Project-specific alternate settings via `-s` / `--settings` or `-gs` / `--global-settings` in `.mvn/maven.config` are also rejected, including attached/equals forms such as `-s../settings.xml` or `--global-settings=../settings.xml`. This restriction does not disable Maven's normal user/global settings. It builds an isolated local repository using:
+Preparation intentionally runs outside the MCP sandbox. Maven may use its normal user/global configuration, including the user's standard `~/.m2/settings.xml`, for repository, mirror and credential configuration. If user settings define profiles/active profiles that alter the effective build model, preparation fails closed; move that build semantics into the project POM before using the offline validator. Project-specific alternate settings via `-s` / `--settings` or `-gs` / `--global-settings` in `.mvn/maven.config` are also rejected, including attached/equals forms such as `-s../settings.xml` or `--global-settings=../settings.xml`. Alternate project files via `-f` / `--file` are also rejected; the v1 validator uses the normal project `pom.xml`. This restriction does not disable Maven's normal user/global settings. It builds an isolated local repository using:
 
 ```text
 mvn -B -Dmaven.repo.local=<cache>/repository dependency:go-offline
@@ -281,7 +281,7 @@ cli-agent-test-cache prepare-gradle . --target windows
 
 For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`.
 
-The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, all `*.versions.toml` version catalogs, verification metadata and the full source/configuration trees of literal local `includeBuild(...)` builds such as `build-logic`. Ordinary application source-only changes therefore keep the same key.
+The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, dependency lock state (`*.lockfile` plus legacy `gradle/dependency-locks/*` files), all `*.versions.toml` version catalogs, verification metadata and the full source/configuration trees of literal local `includeBuild(...)` builds such as `build-logic`. Ordinary application source-only changes therefore keep the same key.
 
 Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. The same init script disables every Gradle task of type `Test`, so project task wiring cannot cause tests to run during preparation.
 
