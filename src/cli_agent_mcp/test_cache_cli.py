@@ -256,7 +256,22 @@ def _default_maven_settings_path() -> Path:
     return Path.home() / ".m2" / "settings.xml"
 
 
-def _reject_semantic_maven_settings(project: Path) -> None:
+def _default_global_maven_settings_path(maven_executable: str) -> Path | None:
+    configured_home = os.environ.get("MAVEN_HOME") or os.environ.get("M2_HOME")
+    if configured_home:
+        return Path(configured_home).expanduser() / "conf" / "settings.xml"
+
+    executable = Path(maven_executable).expanduser()
+    if executable.parent.name.casefold() == "bin":
+        return executable.parent.parent / "conf" / "settings.xml"
+    return None
+
+
+def _reject_semantic_maven_settings(
+    project: Path,
+    *,
+    global_settings: Path | None = None,
+) -> None:
     maven_config = project / ".mvn" / "maven.config"
     if maven_config.is_file():
         try:
@@ -311,29 +326,36 @@ def _reject_semantic_maven_settings(project: Path) -> None:
                 "unterstützt. Verwende die normale pom.xml."
             )
 
-    settings = _default_maven_settings_path()
-    if not settings.is_file():
-        return
-    try:
-        root = ET.parse(settings).getroot()
-    except (OSError, ET.ParseError) as exc:
-        raise RuntimeError(
-            "Maven settings.xml konnte nicht sicher ausgewertet werden."
-        ) from exc
-
     def local_name(tag: str) -> str:
         return tag.rsplit("}", 1)[-1]
 
-    for element in root.iter():
-        name = local_name(element.tag)
-        if name in {"profiles", "activeProfiles"} and list(element):
+    settings_files = [("user", _default_maven_settings_path())]
+    if global_settings is not None:
+        settings_files.append(("global", global_settings))
+
+    seen: set[Path] = set()
+    for scope, settings in settings_files:
+        normalized = settings.expanduser().absolute()
+        if normalized in seen or not settings.is_file():
+            continue
+        seen.add(normalized)
+        try:
+            root = ET.parse(settings).getroot()
+        except (OSError, ET.ParseError) as exc:
             raise RuntimeError(
-                "Maven settings.xml enthält Build-Semantik über "
-                f"{name}. Der Offline-Validator unterstützt settings.xml nur "
-                "für Repository-/Mirror-/Credential-Konfiguration. "
-                "Verschiebe aktive Profile/Properties in die Projekt-POM "
-                "oder verwende eine settings.xml ohne Build-Semantik."
-            )
+                f"Maven {scope} settings.xml konnte nicht sicher ausgewertet werden."
+            ) from exc
+
+        for element in root.iter():
+            name = local_name(element.tag)
+            if name in {"profiles", "activeProfiles"} and list(element):
+                raise RuntimeError(
+                    f"Maven {scope} settings.xml enthält Build-Semantik über "
+                    f"{name}. Der Offline-Validator unterstützt settings.xml nur "
+                    "für Repository-/Mirror-/Credential-Konfiguration. "
+                    "Verschiebe aktive Profile/Properties in die Projekt-POM "
+                    "oder verwende settings.xml ohne Build-Semantik."
+                )
 
 
 def prepare_maven(
@@ -350,7 +372,11 @@ def prepare_maven(
     if timeout <= 0:
         raise ValueError("--timeout muss positiv sein.")
 
-    _reject_semantic_maven_settings(project)
+    executable = shutil.which(maven_command) or maven_command
+    _reject_semantic_maven_settings(
+        project,
+        global_settings=_default_global_maven_settings_path(executable),
+    )
     key = maven_dependency_key(project, project_identity=project_identity)
     root = cache_root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -359,7 +385,6 @@ def prepare_maven(
         raise RuntimeError(
             "Der Maven-Cache-Eintrag darf kein Symlink sein."
         )
-    executable = shutil.which(maven_command) or maven_command
     temporary = Path(tempfile.mkdtemp(prefix=f".{key}-", dir=root))
     repository = temporary / "repository"
     repository.mkdir(parents=True)
