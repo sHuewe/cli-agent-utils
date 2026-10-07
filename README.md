@@ -135,7 +135,7 @@ python -m pip install --no-index --find-links /tmp/python-wheels --target /tmp/p
 
 If the Python dependency files change and the matching cache is missing, the MCP returns `dependencies_not_prepared` and explicitly tells the user to run `prepare-python` under WSL.
 
-For Maven, the validator and preparation CLI use the same per-user cache root by default: `~/.cli-agent/dependency-cache/maven`. The admin policy therefore does **not** need a project-specific or user-specific cache path. An administrator can override the root once with `--maven-cache-root` if required. Each Maven dependency state gets a deterministic key from the root `pom.xml` and root `.mvn` configuration. Maven multi-module/reactor projects (`<modules>`) are intentionally not supported by the v1 validator and preparation fails closed; support can be added in a later version. The user normally prepares that key in the same host environment as the MCP with the normal Maven/JFrog setup:
+For Maven, the validator and preparation CLI use the same per-user cache root by default: `~/.cli-agent/dependency-cache/maven`. The admin policy therefore does **not** need a project-specific or user-specific cache path. An administrator can override the root once with `--maven-cache-root` if required. Each Maven dependency state gets a deterministic key from the root `pom.xml` and root `.mvn` configuration. Maven multi-module/reactor projects (`<modules>`) are intentionally not supported by the v1 validator and preparation fails closed; support can be added in a later version. Local parent-POM resolution is also unsupported in v1: projects inheriting from a repository parent must use an explicitly empty `<relativePath/>` so Maven does not resolve a parent file from the workspace. The user normally prepares that key in the same host environment as the MCP with the normal Maven/JFrog setup:
 
 ```powershell
 cli-agent-test-cache prepare-maven C:\dev\my-project
@@ -170,7 +170,7 @@ cli-agent-test-cache prepare-gradle . --target windows --force
 
 For a cli-agent/MCP installation that itself runs inside WSL, omit `--target windows`; the default `--target native` correctly uses the WSL user's own cache.
 
-The images must already exist in the Docker daemon because the validator uses `--pull never`.
+The images must already exist in the Docker daemon because the validator uses `--pull never`. The pinned images must provide a POSIX `sh` plus `tar`, `cat`, `cp`, `mkdir`, and `sleep`; `sleep` is used by the fixed container keepalive entrypoint while validation commands run via `docker exec`.
 
 ### cli-agent admin configuration
 
