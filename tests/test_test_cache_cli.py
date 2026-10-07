@@ -510,3 +510,68 @@ def test_prepare_python_resolves_requirements_once(
 
     assert len(calls) == 1
     assert calls[0][-2:] == ["-r", "requirements.txt"]
+
+
+
+def test_python_plan_rejects_path_that_only_contains_double_equals(
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    vendor = project / "vendor"
+    vendor.mkdir(parents=True)
+    (project / "requirements.txt").write_text(
+        "./vendor/pkg==1\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception, match="package==version"):
+        python_dependency_plan(project)
+
+
+def test_prepare_maven_rejects_compact_settings_option(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import pytest
+
+    project = tmp_path / "project"
+    config = project / ".mvn"
+    config.mkdir(parents=True)
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    (config / "maven.config").write_text(
+        "-s../settings.xml\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
+        lambda: tmp_path / "missing-settings.xml",
+    )
+
+    with pytest.raises(RuntimeError, match="Projekt-spezifische Maven-Settings"):
+        prepare_maven(project, tmp_path / "cache")
+
+
+def test_prepare_maven_rejects_long_settings_equals_option(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import pytest
+
+    project = tmp_path / "project"
+    config = project / ".mvn"
+    config.mkdir(parents=True)
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    (config / "maven.config").write_text(
+        "--settings=../settings.xml\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
+        lambda: tmp_path / "missing-settings.xml",
+    )
+
+    with pytest.raises(RuntimeError, match="Projekt-spezifische Maven-Settings"):
+        prepare_maven(project, tmp_path / "cache")
