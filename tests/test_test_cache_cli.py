@@ -664,3 +664,61 @@ def test_python_interpreter_probe_rejects_windows_python(
 
     with pytest.raises(RuntimeError, match="Linux-Python"):
         _python_interpreter_metadata("python.exe", timeout=30)
+
+
+
+def test_prepare_maven_rejects_alternate_pom_option(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import pytest
+
+    project = tmp_path / "project"
+    config = project / ".mvn"
+    config.mkdir(parents=True)
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    (project / "alt.xml").write_text("<project/>", encoding="utf-8")
+    (config / "maven.config").write_text(
+        "-falt.xml\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
+        lambda: tmp_path / "missing-settings.xml",
+    )
+
+    with pytest.raises(RuntimeError, match="Alternative Maven-Projektdateien"):
+        prepare_maven(project, tmp_path / "cache")
+
+
+def test_prepare_maven_allows_fail_at_end_option(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = tmp_path / "project"
+    config = project / ".mvn"
+    config.mkdir(parents=True)
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    (config / "maven.config").write_text("-fae\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
+        lambda: tmp_path / "missing-settings.xml",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.shutil.which",
+        lambda _command: "mvn",
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
+        calls.append(command)
+        repo_arg = next(
+            value for value in command if value.startswith("-Dmaven.repo.local=")
+        )
+        Path(repo_arg.split("=", 1)[1]).mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr("cli_agent_mcp.test_cache_cli._run", fake_run)
+
+    prepare_maven(project, tmp_path / "cache")
+
+    assert len(calls) == 2
