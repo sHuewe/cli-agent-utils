@@ -227,8 +227,6 @@ mvn -o -B -Dmaven.repo.local=/tmp/m2 -DskipTests package
 
 This intentionally skips test execution while still compiling/package-building the project. Test-time modifications happen only in container tmpfs and disappear with the container.
 
-If `--maven-cache-root` is omitted, the legacy immutable image seed at `/opt/cli-agent-test-cache/maven` remains available for compatibility.
-
 ### Gradle
 
 The Gradle image must contain Gradle. By default both validator and preparation CLI use:
@@ -252,7 +250,7 @@ cli-agent-test-cache prepare-gradle . --target windows
 
 For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`.
 
-The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, version catalogs and verification metadata. Source-only changes therefore keep the same key.
+The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, all `*.versions.toml` version catalogs and verification metadata. Source-only changes therefore keep the same key.
 
 Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. This downloads runtime-only and test-runtime-only dependencies without executing tests.
 
