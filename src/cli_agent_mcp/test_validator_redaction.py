@@ -160,6 +160,11 @@ def _parse_dotenv_secret_values(text: str) -> tuple[str, ...]:
             and _is_sensitive_key(binding.key)
             and binding.value is not None
         ):
+            if "${" in binding.value:
+                raise SecretDiscoveryLimitError(
+                    "Eine sensitive .env-Zeile verwendet Variableninterpolation; "
+                    "sichere Secret-Erkennung ist nicht vollständig möglich."
+                )
             values.extend(_iter_scalar_values(binding.value))
     return tuple(values)
 
