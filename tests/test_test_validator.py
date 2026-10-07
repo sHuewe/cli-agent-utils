@@ -1188,6 +1188,28 @@ def test_yaml_sensitive_block_scalar_fails_closed(tmp_path: Path) -> None:
         discover_secret_values(snapshot.archive)
 
 
+def test_yaml_sensitive_block_scalar_with_indentation_indicator_fails_closed(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "config.yml"
+    config.write_text(
+        "api_token: |2-\n"
+        "  line-one\n"
+        "  line-two\n"
+        "password: >+2\n"
+        "  another-secret\n",
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    with pytest.raises(SecretDiscoveryLimitError, match="Block-Scalar"):
+        discover_secret_values(snapshot.archive)
+
+
 def test_json_secret_discovery_decodes_escaped_values(tmp_path: Path) -> None:
     config = tmp_path / "config.json"
     config.write_text(
