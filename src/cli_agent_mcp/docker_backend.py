@@ -16,12 +16,6 @@ from .filesystem_safety import (
 )
 
 
-def _is_windows_reparse_point(file_stat: object) -> bool:
-    attributes = getattr(file_stat, "st_file_attributes", 0)
-    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x0400)
-    return bool(attributes & reparse_flag)
-
-
 def _iter_safe_stream_paths(source: Path):
     try:
         source_stat = os.stat(source, follow_symlinks=False)
@@ -77,14 +71,6 @@ def _iter_safe_stream_paths(source: Path):
             ) from exc
 
     yield from walk(source, source_stat)
-
-
-ef _same_file(expected: os.stat_result, actual: os.stat_result) -> bool:
-    return (
-        expected.st_dev == actual.st_dev
-        and expected.st_ino == actual.st_ino
-        and stat.S_IFMT(expected.st_mode) == stat.S_IFMT(actual.st_mode)
-    )
 
 
 def _open_verified_stream_file(path: Path, expected: os.stat_result):
