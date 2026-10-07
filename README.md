@@ -62,7 +62,7 @@ It does **not** expose an arbitrary shell, generic Docker command, arbitrary Mav
 
 ### Security model
 
-The validator requires at least `workspace_access = "read"` from `cli-agent`. The workspace path and effective permission are supplied by the Core through the reserved environment variables:
+The validator requires at least `workspace_access = "read"` from `cli-agent`. Its threat model covers untrusted project contents and model-triggered execution, not a separate malicious host process that already has permission to race and mutate the workspace concurrently. The workspace path and effective permission are supplied by the Core through the reserved environment variables:
 
 ```text
 CLI_AGENT_WORKSPACE_ACCESS
@@ -89,7 +89,7 @@ For every test run the validator:
 - removes the short-lived container after the run,
 - enforces transfer timeouts while project/dependency TAR streams are still being written, so a blocked extraction cannot bypass the configured timeout.
 
-Project files such as `.env` are intentionally part of the project snapshot when they are present in the selected project because many real test suites require their normal configuration files. Test code can therefore read them inside the no-network sandbox. Before output is returned to the model, common configuration formats are scanned for sensitive values and exact matches plus common credential patterns are redacted. Secret discovery and redaction are bounded; if the configured safety bounds are exceeded, the validator suppresses the test output rather than returning potentially unredacted logs. Redaction remains defense in depth rather than a complete confidentiality boundary against deliberately transformed output.
+Project files such as `.env` are intentionally part of the project snapshot when they are present in the selected project because many real test suites require their normal configuration files. Test code can therefore read them inside the no-network sandbox. Before output is returned to the model, common configuration formats are scanned for sensitive values and exact matches plus common credential patterns are redacted. Secret discovery and redaction are bounded; if the fixed safety bounds are exceeded, the validator suppresses the test output rather than returning potentially unredacted logs. Redaction remains defense in depth rather than a complete confidentiality boundary against deliberately transformed output.
 
 ### Required Docker images
 
