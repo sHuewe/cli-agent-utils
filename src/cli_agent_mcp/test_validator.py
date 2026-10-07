@@ -341,7 +341,12 @@ class DockerTestValidator:
             max_project_bytes=self.settings.max_project_bytes,
             max_snapshot_entries=self.settings.max_snapshot_entries,
         )
-        redactor = OutputRedactor(discover_secret_values(snapshot.archive))
+        redactor = OutputRedactor(
+            discover_secret_values(
+                snapshot.archive,
+                max_file_bytes=self.settings.max_file_bytes,
+            )
+        )
         container_name = f"cli-agent-test-validator-{uuid.uuid4().hex[:12]}"
         created = False
         verified_policy: dict[str, Any] | None = None
