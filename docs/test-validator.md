@@ -230,7 +230,7 @@ mvn -B -Dmaven.repo.local=<cache>/repository dependency:go-offline
 mvn -B -Dmaven.repo.local=<cache>/repository -DskipTests package
 ```
 
-The preparation command stores only the generated Maven repository and a small readiness marker under `maven-<sha256>`; it does not copy `settings.xml` or JFrog credentials into the prepared cache.
+Before promotion, the preparer removes Maven resolver provenance files named `_remote.repositories`. Those files tie downloaded artifacts to remote repository IDs such as a company mirror; the sandbox deliberately does not receive the user's mirror/settings configuration. Removing only this provenance makes the prepared repository an explicit offline snapshot while keeping `settings.xml`, JFrog credentials and other user configuration out of the cache. The preparation command then stores only the sanitized generated Maven repository and a small readiness marker under `maven-<sha256>`.
 
 During a test or build the validator computes the same key. If no matching ready cache exists, it returns:
 
@@ -281,7 +281,7 @@ cli-agent-test-cache prepare-gradle . --target windows --force
 
 For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`.
 
-The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, dependency lock state (`*.lockfile` plus legacy `gradle/dependency-locks/*` files), all TOML files (including custom-named version catalogs), verification metadata and the full source/configuration trees of literal local `includeBuild(...)` builds such as `build-logic`. Ordinary application source-only changes therefore keep the same key.
+The command derives a deterministic key from Gradle build/configuration files. Generated output directories are excluded only contextually: a nested directory named `build`, `out`, `target` or `dist` that itself contains Gradle project files is treated as a real project directory and its build files are hashed. The key includes `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, dependency lock state (`*.lockfile` plus legacy `gradle/dependency-locks/*` files), all TOML files (including custom-named version catalogs), verification metadata and the full source/configuration trees of literal local `includeBuild(...)` builds such as `build-logic`. Ordinary application source-only changes therefore keep the same key.
 
 Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. The same init script disables every Gradle task of type `Test`, so project task wiring cannot cause tests to run during preparation.
 
