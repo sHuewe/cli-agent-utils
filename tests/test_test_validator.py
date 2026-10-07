@@ -1223,3 +1223,34 @@ def test_output_redactor_handles_many_exact_values_in_single_pass() -> None:
 
     assert not any(secret in result for secret in secrets[::100])
     assert "<redacted>" in result
+
+
+def test_output_redactor_redacts_pem_private_key_block() -> None:
+    redactor = OutputRedactor()
+    output = (
+        "before\n"
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        "sensitive-key-material\n"
+        "-----END RSA PRIVATE KEY-----\n"
+        "after"
+    )
+
+    result = redactor.redact(output)
+
+    assert "sensitive-key-material" not in result
+    assert "<redacted-private-key>" in result
+    assert "before" in result
+    assert "after" in result
+
+
+def test_output_redactor_handles_many_unmatched_private_key_markers() -> None:
+    redactor = OutputRedactor()
+    output = (
+        "-----BEGIN PRIVATE KEY-----\n" * 5000
+        + "no matching end marker"
+    )
+
+    result = redactor.redact(output)
+
+    assert result.endswith("no matching end marker")
+    assert result.count("-----BEGIN PRIVATE KEY-----") == 5000
