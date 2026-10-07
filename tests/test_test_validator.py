@@ -193,6 +193,10 @@ def test_output_redactor_removes_known_and_generic_secrets() -> None:
 def test_python_tests_use_fixed_no_shell_command_and_redact_output(
     tmp_path: Path,
 ) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "# no external dependencies\n",
+        encoding="utf-8",
+    )
     (tmp_path / ".env").write_text(
         "API_TOKEN=super-secret-value\n",
         encoding="utf-8",
