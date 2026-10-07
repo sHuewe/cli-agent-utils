@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess  # nosec B404
 import tarfile
+import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from dataclasses import dataclass
@@ -103,40 +104,66 @@ class DockerBackend:
             stderr=subprocess.PIPE,
         )
         assert process.stdin is not None
+        stdin = process.stdin
+        process.stdin = None
+        writer_error: list[BaseException] = []
+
+        def write_archive() -> None:
+            try:
+                with tarfile.open(fileobj=stdin, mode="w|") as archive:
+                    for path in sorted(source.rglob("*")):
+                        if path.is_symlink():
+                            raise ValueError(
+                                "Symlink in streamed directory is not allowed: "
+                                f"{path}"
+                            )
+                        relative = path.relative_to(source).as_posix()
+                        if path.is_dir():
+                            info = archive.gettarinfo(str(path), arcname=relative)
+                            info.uid = 65532
+                            info.gid = 65532
+                            info.uname = ""
+                            info.gname = ""
+                            archive.addfile(info)
+                        elif path.is_file():
+                            info = archive.gettarinfo(str(path), arcname=relative)
+                            info.uid = 65532
+                            info.gid = 65532
+                            info.uname = ""
+                            info.gname = ""
+                            with path.open("rb") as handle:
+                                archive.addfile(info, handle)
+                        else:
+                            raise ValueError(
+                                "Unsupported filesystem entry in streamed "
+                                f"directory: {path}"
+                            )
+            except BaseException as exc:
+                writer_error.append(exc)
+            finally:
+                try:
+                    stdin.close()
+                except OSError:
+                    pass
+
+        writer = threading.Thread(target=write_archive, daemon=True)
+        writer.start()
         try:
-            with tarfile.open(fileobj=process.stdin, mode="w|") as archive:
-                for path in sorted(source.rglob("*")):
-                    if path.is_symlink():
-                        raise ValueError(
-                            f"Symlink in streamed directory is not allowed: {path}"
-                        )
-                    relative = path.relative_to(source).as_posix()
-                    if path.is_dir():
-                        info = archive.gettarinfo(str(path), arcname=relative)
-                        info.uid = 65532
-                        info.gid = 65532
-                        info.uname = ""
-                        info.gname = ""
-                        archive.addfile(info)
-                    elif path.is_file():
-                        info = archive.gettarinfo(str(path), arcname=relative)
-                        info.uid = 65532
-                        info.gid = 65532
-                        info.uname = ""
-                        info.gname = ""
-                        with path.open("rb") as handle:
-                            archive.addfile(info, handle)
-                    else:
-                        raise ValueError(
-                            f"Unsupported filesystem entry in streamed directory: {path}"
-                        )
-            process.stdin.close()
-            process.stdin = None
+            # communicate() drains stdout/stderr while the writer streams stdin.
+            # The timeout therefore covers the transfer as well as extraction.
             stdout, stderr = process.communicate(timeout=timeout)
         except BaseException:
             process.kill()
             process.communicate()
+            writer.join(timeout=1)
             raise
+        writer.join(timeout=1)
+        if writer.is_alive():
+            process.kill()
+            process.communicate()
+            raise subprocess.TimeoutExpired(command, timeout)
+        if writer_error:
+            raise writer_error[0]
         return DockerCommandResult(
             returncode=process.returncode,
             stdout=stdout.decode("utf-8", errors="replace"),
