@@ -123,7 +123,7 @@ If cli-agent/MCP run on Windows but preparation is deliberately executed inside 
 cli-agent-test-cache prepare-python . --target windows
 ```
 
-Under WSL, `--target windows` resolves the Windows user profile and writes to the corresponding Windows `~/.cli-agent/dependency-cache/python` directory through the WSL mount. The command still uses the WSL user's normal pip configuration, including configured private PyPI/JFrog indexes and credentials. The validator itself never receives pip/JFrog credentials. Preparation also writes a cache-local wheel manifest. The sandbox installs only those prepared wheel files and never replays original direct URL, VCS, or local-project requirement references.
+Under WSL, `--target windows` resolves the Windows user profile and writes to the corresponding Windows `~/.cli-agent/dependency-cache/python` directory through the WSL mount. The command still uses the WSL user's normal pip configuration, including configured private PyPI/JFrog indexes and credentials. The validator itself never receives pip/JFrog credentials. Preparation also writes a cache-local wheel manifest. The sandbox installs only those prepared wheel files. The v1 requirements contract rejects direct URL, VCS, editable and local-path dependencies before preparation.
 
 During tests the wheel cache is streamed into the sandbox and dependencies are installed only with:
 
