@@ -279,6 +279,39 @@ def remove_seeded_gradle_user_configuration(
             pass
 
 
+def sanitize_gradle_home_for_promotion(target_home: Path) -> None:
+    """Keep only downloaded module-cache content needed for offline resolution.
+
+    Preparation may evaluate user Gradle init scripts or properties containing
+    credentials. Gradle can compile those scripts into caches below the Gradle
+    user home, so deleting only the source files is not a sufficient secret
+    boundary. Promote only the dependency module cache and discard all script,
+    DSL, daemon, wrapper, native and other generated state.
+    """
+    home = target_home.resolve()
+    if target_home.is_symlink() or not home.is_dir():
+        raise TestValidationError(
+            "Der temporäre Gradle-User-Home ist kein sicheres Verzeichnis."
+        )
+
+    modules = home / "caches" / "modules-2"
+    sanitized = home.parent / "gradle-home-sanitized"
+    if sanitized.exists():
+        shutil.rmtree(sanitized)
+    sanitized.mkdir(parents=True)
+    try:
+        if modules.exists():
+            validate_gradle_cache_tree(modules)
+            destination = sanitized / "caches" / "modules-2"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(modules, destination)
+        shutil.rmtree(home)
+        sanitized.replace(home)
+    except BaseException:
+        shutil.rmtree(sanitized, ignore_errors=True)
+        raise
+
+
 def write_gradle_ready_metadata(directory: Path, key: str) -> None:
     (directory / "cache.json").write_text(
         json.dumps(
