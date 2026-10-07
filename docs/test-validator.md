@@ -187,8 +187,8 @@ No cache path therefore has to be added to the admin policy for each project or 
 
 The cache root is never selected by the model. For each Maven project the validator calculates a deterministic key from:
 
-- every relevant `pom.xml` below the selected project, excluding generated/cache directories,
-- existing literal reactor-module POMs declared through `<module>`, including nonstandard filenames such as `modules/child.xml`, followed recursively,
+- the root `pom.xml`,
+- existing literal reactor-module POMs reachable from the root through `<module>`, including nonstandard filenames such as `modules/child.xml`, followed recursively; unrelated fixture files named `pom.xml` are not parsed,
 - root `.mvn/maven.config`,
 - root `.mvn/extensions.xml`,
 - root `.mvn/jvm.config`,
