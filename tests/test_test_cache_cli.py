@@ -895,3 +895,38 @@ def test_windows_target_project_identity_matches_windows_normalization(
     identity = _project_identity_for_target(project, "windows")
 
     assert identity == windows_project_identity("C:\\Dev\\Project")
+
+
+
+def test_prepare_maven_rejects_semantic_global_settings(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import pytest
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    settings = tmp_path / "global-settings.xml"
+    settings.write_text(
+        """
+<settings>
+  <activeProfiles>
+    <activeProfile>company</activeProfile>
+  </activeProfiles>
+</settings>
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
+        lambda: tmp_path / "missing-user-settings.xml",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._default_global_maven_settings_path",
+        lambda _executable: settings,
+    )
+
+    with pytest.raises(RuntimeError, match="global settings.xml.*Build-Semantik"):
+        prepare_maven(project, tmp_path / "cache")
