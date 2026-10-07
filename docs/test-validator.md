@@ -87,11 +87,20 @@ The configured Python image must contain Python, pip and pytest. Project depende
 
 A Windows pipx installation exposes `cli-agent-test-cache.exe` for Windows-side commands, but it is not sufficient for Python preparation. Install `cli-agent-mcp` through pipx inside WSL as well and invoke the Linux `cli-agent-test-cache` there. Calling the Windows `.exe` from a WSL shell still runs Windows Python and is rejected.
 
-Python cache preparation **must run inside WSL**:
+Python cache preparation **must run inside WSL**. Cache placement depends on where the MCP itself runs.
+
+For a cli-agent/MCP installation running natively inside WSL, use the default native target:
+
+```bash
+cd /path/to/my-project
+cli-agent-test-cache prepare-python .
+```
+
+For a Windows-hosted cli-agent/MCP where only preparation runs inside WSL, target the Windows user's cache:
 
 ```bash
 cd /mnt/c/dev/my-project
-cli-agent-test-cache prepare-python .
+cli-agent-test-cache prepare-python . --target windows
 ```
 
 The command checks that it is actually running under WSL and refuses preparation on native Windows. This avoids accidentally generating Windows-only wheels for the Linux Docker sandbox. The command also prints:
@@ -103,13 +112,13 @@ Prepared under WSL: yes
 
 Preparation uses the current WSL Python and its normal pip configuration. Private indexes such as a company JFrog/PyPI repository can therefore remain configured in the user's WSL pip configuration; those credentials are not passed to the MCP or test container.
 
-By default, `prepare-python` resolves the Windows user's profile from WSL and writes the wheel cache to the same physical directory that the Windows MCP sees as:
+`--target native` is the default for every preparation command and writes below the current environment's `~/.cli-agent/dependency-cache/<type>`. Under WSL, `--target windows` resolves the Windows user profile and maps the cache to the corresponding Windows directory through the WSL mount:
 
 ```text
 ~/.cli-agent/dependency-cache/python/python-<sha256>/wheels
 ```
 
-If this automatic mapping is unsuitable, pass an explicit WSL-visible path with `--cache-root` and configure the corresponding Windows path once with `--python-cache-root`.
+The same target option is available for Maven and Gradle. An explicit `--cache-root` remains available for custom layouts and overrides target-based default placement; it must not be combined with `--target windows`.
 
 The dependency key tracks common Python dependency inputs including recursively included `requirements.txt` / `requirements-dev.txt` / `requirements-test*.txt`, `pyproject.toml`, and common lock files. Source-only changes therefore keep the same cache key; dependency-file changes produce a new one.
 
@@ -155,11 +164,20 @@ The cache root is never selected by the model. For each Maven project the valida
 
 Ordinary source changes therefore keep the same dependency key. Dependency/build-configuration changes produce a new key.
 
-Prepare the cache as the normal user:
+Prepare the cache as the normal user. For the normal Windows-hosted MCP case:
 
 ```powershell
 cli-agent-test-cache prepare-maven C:\dev\my-project
 ```
+
+If a project has OS-/architecture-dependent Maven profiles or dependencies and the Linux sandbox cannot use the Windows-prepared offline cache, retry preparation from WSL while targeting the Windows cache:
+
+```bash
+cd /mnt/c/dev/my-project
+cli-agent-test-cache prepare-maven . --target windows
+```
+
+For a fully WSL-hosted cli-agent/MCP installation, run the same command in WSL without `--target windows`.
 
 The default preparation root is:
 
@@ -219,11 +237,20 @@ The Gradle image must contain Gradle. By default both validator and preparation 
 ~/.cli-agent/dependency-cache/gradle
 ```
 
-Prepare the cache as the normal user:
+Prepare the cache as the normal user. For the normal Windows-hosted MCP case:
 
 ```powershell
 cli-agent-test-cache prepare-gradle C:\dev\my-project
 ```
+
+If platform-dependent Gradle build logic or dependencies make the Windows-prepared cache incomplete for the Linux sandbox, retry from WSL while targeting the Windows cache:
+
+```bash
+cd /mnt/c/dev/my-project
+cli-agent-test-cache prepare-gradle . --target windows
+```
+
+For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`.
 
 The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, version catalogs and verification metadata. Source-only changes therefore keep the same key.
 
