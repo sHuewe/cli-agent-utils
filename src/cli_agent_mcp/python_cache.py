@@ -110,9 +110,11 @@ def require_wsl() -> None:
         )
 
 
-def default_wsl_python_cache_root() -> Path:
-    """Resolve the Windows user's default cache root as a WSL path."""
+def default_wsl_windows_cache_root(cache_name: str) -> Path:
+    """Resolve a Windows user's cli-agent cache root as a WSL path."""
     require_wsl()
+    if not cache_name or "/" in cache_name or "\\" in cache_name:
+        raise ValueError("Ungültiger Cache-Name.")
     try:
         profile = subprocess.run(  # nosec B603
             ["cmd.exe", "/d", "/c", "echo %USERPROFILE%"],
@@ -155,7 +157,12 @@ def default_wsl_python_cache_root() -> Path:
             "Windows-Benutzerprofil konnte nicht in einen WSL-Pfad "
             "umgewandelt werden. Verwende --cache-root explizit."
         )
-    return Path(linux_home) / ".cli-agent" / "dependency-cache" / "python"
+    return Path(linux_home) / ".cli-agent" / "dependency-cache" / cache_name
+
+
+def default_wsl_python_cache_root() -> Path:
+    """Backward-compatible helper for the Windows Python cache from WSL."""
+    return default_wsl_windows_cache_root("python")
 
 
 def _safe_relative_project_file(project: Path, value: str) -> Path:
