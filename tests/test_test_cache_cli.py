@@ -399,7 +399,7 @@ def test_python_cache_allows_empty_requirements(tmp_path: Path) -> None:
     assert entry.install_wheel_names() == ()
 
 
-def test_prepare_gradle_runtime_resolver_disables_test_tasks(
+def test_prepare_gradle_runtime_resolver_only_resolves_dependencies(
     tmp_path: Path,
 ) -> None:
     from cli_agent_mcp.test_cache_cli import _write_gradle_runtime_resolver
@@ -407,8 +407,9 @@ def test_prepare_gradle_runtime_resolver_disables_test_tasks(
     script = _write_gradle_runtime_resolver(tmp_path)
     content = script.read_text(encoding="utf-8")
 
-    assert "tasks.withType(org.gradle.api.tasks.testing.Test)" in content
-    assert "enabled = false" in content
+    assert "_cliAgentResolveRuntimeDependencies" in content
+    assert "configuration.resolve()" in content
+    assert "tasks.withType(org.gradle.api.tasks.testing.Test)" not in content
 
 
 
