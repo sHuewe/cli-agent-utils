@@ -120,7 +120,7 @@ Preparation uses the current WSL Python and its normal pip configuration. Privat
 
 The same target option is available for Maven and Gradle. An explicit `--cache-root` remains available for custom layouts and overrides target-based default placement; it must not be combined with `--target windows`.
 
-The dependency key tracks common Python dependency inputs including recursively included `requirements.txt` / `requirements-dev.txt` / `requirements-test*.txt`, `pyproject.toml`, and common lock files. Nested requirements includes are resolved relative to the file containing the include, matching pip behavior. PEP 735 dependency groups support recursive `{include-group = "..."}` expansion with missing-group and cycle validation. Source-only changes therefore keep the same cache key; dependency-file changes produce a new one.
+The dependency key tracks supported Python dependency inputs including recursively included `requirements.txt` / `requirements-dev.txt` / `requirements-test*.txt` and `pyproject.toml`. Nested requirements includes are resolved relative to the file containing the include, matching pip behavior. PEP 735 dependency groups support recursive `{include-group = "..."}` expansion with missing-group and cycle validation. Lockfile-based resolution (`uv.lock`, `poetry.lock`, `Pipfile.lock`) is intentionally rejected instead of being silently ignored; export pinned test dependencies to a supported requirements file. Local/editable path dependencies are likewise rejected so the current workspace code can never be replaced by a cached project wheel.
 
 Preparation builds wheels using pip:
 
@@ -194,7 +194,7 @@ cli-agent-test-cache prepare-maven C:\dev\my-project `
   --cache-root D:\cli-agent-dependency-cache\maven
 ```
 
-Preparation intentionally runs outside the MCP sandbox. Maven can therefore use the user's normal `settings.xml`, corporate JFrog mirror and credentials. It builds an isolated local repository using:
+Preparation intentionally runs outside the MCP sandbox. Maven may use the user's normal `settings.xml` for repository, mirror and credential configuration. If user settings define profiles/active profiles that alter the effective build model, preparation fails closed; move that build semantics into the project POM before using the offline validator. Project-specific alternate settings via `-s` / `--settings` in `.mvn/maven.config` are also rejected. It builds an isolated local repository using:
 
 ```text
 mvn -B -Dmaven.repo.local=<cache>/repository dependency:go-offline
@@ -277,10 +277,10 @@ gradle --offline --no-daemon --gradle-user-home /tmp/gradle test --tests <select
 The separate Gradle build tool uses the same prepared cache but runs only:
 
 ```text
-gradle --offline --no-daemon --gradle-user-home /tmp/gradle assemble
+gradle --offline --no-daemon --gradle-user-home /tmp/gradle --init-script /tmp/cli-agent-disable-tests.gradle assemble
 ```
 
-`assemble` is deliberately used instead of `build`, because Gradle `build` normally depends on verification tasks and may execute tests. The host cache is never bind-mounted or writable by project code. If an organization uses a non-default cache root, configure `--gradle-cache-root` once and pass the same root to `prepare-gradle --cache-root ...`.
+Before the build, the validator writes a fixed temporary init script that disables all Gradle tasks of type `org.gradle.api.tasks.testing.Test`; the build then invokes `assemble` with that init script. This prevents standard/custom Gradle Test tasks from being scheduled even if `assemble` depends on them. Arbitrary custom non-Test tasks remain part of project build semantics. The host cache is never bind-mounted or writable by project code. If an organization uses a non-default cache root, configure `--gradle-cache-root` once and pass the same root to `prepare-gradle --cache-root ...`.
 
 ## Output and secret handling
 
