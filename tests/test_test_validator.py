@@ -979,3 +979,52 @@ def test_docker_stream_reparse_point_detection() -> None:
         st_file_attributes = 0x0400
 
     assert _docker_reparse_point(FakeStat()) is True
+
+
+
+def test_maven_dependency_key_rejects_local_parent_pom(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pom.xml").write_text(
+        """
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.example</groupId>
+    <artifactId>parent</artifactId>
+    <version>1.0</version>
+    <relativePath>parent.xml</relativePath>
+  </parent>
+  <artifactId>child</artifactId>
+</project>
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "parent.xml").write_text("<project/>\n", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="Lokale Maven-Parent-POMs"):
+        maven_dependency_key(tmp_path)
+
+
+def test_maven_dependency_key_allows_repository_parent_with_empty_relative_path(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pom.xml").write_text(
+        """
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.example</groupId>
+    <artifactId>parent</artifactId>
+    <version>1.0</version>
+    <relativePath/>
+  </parent>
+  <artifactId>child</artifactId>
+</project>
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert maven_dependency_key(tmp_path).startswith("maven-")
