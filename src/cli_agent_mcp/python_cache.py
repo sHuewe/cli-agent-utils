@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 
 from .test_validator_types import TestValidationError
 
-_CACHE_SCHEMA = "cli-agent-python-cache-v2"
+_CACHE_SCHEMA = "cli-agent-python-cache-v3"
 _STANDARD_REQUIREMENTS = (
     "requirements.txt",
     "requirements-dev.txt",
@@ -23,18 +23,25 @@ _STANDARD_REQUIREMENTS = (
 )
 _OPTIONAL_DEPENDENCY_GROUPS = {"dev", "development", "test", "tests"}
 _INCLUDE_RE = re.compile(
-    r"^\s*(?:-r|--requirement|-c|--constraint)(?:\s+|=)([^#\s]+)"
+    r"^\s*(?:(?:-r|-c)\s*=?\s*([^#\s]+)|"
+    r"(?:--requirement|--constraint)(?:\s+|=)\s*([^#\s]+))"
 )
+_GROUP_NORMALIZE_RE = re.compile(r"[-_.]+")
 
 
 @dataclass(frozen=True)
 class PythonDependencyPlan:
     requirement_files: tuple[str, ...]
     dependency_specs: tuple[str, ...]
+    local_dependency_paths: tuple[str, ...] = ()
 
     @property
     def has_dependencies(self) -> bool:
-        return bool(self.requirement_files or self.dependency_specs)
+        return bool(
+            self.requirement_files
+            or self.dependency_specs
+            or self.local_dependency_paths
+        )
 
 
 @dataclass(frozen=True)
@@ -264,9 +271,10 @@ def _requirement_files(project: Path) -> tuple[Path, ...]:
         for line in text.splitlines():
             match = _INCLUDE_RE.match(line)
             if match:
+                include_value = match.group(1) or match.group(2)
                 included = _safe_relative_project_file(
                     project,
-                    match.group(1),
+                    include_value,
                     relative_to=path.parent,
                 )
                 add(included)
@@ -348,6 +356,111 @@ def _reject_unsupported_local_requirements(
 
 
 
+def _normalize_dependency_group_name(name: str) -> str:
+    return _GROUP_NORMALIZE_RE.sub("-", name).casefold()
+
+
+def _resolve_pyproject_local_dependency(
+    project: Path,
+    spec: str,
+) -> Path | None:
+    if " @ " not in spec:
+        return None
+    reference = spec.split(" @ ", 1)[1].strip()
+    lowered = reference.casefold()
+    if lowered.startswith(("git+", "hg+", "svn+", "bzr+")):
+        return None
+    if re.match(r"^[a-z][a-z0-9+.-]*://", reference, re.IGNORECASE):
+        if not lowered.startswith("file://"):
+            return None
+        reference = reference[7:]
+    elif lowered.startswith("file:"):
+        reference = reference[5:]
+
+    candidate_path = Path(reference)
+    if candidate_path.is_absolute() or re.match(
+        r"^[a-z]:[\\/]",
+        reference,
+        re.IGNORECASE,
+    ):
+        candidate = candidate_path.expanduser().resolve()
+    else:
+        candidate = (project / candidate_path).resolve()
+
+    try:
+        candidate.relative_to(project)
+    except ValueError as exc:
+        raise TestValidationError(
+            "Relative Python-Dependency darf nicht außerhalb des ausgewählten "
+            f"Projekts liegen: {spec!r}"
+        ) from exc
+    if candidate == project:
+        raise TestValidationError(
+            "Das aktuelle Python-Projekt darf nicht als eigene Dependency "
+            "gecached werden."
+        )
+    if candidate.is_symlink():
+        raise TestValidationError(
+            f"Lokale Python-Dependency darf kein Symlink sein: {spec!r}"
+        )
+    if not candidate.exists():
+        raise TestValidationError(
+            f"Lokale Python-Dependency existiert nicht: {spec!r}"
+        )
+    return candidate
+
+
+def _iter_local_dependency_files(project: Path, dependency: Path) -> tuple[Path, ...]:
+    if dependency.is_file():
+        return (dependency,)
+    if not dependency.is_dir():
+        raise TestValidationError(
+            f"Lokale Python-Dependency ist weder Datei noch Verzeichnis: {dependency}"
+        )
+
+    files: list[Path] = []
+
+    def walk(directory: Path) -> None:
+        try:
+            entries = sorted(os.scandir(directory), key=lambda item: item.name)
+        except OSError as exc:
+            raise TestValidationError(
+                f"Lokale Python-Dependency konnte nicht gelesen werden: {directory}"
+            ) from exc
+        with entries:
+            for entry in entries:
+                path = Path(entry.path)
+                mode = entry.stat(follow_symlinks=False).st_mode
+                if stat.S_ISLNK(mode):
+                    raise TestValidationError(
+                        "Symlinks sind in lokalen Python-Dependencies nicht erlaubt: "
+                        f"{path.relative_to(project)}"
+                    )
+                if stat.S_ISDIR(mode):
+                    if entry.name in {
+                        ".git",
+                        ".mypy_cache",
+                        ".pytest_cache",
+                        ".ruff_cache",
+                        ".tox",
+                        ".venv",
+                        "__pycache__",
+                        "venv",
+                    }:
+                        continue
+                    walk(path)
+                elif stat.S_ISREG(mode):
+                    files.append(path)
+                else:
+                    raise TestValidationError(
+                        "Lokale Python-Dependencies dürfen nur reguläre Dateien "
+                        f"und Verzeichnisse enthalten: {path.relative_to(project)}"
+                    )
+
+    walk(dependency)
+    return tuple(files)
+
+
 def python_dependency_plan(project: Path) -> PythonDependencyPlan:
     root = project.expanduser().resolve()
     if not root.is_dir():
@@ -408,20 +521,37 @@ def python_dependency_plan(project: Path) -> PythonDependencyPlan:
                         )
         groups = config.get("dependency-groups")
         if isinstance(groups, dict):
+            normalized_groups: dict[str, tuple[str, object]] = {}
+            for raw_name, values in groups.items():
+                if not isinstance(raw_name, str):
+                    raise TestValidationError(
+                        "dependency-group Namen müssen Strings sein."
+                    )
+                normalized_name = _normalize_dependency_group_name(raw_name)
+                if normalized_name in normalized_groups:
+                    previous = normalized_groups[normalized_name][0]
+                    raise TestValidationError(
+                        "Mehrdeutige dependency-group Namen nach Normalisierung: "
+                        f"{previous!r} und {raw_name!r}"
+                    )
+                normalized_groups[normalized_name] = (raw_name, values)
+
             def expand_group(name: str, stack: tuple[str, ...] = ()) -> list[str]:
-                if name in stack:
-                    chain = " -> ".join((*stack, name))
+                normalized_name = _normalize_dependency_group_name(name)
+                if normalized_name in stack:
+                    chain = " -> ".join((*stack, normalized_name))
                     raise TestValidationError(
                         f"Zyklischer dependency-group Include: {chain}"
                     )
-                values = groups.get(name)
-                if values is None:
+                item = normalized_groups.get(normalized_name)
+                if item is None:
                     raise TestValidationError(
                         f"Unbekannte dependency-group: {name}"
                     )
+                raw_name, values = item
                 if not isinstance(values, list):
                     raise TestValidationError(
-                        f"dependency-group {name!r} muss eine Liste sein."
+                        f"dependency-group {raw_name!r} muss eine Liste sein."
                     )
 
                 expanded: list[str] = []
@@ -434,27 +564,28 @@ def python_dependency_plan(project: Path) -> PythonDependencyPlan:
                         included = value.get("include-group")
                         if not isinstance(included, str) or not included.strip():
                             raise TestValidationError(
-                                f"Ungültiger include-group Eintrag in {name!r}."
+                                f"Ungültiger include-group Eintrag in {raw_name!r}."
                             )
                         expanded.extend(
-                            expand_group(included, (*stack, name))
+                            expand_group(included, (*stack, normalized_name))
                         )
                         continue
                     raise TestValidationError(
-                        f"Nicht unterstützter dependency-group Eintrag in {name!r}."
+                        f"Nicht unterstützter dependency-group Eintrag in {raw_name!r}."
                     )
                 return expanded
 
             for group in sorted(_OPTIONAL_DEPENDENCY_GROUPS):
-                if group in groups:
+                normalized_group = _normalize_dependency_group_name(group)
+                if normalized_group in normalized_groups:
                     dependency_specs.extend(expand_group(group))
 
+    local_dependency_paths: list[str] = []
     for spec in dependency_specs:
-        lowered = spec.strip().casefold()
-        if lowered.startswith("file:") or " @ file:" in lowered:
-            raise TestValidationError(
-                "Lokale Python-Dependency-Referenzen in pyproject.toml werden "
-                "nicht unterstützt. Verwende gepinnte externe Dependencies."
+        local_dependency = _resolve_pyproject_local_dependency(root, spec)
+        if local_dependency is not None:
+            local_dependency_paths.append(
+                local_dependency.relative_to(root).as_posix()
             )
 
     # Included requirement files affect the key even though pip receives only
@@ -463,6 +594,7 @@ def python_dependency_plan(project: Path) -> PythonDependencyPlan:
     return PythonDependencyPlan(
         requirement_files=top_level_requirements,
         dependency_specs=tuple(dict.fromkeys(dependency_specs)),
+        local_dependency_paths=tuple(dict.fromkeys(local_dependency_paths)),
     )
 
 
@@ -473,6 +605,9 @@ def python_dependency_key(project: Path) -> str:
     pyproject = root / "pyproject.toml"
     if pyproject.is_file():
         files.append(pyproject)
+    for relative in plan.local_dependency_paths:
+        dependency = root / relative
+        files.extend(_iter_local_dependency_files(root, dependency))
     files = sorted(
         set(files),
         key=lambda path: path.relative_to(root).as_posix(),
@@ -559,6 +694,7 @@ def write_python_ready_metadata(
                 "machine": platform.machine(),
                 "requirement_files": list(plan.requirement_files),
                 "dependency_specs": list(plan.dependency_specs),
+                "local_dependency_paths": list(plan.local_dependency_paths),
             },
             indent=2,
             sort_keys=True,
