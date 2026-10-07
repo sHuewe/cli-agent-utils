@@ -479,3 +479,123 @@ def test_prepare_gradle_runtime_resolver_disables_test_tasks(
 
     assert "tasks.withType(org.gradle.api.tasks.testing.Test)" in content
     assert "enabled = false" in content
+
+
+
+def test_python_key_tracks_project_local_pyproject_dependency(
+    tmp_path: Path,
+) -> None:
+    from cli_agent_mcp.python_cache import python_dependency_key
+
+    project = tmp_path / "project"
+    local = project / "vendor" / "lib"
+    local.mkdir(parents=True)
+    (local / "pyproject.toml").write_text(
+        '[project]\nname = "vendor-lib"\nversion = "1.0"\n',
+        encoding="utf-8",
+    )
+    source = local / "vendor_lib.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    project.mkdir(exist_ok=True)
+    (project / "pyproject.toml").write_text(
+        """
+[project]
+name = "demo"
+version = "1.0"
+dependencies = ["vendor-lib @ ./vendor/lib"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    first = python_dependency_key(project)
+    source.write_text("VALUE = 2\n", encoding="utf-8")
+    second = python_dependency_key(project)
+
+    assert first != second
+
+
+def test_python_local_pyproject_dependency_cannot_escape_project(
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    outside = tmp_path / "shared-lib"
+    outside.mkdir()
+    (project / "pyproject.toml").write_text(
+        """
+[project]
+name = "demo"
+version = "1.0"
+dependencies = ["shared-lib @ ../shared-lib"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception, match="außerhalb"):
+        python_dependency_plan(project)
+
+
+def test_python_dependency_groups_normalize_names(tmp_path: Path) -> None:
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        """
+[dependency-groups]
+Test = ["pytest==9.0"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    plan = python_dependency_plan(project)
+
+    assert plan.dependency_specs == ("pytest==9.0",)
+
+
+def test_python_dependency_groups_reject_duplicate_normalized_names(
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        """
+[dependency-groups]
+test_group = ["pytest==9.0"]
+test-group = ["coverage==7.0"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception, match="Mehrdeutige dependency-group"):
+        python_dependency_plan(project)
+
+
+def test_python_compact_recursive_requirement_include(tmp_path: Path) -> None:
+    from cli_agent_mcp.python_cache import python_dependency_key
+
+    project = tmp_path / "project"
+    requirements = project / "requirements"
+    requirements.mkdir(parents=True)
+    (project / "requirements.txt").write_text(
+        "-rrequirements/base.txt\n",
+        encoding="utf-8",
+    )
+    nested = requirements / "base.txt"
+    nested.write_text("demo-package==1.0\n", encoding="utf-8")
+
+    first = python_dependency_key(project)
+    nested.write_text("demo-package==2.0\n", encoding="utf-8")
+    second = python_dependency_key(project)
+
+    assert first != second
