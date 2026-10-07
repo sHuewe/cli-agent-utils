@@ -522,18 +522,11 @@ def prepare_python(
             "--wheel-dir",
             str(wheels),
         ]
-        for requirement in plan.requirement_files:
-            _run_python(
-                [*common, "-r", requirement],
-                cwd=project,
-                timeout=timeout,
-            )
-        if plan.dependency_specs:
-            _run_python(
-                [*common, *plan.dependency_specs],
-                cwd=project,
-                timeout=timeout,
-            )
+        _run_python(
+            [*common, "-r", "requirements.txt"],
+            cwd=project,
+            timeout=timeout,
+        )
         write_python_ready_metadata(temporary, key, plan)
         if entry.directory.exists():
             shutil.rmtree(entry.directory)
