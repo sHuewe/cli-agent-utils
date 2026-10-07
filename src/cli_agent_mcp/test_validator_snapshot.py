@@ -124,61 +124,131 @@ def _safe_tree_files(
     *,
     max_file_bytes: int,
     max_project_bytes: int,
+    max_snapshot_entries: int,
 ) -> tuple[tuple[tuple[Path, os.stat_result], ...], int]:
     files: list[tuple[Path, os.stat_result]] = []
     total_bytes = 0
+    entry_count = 0
 
-    def walk(directory: Path) -> None:
-        nonlocal total_bytes
+    try:
+        root_stat = os.stat(root, follow_symlinks=False)
+    except OSError as exc:
+        raise TestValidationError(
+            f"Projektverzeichnis konnte nicht geprüft werden: {root}"
+        ) from exc
+    if (
+        stat.S_ISLNK(root_stat.st_mode)
+        or _is_windows_reparse_point(root_stat)
+        or not stat.S_ISDIR(root_stat.st_mode)
+    ):
+        raise TestValidationError(
+            f"Projektroot ist kein sicheres Verzeichnis: {root}"
+        )
+
+    def walk(directory: Path, expected: os.stat_result) -> None:
+        nonlocal total_bytes, entry_count
+
+        directory_fd: int | None = None
+        scanner = None
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+        directory_flag = getattr(os, "O_DIRECTORY", 0)
+        nofollow_flag = getattr(os, "O_NOFOLLOW", 0)
+
         try:
-            entries = sorted(os.scandir(directory), key=lambda entry: entry.name)
+            if directory_flag:
+                directory_fd = os.open(
+                    directory,
+                    flags | directory_flag | nofollow_flag,
+                )
+                opened = os.fstat(directory_fd)
+                if (
+                    not stat.S_ISDIR(opened.st_mode)
+                    or _is_windows_reparse_point(opened)
+                    or not _is_same_file(expected, opened)
+                ):
+                    raise TestValidationError(
+                        "Projektverzeichnis wurde während der "
+                        f"Snapshot-Erstellung verändert: {directory}"
+                    )
+                scanner = os.scandir(directory_fd)
+            else:
+                scanner = os.scandir(directory)
+                opened = os.stat(directory, follow_symlinks=False)
+                if (
+                    stat.S_ISLNK(opened.st_mode)
+                    or _is_windows_reparse_point(opened)
+                    or not stat.S_ISDIR(opened.st_mode)
+                    or not _is_same_file(expected, opened)
+                ):
+                    raise TestValidationError(
+                        "Projektverzeichnis wurde während der "
+                        f"Snapshot-Erstellung verändert: {directory}"
+                    )
+
+            with scanner as entries:
+                for entry in entries:
+                    entry_count += 1
+                    if entry_count > max_snapshot_entries:
+                        raise TestValidationError(
+                            "Projekt überschreitet das Snapshot-Eintragslimit."
+                        )
+                    path = directory / entry.name
+                    try:
+                        entry_stat = entry.stat(follow_symlinks=False)
+                        mode = entry_stat.st_mode
+                    except OSError as exc:
+                        raise TestValidationError(
+                            f"Projektpfad konnte nicht geprüft werden: {path}"
+                        ) from exc
+                    if _is_windows_reparse_point(entry_stat):
+                        raise TestValidationError(
+                            "Windows-Reparse-Points/Junctions sind im "
+                            "Test-Snapshot nicht erlaubt: "
+                            f"{path.relative_to(root)}"
+                        )
+                    if stat.S_ISLNK(mode):
+                        raise TestValidationError(
+                            "Symlinks sind im Test-Snapshot nicht erlaubt: "
+                            f"{path.relative_to(root)}"
+                        )
+                    if stat.S_ISDIR(mode):
+                        if entry.name in _IGNORED_DIRECTORY_NAMES:
+                            continue
+                        if _is_build_output_directory(root, path):
+                            continue
+                        walk(path, entry_stat)
+                        continue
+                    if not stat.S_ISREG(mode):
+                        raise TestValidationError(
+                            "Nur reguläre Dateien und Verzeichnisse sind erlaubt: "
+                            f"{path.relative_to(root)}"
+                        )
+                    size = entry_stat.st_size
+                    if size > max_file_bytes:
+                        raise TestValidationError(
+                            "Datei überschreitet das Größenlimit: "
+                            f"{path.relative_to(root)}"
+                        )
+                    total_bytes += size
+                    if total_bytes > max_project_bytes:
+                        raise TestValidationError(
+                            "Projekt überschreitet das Größenlimit."
+                        )
+                    files.append((path, entry_stat))
+        except TestValidationError:
+            raise
         except OSError as exc:
             raise TestValidationError(
-                f"Projektverzeichnis konnte nicht gelesen werden: {directory}"
+                f"Projektverzeichnis konnte nicht sicher gelesen werden: {directory}"
             ) from exc
-        for entry in entries:
-            path = Path(entry.path)
-            try:
-                entry_stat = entry.stat(follow_symlinks=False)
-                mode = entry_stat.st_mode
-            except OSError as exc:
-                raise TestValidationError(
-                    f"Projektpfad konnte nicht geprüft werden: {path}"
-                ) from exc
-            if _is_windows_reparse_point(entry_stat):
-                raise TestValidationError(
-                    "Windows-Reparse-Points/Junctions sind im Test-Snapshot "
-                    f"nicht erlaubt: {path.relative_to(root)}"
-                )
-            if stat.S_ISLNK(mode):
-                raise TestValidationError(
-                    f"Symlinks sind im Test-Snapshot nicht erlaubt: "
-                    f"{path.relative_to(root)}"
-                )
-            if stat.S_ISDIR(mode):
-                relative = path.relative_to(root)
-                if entry.name in _IGNORED_DIRECTORY_NAMES:
-                    continue
-                if _is_build_output_directory(root, path):
-                    continue
-                walk(path)
-                continue
-            if not stat.S_ISREG(mode):
-                raise TestValidationError(
-                    f"Nur reguläre Dateien und Verzeichnisse sind erlaubt: "
-                    f"{path.relative_to(root)}"
-                )
-            size = entry_stat.st_size
-            if size > max_file_bytes:
-                raise TestValidationError(
-                    f"Datei überschreitet das Größenlimit: {path.relative_to(root)}"
-                )
-            total_bytes += size
-            if total_bytes > max_project_bytes:
-                raise TestValidationError("Projekt überschreitet das Größenlimit.")
-            files.append((path, entry_stat))
+        finally:
+            if directory_fd is not None:
+                try:
+                    os.close(directory_fd)
+                except OSError:
+                    pass
 
-    walk(root)
+    walk(root, root_stat)
     return tuple(files), total_bytes
 
 
@@ -187,6 +257,7 @@ def create_project_snapshot(
     *,
     max_file_bytes: int,
     max_project_bytes: int,
+    max_snapshot_entries: int = 20_000,
 ) -> ProjectSnapshot:
     root = project.resolve()
     if not root.is_dir():
@@ -195,6 +266,7 @@ def create_project_snapshot(
         root,
         max_file_bytes=max_file_bytes,
         max_project_bytes=max_project_bytes,
+        max_snapshot_entries=max_snapshot_entries,
     )
     files = tuple(path for path, _ in entries)
     buffer = io.BytesIO()
