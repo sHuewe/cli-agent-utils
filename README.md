@@ -271,7 +271,7 @@ run_java_tests(project_path=".", build_system="gradle")
 The fixed test commands are:
 
 ```text
-mvn -o -B -Dmaven.repo.local=/tmp/m2 [-Dtest=<selector>] test
+mvn -o -B -Dmaven.repo.local=/tmp/m2 [-Dtest=<selector> -Dsurefire.failIfNoSpecifiedTests=false] test
 gradle --offline --no-daemon --gradle-user-home /tmp/gradle test [--tests <selector>]
 ```
 
