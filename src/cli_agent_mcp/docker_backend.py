@@ -9,6 +9,12 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from dataclasses import dataclass
 
+from .filesystem_safety import (
+    _is_same_file,
+    _is_windows_reparse_point,
+    verified_directory_scandir,
+)
+
 
 def _is_windows_reparse_point(file_stat: object) -> bool:
     attributes = getattr(file_stat, "st_file_attributes", 0)
@@ -31,41 +37,13 @@ def _iter_safe_stream_paths(source: Path):
         )
 
     def walk(directory: Path, expected: os.stat_result):
-        directory_fd: int | None = None
-        scanner = None
-        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
-        directory_flag = getattr(os, "O_DIRECTORY", 0)
-        nofollow_flag = getattr(os, "O_NOFOLLOW", 0)
         try:
-            if directory_flag:
-                directory_fd = os.open(
-                    directory,
-                    flags | directory_flag | nofollow_flag,
-                )
-                opened = os.fstat(directory_fd)
-                if (
-                    not stat.S_ISDIR(opened.st_mode)
-                    or _is_windows_reparse_point(opened)
-                    or not _same_file(expected, opened)
-                ):
-                    raise ValueError(
-                        f"Streamed directory changed during transfer: {directory}"
-                    )
-                scanner = os.scandir(directory_fd)
-            else:
-                scanner = os.scandir(directory)
-                opened = os.stat(directory, follow_symlinks=False)
-                if (
-                    stat.S_ISLNK(opened.st_mode)
-                    or _is_windows_reparse_point(opened)
-                    or not stat.S_ISDIR(opened.st_mode)
-                    or not _same_file(expected, opened)
-                ):
-                    raise ValueError(
-                        f"Streamed directory changed during transfer: {directory}"
-                    )
-
-            with scanner as entries:
+            with verified_directory_scandir(
+                directory,
+                expected,
+                error_type=ValueError,
+                changed_message="Streamed directory changed during transfer",
+            ) as entries:
                 for entry in entries:
                     path = directory / entry.name
                     try:
@@ -97,17 +75,11 @@ def _iter_safe_stream_paths(source: Path):
             raise ValueError(
                 f"Streamed directory could not be safely read: {directory}"
             ) from exc
-        finally:
-            if directory_fd is not None:
-                try:
-                    os.close(directory_fd)
-                except OSError:
-                    pass
 
     yield from walk(source, source_stat)
 
 
-def _same_file(expected: os.stat_result, actual: os.stat_result) -> bool:
+ef _same_file(expected: os.stat_result, actual: os.stat_result) -> bool:
     return (
         expected.st_dev == actual.st_dev
         and expected.st_ino == actual.st_ino
