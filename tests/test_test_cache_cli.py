@@ -48,7 +48,7 @@ def test_prepare_maven_builds_isolated_repository_and_marks_ready(
     assert calls[1][-2:] == ["-DskipTests", "package"]
 
 
-def test_prepare_maven_reuses_ready_cache_without_running_maven(
+def test_prepare_maven_rebuilds_ready_cache(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -78,7 +78,7 @@ def test_prepare_maven_reuses_ready_cache_without_running_maven(
     second = prepare_maven(project, cache_root)
 
     assert first.key == second.key
-    assert calls == 2
+    assert calls == 4
 
 
 def test_cache_key_matches_validator_lookup(tmp_path: Path) -> None:
@@ -135,15 +135,14 @@ def test_windows_cache_target_from_wsl_uses_windows_user_cache(
     assert root == (tmp_path / "windows-cache" / "gradle").resolve()
 
 
-def test_explicit_cache_root_rejects_windows_target(tmp_path: Path) -> None:
-    import pytest
+def test_explicit_cache_root_is_allowed_with_windows_target(tmp_path: Path) -> None:
+    root = _resolve_cache_root(
+        "python",
+        explicit=tmp_path / "custom",
+        target="windows",
+    )
 
-    with pytest.raises(ValueError, match="--cache-root"):
-        _resolve_cache_root(
-            "python",
-            explicit=tmp_path / "custom",
-            target="windows",
-        )
+    assert root == (tmp_path / "custom").resolve()
 
 
 def test_prepare_python_requires_wsl_and_builds_wheel_cache(
@@ -866,3 +865,32 @@ def test_prepare_maven_rebuilds_existing_project_cache(
     assert first_marker == "2"
     assert second_marker == "4"
     assert len(calls) == 4
+
+
+
+def test_windows_target_project_identity_matches_windows_normalization(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from cli_agent_mcp.cache_identity import windows_project_identity
+    from cli_agent_mcp.test_cache_cli import _project_identity_for_target
+    import subprocess
+
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr("cli_agent_mcp.test_cache_cli.sys.platform", "linux")
+    monkeypatch.setattr("cli_agent_mcp.test_cache_cli.is_wsl", lambda: True)
+    completed = subprocess.CompletedProcess(
+        args=["wslpath"],
+        returncode=0,
+        stdout="C:\\Dev\\Project\n",
+        stderr="",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.subprocess.run",
+        lambda *args, **kwargs: completed,
+    )
+
+    identity = _project_identity_for_target(project, "windows")
+
+    assert identity == windows_project_identity("C:\\Dev\\Project")
