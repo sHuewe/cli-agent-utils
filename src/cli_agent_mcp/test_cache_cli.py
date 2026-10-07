@@ -261,7 +261,7 @@ def _default_global_maven_settings_path(maven_executable: str) -> Path | None:
     if configured_home:
         return Path(configured_home).expanduser() / "conf" / "settings.xml"
 
-    executable = Path(maven_executable).expanduser()
+    executable = Path(maven_executable).expanduser().resolve()
     if executable.parent.name.casefold() == "bin":
         return executable.parent.parent / "conf" / "settings.xml"
     return None
