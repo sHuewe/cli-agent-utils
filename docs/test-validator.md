@@ -115,7 +115,7 @@ cd /mnt/c/dev/my-project
 cli-agent-test-cache prepare-python . --target windows
 ```
 
-The command checks that it is actually running under WSL and refuses preparation on native Windows. This avoids accidentally generating Windows-only wheels for the Linux Docker sandbox. The command also prints:
+The command checks that it is actually running under WSL and refuses preparation on native Windows. It also probes the interpreter selected by `--python-command` and requires that interpreter itself to report a Linux platform, so invoking a Windows Python executable from WSL is rejected. This avoids accidentally generating Windows-only wheels for the Linux Docker sandbox. The command also prints:
 
 ```text
 Python dependency preparation: WSL is required.
@@ -201,7 +201,7 @@ Prepare the cache as the normal user. For the normal Windows-hosted MCP case:
 cli-agent-test-cache prepare-maven C:\dev\my-project
 ```
 
-If a project has OS-/architecture-dependent Maven profiles or dependencies and the Linux sandbox cannot use the Windows-prepared offline cache, retry preparation from WSL while targeting the Windows cache:
+If a project has OS-/architecture-dependent Maven profiles or dependencies and the Linux sandbox cannot use the Windows-prepared offline cache, retry preparation from WSL while targeting the Windows cache and force replacement of the existing cache entry:
 
 ```bash
 cd /mnt/c/dev/my-project
@@ -272,7 +272,7 @@ Prepare the cache as the normal user. For the normal Windows-hosted MCP case:
 cli-agent-test-cache prepare-gradle C:\dev\my-project
 ```
 
-If platform-dependent Gradle build logic or dependencies make the Windows-prepared cache incomplete for the Linux sandbox, retry from WSL while targeting the Windows cache:
+If platform-dependent Gradle build logic or dependencies make the Windows-prepared cache incomplete for the Linux sandbox, retry from WSL while targeting the Windows cache and force replacement of the existing cache entry:
 
 ```bash
 cd /mnt/c/dev/my-project
