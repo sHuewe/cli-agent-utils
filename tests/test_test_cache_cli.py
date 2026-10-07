@@ -722,3 +722,39 @@ def test_prepare_maven_allows_fail_at_end_option(
     prepare_maven(project, tmp_path / "cache")
 
     assert len(calls) == 2
+
+
+
+def test_prepare_maven_removes_remote_repository_provenance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    cache_root = tmp_path / "cache"
+
+    def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
+        repo_arg = next(
+            value for value in command if value.startswith("-Dmaven.repo.local=")
+        )
+        repository = Path(repo_arg.split("=", 1)[1])
+        artifact_dir = repository / "com" / "example" / "demo" / "1.0"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / "demo-1.0.jar").write_bytes(b"jar")
+        (artifact_dir / "_remote.repositories").write_text(
+            "demo-1.0.jar>company-mirror=\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr("cli_agent_mcp.test_cache_cli._run", fake_run)
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.shutil.which",
+        lambda _command: "mvn",
+    )
+
+    entry = prepare_maven(project, cache_root)
+
+    artifact_dir = entry.repository / "com" / "example" / "demo" / "1.0"
+    assert (artifact_dir / "demo-1.0.jar").is_file()
+    assert not (artifact_dir / "_remote.repositories").exists()
