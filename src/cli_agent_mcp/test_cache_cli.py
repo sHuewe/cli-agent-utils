@@ -13,6 +13,7 @@ from .gradle_cache import (
     default_source_gradle_user_home,
     gradle_dependency_key,
     remove_seeded_gradle_user_configuration,
+    sanitize_gradle_home_for_promotion,
     seed_gradle_user_configuration,
     write_gradle_ready_metadata,
 )
@@ -389,6 +390,7 @@ def prepare_gradle(
         runtime_resolver.unlink(missing_ok=True)
         remove_seeded_gradle_user_configuration(gradle_home, copied)
         copied = ()
+        sanitize_gradle_home_for_promotion(gradle_home)
         write_gradle_ready_metadata(temporary, key)
         if entry.directory.exists():
             shutil.rmtree(entry.directory)
