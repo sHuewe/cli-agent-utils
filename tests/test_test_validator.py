@@ -995,3 +995,50 @@ def test_maven_dependency_key_follows_nested_nonstandard_module_poms(
     second = maven_dependency_key(tmp_path)
 
     assert first != second
+
+
+
+def test_maven_dependency_key_ignores_unrelated_malformed_pom_fixture(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pom.xml").write_text(
+        "<project><modelVersion>4.0.0</modelVersion></project>\n",
+        encoding="utf-8",
+    )
+    fixture = tmp_path / "src" / "test" / "resources" / "broken"
+    fixture.mkdir(parents=True)
+    (fixture / "pom.xml").write_text("<project>", encoding="utf-8")
+
+    key = maven_dependency_key(tmp_path)
+
+    assert key.startswith("maven-")
+
+
+def test_gradle_commented_include_build_is_ignored(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    (tmp_path / "settings.gradle").write_text(
+        '// includeBuild("../outside-plugin")\n'
+        '/* includeBuild("../other-plugin") */\n',
+        encoding="utf-8",
+    )
+
+    key = gradle_dependency_key(tmp_path)
+
+    assert key.startswith("gradle-")
+
+
+def test_gradle_include_build_inside_string_is_not_treated_as_comment(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    included = tmp_path / "build-logic"
+    included.mkdir()
+    (included / "build.gradle").write_text("", encoding="utf-8")
+    (tmp_path / "settings.gradle").write_text(
+        'includeBuild("build-logic")\n',
+        encoding="utf-8",
+    )
+
+    key = gradle_dependency_key(tmp_path)
+
+    assert key.startswith("gradle-")
