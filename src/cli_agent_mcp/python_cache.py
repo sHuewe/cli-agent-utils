@@ -281,6 +281,21 @@ def python_dependency_plan(project: Path) -> PythonDependencyPlan:
     if not root.is_dir():
         raise TestValidationError(f"Python-Projekt existiert nicht: {root}")
 
+    unsupported_lockfiles = [
+        name
+        for name in ("uv.lock", "poetry.lock", "Pipfile.lock")
+        if (root / name).is_file()
+    ]
+    if unsupported_lockfiles:
+        joined = ", ".join(unsupported_lockfiles)
+        raise TestValidationError(
+            "Lockfile-basierte Python-Dependency-Auflösung wird vom "
+            f"Test-Validator nicht unterstützt ({joined}). Exportiere die "
+            "gewünschten, gepinnten Test-Dependencies in eine unterstützte "
+            "requirements*.txt-Datei und entferne das Lockfile für diesen "
+            "Validator-Lauf."
+        )
+
     requirement_files = _requirement_files(root)
     top_level_requirements = tuple(
         name
@@ -377,12 +392,6 @@ def python_dependency_key(project: Path) -> str:
     pyproject = root / "pyproject.toml"
     if pyproject.is_file():
         files.append(pyproject)
-    for name in ("uv.lock", "poetry.lock", "Pipfile.lock"):
-        candidate = root / name
-        if candidate.is_symlink():
-            raise TestValidationError(f"{name} darf kein Symlink sein.")
-        if candidate.is_file():
-            files.append(candidate)
     files = sorted(
         set(files),
         key=lambda path: path.relative_to(root).as_posix(),
