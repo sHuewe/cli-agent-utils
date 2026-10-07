@@ -265,44 +265,43 @@ class _ExactSecretMatcher:
 
 
 def _redact_private_keys(value: str) -> str:
-    """Redact PEM private-key blocks without regex backtracking."""
+    """Redact PEM private-key blocks with one forward marker scan."""
     result: list[str] = []
     cursor = 0
-    length = len(value)
+    scan = 0
+    active_start: int | None = None
+    active_label: str | None = None
 
-    while cursor < length:
-        begin = value.find(_PRIVATE_KEY_BEGIN, cursor)
-        if begin < 0:
-            result.append(value[cursor:])
+    while True:
+        marker_start = value.find("-----", scan)
+        if marker_start < 0:
             break
-
-        header_end = value.find("-----", begin + len(_PRIVATE_KEY_BEGIN))
-        if header_end < 0:
-            result.append(value[cursor:])
+        marker_end_start = value.find("-----", marker_start + 5)
+        if marker_end_start < 0:
             break
+        marker_end = marker_end_start + 5
+        marker = value[marker_start:marker_end]
 
-        header = value[begin : header_end + 5]
-        label = value[begin + len(_PRIVATE_KEY_BEGIN) : header_end].strip()
-        if not label.endswith("PRIVATE KEY"):
-            result.append(value[cursor : begin + 1])
-            cursor = begin + 1
-            continue
+        if active_label is None:
+            if marker.startswith(_PRIVATE_KEY_BEGIN):
+                label = marker[
+                    len(_PRIVATE_KEY_BEGIN) : -5
+                ].strip()
+                if label.endswith("PRIVATE KEY"):
+                    active_start = marker_start
+                    active_label = label
+        elif marker == f"{_PRIVATE_KEY_END_PREFIX}{active_label}-----":
+            assert active_start is not None
+            result.append(value[cursor:active_start])
+            result.append("<redacted-private-key>")
+            cursor = marker_end
+            active_start = None
+            active_label = None
 
-        end_marker = f"{_PRIVATE_KEY_END_PREFIX}{label}-----"
-        end = value.find(end_marker, header_end + 5)
-        if end < 0:
-            # Unmatched begin markers are not expanded into a potentially
-            # quadratic search. Keep scanning after the marker.
-            result.append(value[cursor : header_end + 5])
-            cursor = header_end + 5
-            continue
+        scan = marker_end
 
-        result.append(value[cursor:begin])
-        result.append("<redacted-private-key>")
-        cursor = end + len(end_marker)
-
+    result.append(value[cursor:])
     return "".join(result)
-
 
 class OutputRedactor:
     def __init__(
