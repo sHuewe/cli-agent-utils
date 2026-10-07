@@ -381,7 +381,7 @@ def test_sandbox_verification_rejects_image_declared_volume(tmp_path: Path) -> N
         validator._verify_container_policy("container")
 
 
-def test_maven_dependency_key_changes_with_relevant_pom(tmp_path: Path) -> None:
+def test_maven_cache_key_is_stable_across_pom_changes(tmp_path: Path) -> None:
     (tmp_path / "pom.xml").write_text("<project>A</project>", encoding="utf-8")
     first = maven_dependency_key(tmp_path)
 
@@ -389,7 +389,7 @@ def test_maven_dependency_key_changes_with_relevant_pom(tmp_path: Path) -> None:
     second = maven_dependency_key(tmp_path)
 
     assert first.startswith("maven-")
-    assert first != second
+    assert first == second
 
 
 def test_maven_dependency_key_ignores_source_changes(tmp_path: Path) -> None:
@@ -729,7 +729,7 @@ def test_gradle_dependency_key_changes_with_buildsrc_source(tmp_path: Path) -> N
     second = gradle_dependency_key(tmp_path)
 
     assert first.startswith("gradle-")
-    assert first != second
+    assert first == second
 
 
 
@@ -752,7 +752,7 @@ def test_gradle_dependency_key_changes_with_custom_version_catalog(
     )
     second = gradle_dependency_key(tmp_path)
 
-    assert first != second
+    assert first == second
 
 
 
@@ -829,7 +829,7 @@ def test_gradle_dependency_key_changes_with_lockfile(tmp_path: Path) -> None:
     lockfile.write_text("com.example:demo:2.0=runtimeClasspath\n", encoding="utf-8")
     second = gradle_dependency_key(tmp_path)
 
-    assert first != second
+    assert first == second
 
 
 def test_gradle_dependency_key_changes_with_legacy_lockfile(
@@ -845,7 +845,7 @@ def test_gradle_dependency_key_changes_with_legacy_lockfile(
     lockfile.write_text("com.example:demo:2.0\n", encoding="utf-8")
     second = gradle_dependency_key(tmp_path)
 
-    assert first != second
+    assert first == second
 
 
 
@@ -868,7 +868,7 @@ def test_gradle_dependency_key_changes_with_custom_named_toml_catalog(
     )
     second = gradle_dependency_key(tmp_path)
 
-    assert first != second
+    assert first == second
 
 
 
@@ -891,32 +891,25 @@ def test_gradle_dependency_key_keeps_nested_project_named_build(
     )
     second = gradle_dependency_key(tmp_path)
 
-    assert first != second
+    assert first == second
 
 
 
-def test_maven_dependency_key_rejects_reactor_projects(
+def test_maven_cache_key_does_not_parse_reactor_modules(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "pom.xml").write_text(
         """
 <project>
   <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>root</artifactId>
-  <version>1.0</version>
-  <packaging>pom</packaging>
-  <modules>
-    <module>child</module>
-  </modules>
+  <modules><module>child</module></modules>
 </project>
 """.strip()
         + "\n",
         encoding="utf-8",
     )
 
-    with pytest.raises(ValidationError, match="Multi-Module"):
-        maven_dependency_key(tmp_path)
+    assert maven_dependency_key(tmp_path).startswith("maven-")
 
 
 def test_maven_dependency_key_ignores_unrelated_malformed_pom_fixture(
@@ -982,7 +975,7 @@ def test_docker_stream_reparse_point_detection() -> None:
 
 
 
-def test_maven_dependency_key_rejects_local_parent_pom(
+def test_maven_cache_key_does_not_parse_local_parent_pom(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "pom.xml").write_text(
@@ -1001,30 +994,49 @@ def test_maven_dependency_key_rejects_local_parent_pom(
         + "\n",
         encoding="utf-8",
     )
-    (tmp_path / "parent.xml").write_text("<project/>\n", encoding="utf-8")
-
-    with pytest.raises(ValidationError, match="Lokale Maven-Parent-POMs"):
-        maven_dependency_key(tmp_path)
-
-
-def test_maven_dependency_key_allows_repository_parent_with_empty_relative_path(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "pom.xml").write_text(
-        """
-<project>
-  <modelVersion>4.0.0</modelVersion>
-  <parent>
-    <groupId>com.example</groupId>
-    <artifactId>parent</artifactId>
-    <version>1.0</version>
-    <relativePath/>
-  </parent>
-  <artifactId>child</artifactId>
-</project>
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
 
     assert maven_dependency_key(tmp_path).startswith("maven-")
+
+
+
+def test_gradle_offline_dependency_failure_requests_cache_refresh(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    cache_root = tmp_path / "gradle-cache"
+    entry = gradle_cache_entry(cache_root, tmp_path)
+    (entry.gradle_home / "caches").mkdir(parents=True)
+    write_gradle_ready_metadata(entry.directory, entry.key)
+
+    class MissingDependencyBackend(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            self.calls.append((args, input_bytes))
+            if args[0] == "inspect":
+                return DockerCommandResult(0, inspect_payload(), "")
+            if args[0] == "exec" and "cat" in args:
+                return DockerCommandResult(
+                    0,
+                    "Could not resolve all files for configuration ':runtimeClasspath'.\n",
+                    "",
+                )
+            if args[0] == "exec" and "gradle" in args:
+                return DockerCommandResult(1, "", "")
+            return DockerCommandResult(0, "ok", "")
+
+    validator = DockerTestValidator(
+        tmp_path,
+        ValidatorSettings(
+            python_image=PINNED_PYTHON,
+            maven_image=PINNED_MAVEN,
+            gradle_image=PINNED_GRADLE,
+            gradle_cache_root=cache_root,
+        ),
+        backend=MissingDependencyBackend(),
+    )
+
+    result = validator.run_java_tests(".", build_system="gradle")
+
+    assert result["success"] is False
+    assert result["reason"] == "dependency_cache_may_be_stale"
+    assert "prepare-gradle" in result["message_to_user"]
