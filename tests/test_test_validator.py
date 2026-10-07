@@ -272,12 +272,13 @@ def test_java_maven_selector_is_translated_without_shell(
         for args, _ in backend.calls
         if args[0] == "exec" and "mvn" in args
     )
-    assert exec_call[-6:] == [
+    assert exec_call[-7:] == [
         "mvn",
         "-o",
         "-B",
         "-Dmaven.repo.local=/tmp/m2",
         "-Dtest=com.example.ExampleTest#works",
+        "-Dsurefire.failIfNoSpecifiedTests=false",
         "test",
     ]
     assert not any(
