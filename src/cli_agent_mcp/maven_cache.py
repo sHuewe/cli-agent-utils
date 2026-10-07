@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .test_validator_types import TestValidationError
 
-_CACHE_SCHEMA = "cli-agent-maven-cache-v2"
+_CACHE_SCHEMA = "cli-agent-maven-cache-v3"
 _IGNORED_DIRECTORIES = {
     ".git",
     ".gradle",
@@ -77,76 +77,27 @@ class MavenCacheEntry:
         )
 
 
-def _declared_module_poms(
-    project: Path,
-    initial_poms: tuple[Path, ...],
-) -> tuple[Path, ...]:
-    result: dict[str, Path] = {
-        path.relative_to(project).as_posix(): path for path in initial_poms
-    }
-    pending = list(initial_poms)
-    parsed: set[str] = set()
+def _reject_reactor_modules(root_pom: Path) -> None:
+    try:
+        root = ET.parse(root_pom).getroot()
+    except (OSError, ET.ParseError) as exc:
+        raise TestValidationError(
+            "Die Root-pom.xml konnte nicht sicher ausgewertet werden."
+        ) from exc
 
-    while pending:
-        pom = pending.pop()
-        relative_pom = pom.relative_to(project).as_posix()
-        if relative_pom in parsed:
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1] != "modules":
             continue
-        parsed.add(relative_pom)
-
-        try:
-            root = ET.parse(pom).getroot()
-        except (OSError, ET.ParseError) as exc:
+        if any(
+            child.tag.rsplit("}", 1)[-1] == "module"
+            and (child.text or "").strip()
+            for child in element
+        ):
             raise TestValidationError(
-                f"Maven-POM konnte nicht sicher ausgewertet werden: {relative_pom}"
-            ) from exc
-
-        for element in root.iter():
-            if element.tag.rsplit("}", 1)[-1] != "module":
-                continue
-            raw = (element.text or "").strip()
-            if not raw or "${" in raw:
-                continue
-
-            raw_candidate = pom.parent / raw
-            if raw_candidate.is_symlink():
-                raise TestValidationError(
-                    "Maven-Reaktor-POM darf kein Symlink sein: "
-                    f"{raw_candidate.relative_to(project)}"
-                )
-            candidate = raw_candidate.resolve()
-            try:
-                candidate.relative_to(project)
-            except ValueError as exc:
-                raise TestValidationError(
-                    "Maven-Reaktor-Module müssen innerhalb des ausgewählten "
-                    f"Projekts liegen: {raw!r} in {relative_pom}"
-                ) from exc
-
-            if candidate.is_symlink():
-                raise TestValidationError(
-                    "Maven-Reaktor-POM darf kein Symlink sein: "
-                    f"{candidate.relative_to(project)}"
-                )
-            if candidate.is_dir():
-                candidate = candidate / "pom.xml"
-                if candidate.is_symlink():
-                    raise TestValidationError(
-                        "Maven-Reaktor-POM darf kein Symlink sein: "
-                        f"{candidate.relative_to(project)}"
-                    )
-            if not candidate.is_file():
-                # Maven itself decides whether a profile-specific or otherwise
-                # inactive module is required. Only existing literal module
-                # inputs participate in the deterministic cache key.
-                continue
-
-            relative = candidate.relative_to(project).as_posix()
-            if relative not in result:
-                result[relative] = candidate
-                pending.append(candidate)
-
-    return tuple(result[name] for name in sorted(result))
+                "Maven-Multi-Module-/Reaktor-Projekte werden vom v1-"
+                "Offline-Validator noch nicht unterstützt. Verwende vorerst "
+                "ein Single-Module-Projekt ohne <modules>."
+            )
 
 
 def maven_dependency_key(project: Path) -> str:
@@ -159,7 +110,8 @@ def maven_dependency_key(project: Path) -> str:
     if not root_pom.is_file():
         raise TestValidationError("Maven-Projekt benötigt eine pom.xml.")
 
-    files = list(_declared_module_poms(root, (root_pom,)))
+    _reject_reactor_modules(root_pom)
+    files = [root_pom]
     for relative_name in _ROOT_MAVEN_FILES:
         candidate = root / relative_name
         if candidate.is_symlink():
