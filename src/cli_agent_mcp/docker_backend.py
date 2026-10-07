@@ -21,47 +21,90 @@ def _iter_safe_stream_paths(source: Path):
         source_stat = os.stat(source, follow_symlinks=False)
     except OSError as exc:
         raise ValueError(f"Streamed directory could not be inspected: {source}") from exc
-    if stat.S_ISLNK(source_stat.st_mode) or _is_windows_reparse_point(source_stat):
+    if (
+        stat.S_ISLNK(source_stat.st_mode)
+        or _is_windows_reparse_point(source_stat)
+        or not stat.S_ISDIR(source_stat.st_mode)
+    ):
         raise ValueError(
             f"Symlink/reparse point streamed directory is not allowed: {source}"
         )
-    if not stat.S_ISDIR(source_stat.st_mode):
-        raise ValueError(f"Streamed path is not a directory: {source}")
 
-    def walk(directory: Path):
+    def walk(directory: Path, expected: os.stat_result):
+        directory_fd: int | None = None
+        scanner = None
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+        directory_flag = getattr(os, "O_DIRECTORY", 0)
+        nofollow_flag = getattr(os, "O_NOFOLLOW", 0)
         try:
-            entries = sorted(os.scandir(directory), key=lambda entry: entry.name)
+            if directory_flag:
+                directory_fd = os.open(
+                    directory,
+                    flags | directory_flag | nofollow_flag,
+                )
+                opened = os.fstat(directory_fd)
+                if (
+                    not stat.S_ISDIR(opened.st_mode)
+                    or _is_windows_reparse_point(opened)
+                    or not _same_file(expected, opened)
+                ):
+                    raise ValueError(
+                        f"Streamed directory changed during transfer: {directory}"
+                    )
+                scanner = os.scandir(directory_fd)
+            else:
+                scanner = os.scandir(directory)
+                opened = os.stat(directory, follow_symlinks=False)
+                if (
+                    stat.S_ISLNK(opened.st_mode)
+                    or _is_windows_reparse_point(opened)
+                    or not stat.S_ISDIR(opened.st_mode)
+                    or not _same_file(expected, opened)
+                ):
+                    raise ValueError(
+                        f"Streamed directory changed during transfer: {directory}"
+                    )
+
+            with scanner as entries:
+                for entry in entries:
+                    path = directory / entry.name
+                    try:
+                        entry_stat = entry.stat(follow_symlinks=False)
+                    except OSError as exc:
+                        raise ValueError(
+                            f"Streamed path could not be inspected: {path}"
+                        ) from exc
+                    if (
+                        stat.S_ISLNK(entry_stat.st_mode)
+                        or _is_windows_reparse_point(entry_stat)
+                    ):
+                        raise ValueError(
+                            "Symlink/reparse point in streamed directory is not allowed: "
+                            f"{path}"
+                        )
+                    if stat.S_ISDIR(entry_stat.st_mode):
+                        yield path, entry_stat
+                        yield from walk(path, entry_stat)
+                    elif stat.S_ISREG(entry_stat.st_mode):
+                        yield path, entry_stat
+                    else:
+                        raise ValueError(
+                            f"Unsupported filesystem entry in streamed directory: {path}"
+                        )
+        except ValueError:
+            raise
         except OSError as exc:
             raise ValueError(
-                f"Streamed directory could not be read: {directory}"
+                f"Streamed directory could not be safely read: {directory}"
             ) from exc
-        for entry in entries:
-            path = Path(entry.path)
-            try:
-                entry_stat = entry.stat(follow_symlinks=False)
-            except OSError as exc:
-                raise ValueError(
-                    f"Streamed path could not be inspected: {path}"
-                ) from exc
-            if (
-                stat.S_ISLNK(entry_stat.st_mode)
-                or _is_windows_reparse_point(entry_stat)
-            ):
-                raise ValueError(
-                    "Symlink/reparse point in streamed directory is not allowed: "
-                    f"{path}"
-                )
-            if stat.S_ISDIR(entry_stat.st_mode):
-                yield path, entry_stat
-                yield from walk(path)
-            elif stat.S_ISREG(entry_stat.st_mode):
-                yield path, entry_stat
-            else:
-                raise ValueError(
-                    f"Unsupported filesystem entry in streamed directory: {path}"
-                )
+        finally:
+            if directory_fd is not None:
+                try:
+                    os.close(directory_fd)
+                except OSError:
+                    pass
 
-    yield from walk(source)
+    yield from walk(source, source_stat)
 
 
 def _same_file(expected: os.stat_result, actual: os.stat_result) -> bool:
