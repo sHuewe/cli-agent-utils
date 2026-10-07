@@ -30,6 +30,7 @@ class TestValidatorSettings:
     tmp_tmpfs_size: str = "512m"
     max_project_bytes: int = 64 * 1024 * 1024
     max_file_bytes: int = 16 * 1024 * 1024
+    max_snapshot_entries: int = 20_000
     max_output_chars: int = 200_000
     maven_cache_root: Path | None = None
     gradle_cache_root: Path | None = None
@@ -53,6 +54,8 @@ class TestValidatorSettings:
             raise ValueError("pids_limit muss positiv sein.")
         if self.max_project_bytes <= 0 or self.max_file_bytes <= 0:
             raise ValueError("Projekt- und Dateigrößenlimits müssen positiv sein.")
+        if self.max_snapshot_entries <= 0:
+            raise ValueError("max_snapshot_entries muss positiv sein.")
         if self.max_output_chars <= 0:
             raise ValueError("max_output_chars muss positiv sein.")
         if self.maven_cache_root is not None:
