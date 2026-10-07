@@ -54,6 +54,8 @@ The snapshot:
 
 The TAR entries are written with container UID/GID `65532:65532`.
 
+The snapshot boundary is designed for an untrusted project tree selected by the agent. A separate malicious host process that already has permission to mutate that workspace concurrently is outside the validator's threat model. The implementation still uses no-follow/verified file handling as defense in depth, but it does not claim to provide an atomic filesystem snapshot against an independently compromised host user/session.
+
 ## Docker sandbox
 
 The validator first creates the container and inspects its effective configuration before it starts project code.
@@ -322,7 +324,7 @@ Configuration files such as `.env` intentionally remain part of the project snap
 
 Before testing, the validator scans common text configuration formats such as `.env`, `.properties`, YAML, JSON and TOML from the already verified in-memory snapshot archive. It does not reopen the original workspace paths for secret discovery. JSON is parsed structurally so escaped string values are decoded correctly; the other text formats use a bounded assignment-style scanner. Values under sensitive keys including password, secret, token and API/access key names are added to an exact multi-pattern redactor. Generic bearer-token, credential-assignment and PEM-private-key patterns are also redacted.
 
-Both discovery and redaction are explicitly bounded. If secret discovery would exceed its configured value/count budget, the validator still runs the isolated test but suppresses the captured test output instead of risking unredacted log return. Exact multi-secret redaction uses a single-pass multi-pattern matcher rather than rescanning the whole output once per secret.
+Both discovery and redaction are explicitly bounded. If secret discovery would exceed its fixed value/count budget, the validator still runs the isolated test but suppresses the captured test output instead of risking unredacted log return. Exact multi-secret redaction uses a single-pass multi-pattern matcher rather than rescanning the whole output once per secret.
 
 This protects against common accidental leakage while preserving normal project configuration inside the sandbox. Redaction is defense in depth, not a confidentiality guarantee against malicious test code that deliberately transforms secret material before printing it.
 
