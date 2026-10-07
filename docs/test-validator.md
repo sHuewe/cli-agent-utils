@@ -82,6 +82,14 @@ Docker is a strong practical isolation layer but not a virtual-machine security 
 
 All images must be digest-pinned and already present locally. `--pull never` is mandatory. The images must also provide a POSIX `sh`, `tar`, `cat`, `cp`, `mkdir` and `sleep`, which the fixed sandbox runner uses for lifecycle, keepalive, snapshot extraction, bounded output capture and offline-cache preparation.
 
+### Dependency-cache contract
+
+Every `prepare-*` command is an explicit, trusted operator action outside the MCP sandbox. It may execute project-controlled build logic with the current user's normal permissions, network access and package-manager credentials. This is intentional and is not part of the agent isolation boundary.
+
+The promoted cache is only a credential-free offline artifact snapshot. Its project-scoped identity is stable and does not claim that the prepared dependency graph is still correct when a validator tool runs later. No semantic-equivalence guarantee is made between preparation and validation. Profiles, mirrors, dynamic versions, snapshots, platform-specific build logic, changed manifests or other project changes may make an existing cache incomplete or otherwise unsuitable.
+
+The validator therefore does not try to parse every possible package-manager input to prove freshness. It uses the existing prepared cache offline. If required artifacts are absent, the build/install fails closed; recognized dependency-resolution failures return `dependency_cache_may_be_stale` and ask the user to rerun the matching `prepare-*` command.
+
 ### Python
 
 The configured Python image must contain Python, pip and pytest. Project dependencies are provided by a separate prepared wheel cache.
@@ -216,14 +224,14 @@ cli-agent-test-cache prepare-maven C:\dev\my-project `
   --cache-root D:\cli-agent-dependency-cache\maven
 ```
 
-Preparation intentionally runs outside the MCP sandbox. Maven may use its normal user/global configuration, including the user's standard `~/.m2/settings.xml` and the selected Maven installation's global `conf/settings.xml`, for repository, mirror and credential configuration. If either settings file defines profiles/active profiles that alter the effective build model, preparation fails closed; move that build semantics into the project POM before using the offline validator. Project-specific alternate settings via `-s` / `--settings` or `-gs` / `--global-settings` in `.mvn/maven.config` are also rejected, including attached/equals forms such as `-s../settings.xml` or `--global-settings=../settings.xml`. Alternate project files via `-f` / `--file` are also rejected; the v1 validator uses the normal project `pom.xml`. This restriction does not disable Maven's normal user/global settings. It builds an isolated local repository using:
+Preparation intentionally runs outside the MCP sandbox. Maven may use its normal user/global configuration, including the user's standard `~/.m2/settings.xml`, the selected Maven installation's global `conf/settings.xml`, active profiles, mirrors, repository credentials and project Maven configuration. Those inputs belong to the trusted preparation environment. The validator deliberately does not parse or reject them merely because the later sandbox invocation will not replay the same semantics. It builds an isolated local repository using:
 
 ```text
 mvn -B -Dmaven.repo.local=<cache>/repository dependency:go-offline
 mvn -B -Dmaven.repo.local=<cache>/repository -DskipTests package
 ```
 
-Before promotion, the preparer removes Maven resolver provenance files named `_remote.repositories`. Those files tie downloaded artifacts to remote repository IDs such as a company mirror; the sandbox deliberately does not receive the user's mirror/settings configuration. Removing only this provenance makes the prepared repository an explicit offline snapshot while keeping `settings.xml`, JFrog credentials and other user configuration out of the cache. The preparation command then stores only the sanitized generated Maven repository and a small readiness marker under `maven-<sha256>`.
+Before promotion, the preparer removes Maven resolver-only provenance/state files such as `_remote.repositories`, `resolver-status.properties` and `*.lastUpdated`. The isolated local repository itself is the only Maven payload promoted; user/global `settings.xml`, credentials and other host configuration are not copied into the cache. The preparation command then stores only that sanitized generated repository and a small readiness marker under `maven-<sha256>`.
 
 During a test or build the validator computes the same project cache identity. If no ready cache exists yet, it returns:
 
@@ -310,9 +318,13 @@ The validator requests only the fixed `assemble` task and does not expose arbitr
 
 Container stdout/stderr is redirected to the bounded `/output` tmpfs before it can reach the host process, then truncated/redacted before being returned to the model.
 
-Before testing, the validator scans common text configuration formats such as `.env`, `.properties`, YAML, JSON and TOML from the already verified in-memory snapshot archive. It does not reopen the original workspace paths for secret discovery. Values under sensitive keys including password, secret, token and API/access key names are added to the output redactor. Exact discovered values are redacted from returned output. Generic bearer-token, credential-assignment and PEM-private-key patterns are also redacted.
+Configuration files such as `.env` intentionally remain part of the project snapshot because real test suites often require them. They are available only inside the no-network sandbox; the principal exposure path is therefore captured stdout/stderr returned to the model.
 
-This protects against common accidental leakage. It does not protect against malicious test code deliberately transforming a secret before printing it.
+Before testing, the validator scans common text configuration formats such as `.env`, `.properties`, YAML, JSON and TOML from the already verified in-memory snapshot archive. It does not reopen the original workspace paths for secret discovery. JSON is parsed structurally so escaped string values are decoded correctly; the other text formats use a bounded assignment-style scanner. Values under sensitive keys including password, secret, token and API/access key names are added to an exact multi-pattern redactor. Generic bearer-token, credential-assignment and PEM-private-key patterns are also redacted.
+
+Both discovery and redaction are explicitly bounded. If secret discovery would exceed its configured value/count budget, the validator still runs the isolated test but suppresses the captured test output instead of risking unredacted log return. Exact multi-secret redaction uses a single-pass multi-pattern matcher rather than rescanning the whole output once per secret.
+
+This protects against common accidental leakage while preserving normal project configuration inside the sandbox. Redaction is defense in depth, not a confidentiality guarantee against malicious test code that deliberately transforms secret material before printing it.
 
 Network exfiltration from the test container is blocked by `--network none`.
 
