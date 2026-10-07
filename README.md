@@ -89,7 +89,7 @@ For every test run the validator:
 - removes the short-lived container after the run,
 - enforces transfer timeouts while project/dependency TAR streams are still being written, so a blocked extraction cannot bypass the configured timeout.
 
-Project files such as `.env` are intentionally part of the project snapshot when they are present in the selected project. Test code can therefore read them. Network access is blocked, and direct output of detected secrets is redacted, but redaction is **not** a complete confidentiality boundary against deliberately transformed output.
+Project files such as `.env` are intentionally part of the project snapshot when they are present in the selected project because many real test suites require their normal configuration files. Test code can therefore read them inside the no-network sandbox. Before output is returned to the model, common configuration formats are scanned for sensitive values and exact matches plus common credential patterns are redacted. Secret discovery and redaction are bounded; if the configured safety bounds are exceeded, the validator suppresses the test output rather than returning potentially unredacted logs. Redaction remains defense in depth rather than a complete confidentiality boundary against deliberately transformed output.
 
 ### Required Docker images
 
@@ -108,6 +108,8 @@ registry.internal/gradle-tests@sha256:<64-hex-digest>
 ```
 
 The validator never downloads packages during a test. Python installs only from a prepared local wheel cache with `--no-index`; Maven runs with `-o`; Gradle runs with `--offline`.
+
+All `prepare-*` commands are explicit, trusted operator actions outside the agent sandbox. They may evaluate project-controlled build logic with the current user's permissions, network access and configured package credentials. Their job is only to create a credential-free offline artifact snapshot for later use by the sandbox. A prepared cache is **not** a proof that it contains the dependencies required by the project at validation time, and the validator deliberately does not try to prove semantic equivalence between preparation and the later offline build. Profiles, dynamic versions, snapshots, platform-dependent logic or ordinary project changes can therefore make an existing cache incomplete. The sandbox simply tries the current project against the existing cache and fails closed; recognized missing-dependency failures ask the user to rerun the matching `prepare-*` command.
 
 For Python, dependency preparation follows the same model but **must be executed inside WSL**. This is intentional: the Docker validator runs Linux containers, so preparing with Windows pip could create Windows-only wheels. The interpreter selected by `--python-command` is probed as well and must itself report Linux; a Windows Python executable launched from WSL is rejected.
 
@@ -141,15 +143,15 @@ For Maven, the validator and preparation CLI use the same per-user cache root by
 cli-agent-test-cache prepare-maven C:\dev\my-project
 ```
 
-The command uses Maven's normal user/global configuration and credentials, including the user's standard `~/.m2/settings.xml` and the selected Maven installation's global `conf/settings.xml` for mirrors, repositories and server credentials. Both settings files are rejected when they contain profiles/activeProfiles that would change build semantics not replayed in the sandbox. Dependencies are written into a separate repository below:
+The command uses Maven's normal user/global configuration and credentials, including the user's standard `~/.m2/settings.xml`, the selected Maven installation's global `conf/settings.xml`, profiles, mirrors and repository configuration. Those inputs belong to the trusted preparation environment and are deliberately **not** replayed or interpreted by the sandbox validator. Dependencies are written into a separate repository below:
 
 ```text
 %USERPROFILE%\.cli-agent\dependency-cache\maven\maven-<sha256>\repository
 ```
 
-Project-provided alternate settings selectors in `.mvn/maven.config` (`-s/--settings` and `-gs/--global-settings`, including compact forms) are rejected because those files are not replayed in the offline sandbox. Alternate project files via `-f/--file` are likewise rejected; the v1 validator contract uses the normal `pom.xml`. This does not disable the user's normal Maven settings.
+Preparation may also be affected by project Maven configuration such as `.mvn/maven.config`. That is acceptable: preparation is not the sandbox boundary, and no guarantee is made that its effective build model matches the later fixed offline invocation.
 
-Before promotion, Maven resolver provenance files named `_remote.repositories` are removed from the prepared repository. This is intentional: the sandbox does not receive the user's mirror/repository settings, and the prepared cache is treated as an explicit offline snapshot rather than as a normal Maven download cache. Artifacts therefore remain usable even when preparation used a company mirror such as JFrog. The test validator never receives Maven/JFrog credentials. It calculates the same project identity, streams only that prepared repository into container tmpfs, and executes Maven offline. Cache preparation runs through the Maven `package` lifecycle with `-DskipTests`, so build/package plugins needed by `run_maven_build` are prepared as well. Changes to POMs, parent POMs, modules or other Maven inputs do **not** create a new cache key. If the offline build reports unresolved/missing dependencies, the tool returns a user-facing hint to run `prepare-maven` again. Every preparation builds a fresh temporary cache and replaces only after a successful preparation the previous cache for that project.
+Before promotion, Maven resolver-only provenance/state files such as `_remote.repositories`, `resolver-status.properties` and `*.lastUpdated` are removed from the prepared repository. This is intentional: the sandbox does not receive the user's mirror/repository settings, and the prepared cache is treated as an explicit offline artifact snapshot rather than as a normal Maven download cache. Artifacts therefore remain usable even when preparation used a company mirror such as JFrog. The test validator never receives Maven/JFrog credentials. It calculates the same project identity, streams only that prepared repository into container tmpfs, and executes Maven offline. Cache preparation runs through the Maven `package` lifecycle with `-DskipTests`, so build/package plugins needed by `run_maven_build` are prepared as well. Changes to POMs, parent POMs, modules or other Maven inputs do **not** create a new cache key. If the offline build reports unresolved/missing dependencies, the tool returns a user-facing hint to run `prepare-maven` again. Every preparation builds a fresh temporary cache and replaces only after a successful preparation the previous cache for that project.
 
 For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache/gradle` by default. Prepare the current build configuration once as the normal user in the same host environment as the MCP:
 
