@@ -324,3 +324,34 @@ test = [{include-group = "base"}, "coverage==7.0"]
     plan = python_dependency_plan(project)
 
     assert plan.dependency_specs == ("pytest==9.0", "coverage==7.0")
+
+
+
+def test_gradle_dependency_key_changes_with_included_build_logic_source(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "build.gradle.kts").write_text("", encoding="utf-8")
+    (project / "settings.gradle.kts").write_text(
+        'includeBuild("build-logic")\n',
+        encoding="utf-8",
+    )
+    source = project / "build-logic" / "src" / "main" / "kotlin"
+    source.mkdir(parents=True)
+    plugin = source / "ConventionPlugin.kt"
+    plugin.write_text(
+        'const val dependency = "com.example:a:1.0"\n',
+        encoding="utf-8",
+    )
+
+    from cli_agent_mcp.gradle_cache import gradle_dependency_key
+
+    first = gradle_dependency_key(project)
+    plugin.write_text(
+        'const val dependency = "com.example:a:2.0"\n',
+        encoding="utf-8",
+    )
+    second = gradle_dependency_key(project)
+
+    assert first != second
