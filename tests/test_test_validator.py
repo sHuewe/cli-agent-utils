@@ -31,7 +31,6 @@ from cli_agent_mcp.test_validator import DockerTestValidator
 from cli_agent_mcp.test_validator_redaction import (
     OutputRedactor,
     SecretDiscoveryLimitError,
-    _secret_values_from_line,
     discover_secret_values,
 )
 from cli_agent_mcp.test_validator_server import _workspace_from_core_environment
@@ -1161,59 +1160,13 @@ def test_snapshot_preserves_empty_directories(tmp_path: Path) -> None:
 
 
 
-def test_secret_line_parser_handles_compact_json_fields() -> None:
-    values = _secret_values_from_line(
-        '{"name":"demo","api_token":"compact-json-secret","enabled":true}'
-    )
-
-    assert "compact-json-secret" in values
-
-
-
-def test_yaml_sensitive_block_scalar_fails_closed(tmp_path: Path) -> None:
-    config = tmp_path / "config.yaml"
-    config.write_text(
-        "api_token: |\n"
-        "  line-one\n"
-        "  line-two\n",
-        encoding="utf-8",
-    )
-    snapshot = create_project_snapshot(
-        tmp_path,
-        max_file_bytes=1024 * 1024,
-        max_project_bytes=4 * 1024 * 1024,
-    )
-
-    with pytest.raises(SecretDiscoveryLimitError, match="Block-Scalar"):
-        discover_secret_values(snapshot.archive)
-
-
-def test_yaml_sensitive_block_scalar_with_indentation_indicator_fails_closed(
+def test_json_secret_discovery_handles_compact_and_escaped_values(
     tmp_path: Path,
 ) -> None:
-    config = tmp_path / "config.yml"
-    config.write_text(
-        "api_token: |2-\n"
-        "  line-one\n"
-        "  line-two\n"
-        "password: >+2\n"
-        "  another-secret\n",
-        encoding="utf-8",
-    )
-    snapshot = create_project_snapshot(
-        tmp_path,
-        max_file_bytes=1024 * 1024,
-        max_project_bytes=4 * 1024 * 1024,
-    )
-
-    with pytest.raises(SecretDiscoveryLimitError, match="Block-Scalar"):
-        discover_secret_values(snapshot.archive)
-
-
-def test_json_secret_discovery_decodes_escaped_values(tmp_path: Path) -> None:
     config = tmp_path / "config.json"
     config.write_text(
-        '{"api_key":"abcd\\ndefgh","password":"quote\\\"inside"}',
+        '{"name":"demo","api_token":"compact-json-secret",'
+        '"api_key":"abcd\\ndefgh","password":"quote\\\"inside"}',
         encoding="utf-8",
     )
     snapshot = create_project_snapshot(
@@ -1224,8 +1177,97 @@ def test_json_secret_discovery_decodes_escaped_values(tmp_path: Path) -> None:
 
     values = discover_secret_values(snapshot.archive)
 
+    assert "compact-json-secret" in values
     assert "abcd\ndefgh" in values
     assert 'quote"inside' in values
+
+
+def test_yaml_secret_discovery_uses_yaml_semantics(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "api_token: |2-\n"
+        "  line-one\n"
+        "  line-two\n"
+        "password: !!str >+\n"
+        "  folded\n"
+        "  secret\n"
+        "credentials: &credentials\n"
+        "  access_key: anchored-secret\n"
+        "copy: *credentials\n",
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    values = discover_secret_values(snapshot.archive)
+
+    assert "line-one\nline-two" in values
+    assert "folded secret\n" in values
+    assert "anchored-secret" in values
+
+
+def test_toml_secret_discovery_handles_multiline_strings(tmp_path: Path) -> None:
+    config = tmp_path / "config.toml"
+    config.write_text(
+        'api_token = """line-one\nline-two"""\n'
+        "password = '''literal-one\nliteral-two'''\n",
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    values = discover_secret_values(snapshot.archive)
+
+    assert "line-one\nline-two" in values
+    assert "literal-one\nliteral-two" in values
+
+
+def test_env_and_properties_secret_discovery_use_format_parsers(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".env").write_text(
+        'API_TOKEN="env secret with spaces"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "application.properties").write_text(
+        "service.password=properties\\ value\n",
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    values = discover_secret_values(snapshot.archive)
+
+    assert "env secret with spaces" in values
+    assert "properties value" in values
+
+
+def test_malformed_structured_config_with_sensitive_hint_fails_closed(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "config.toml"
+    config.write_text(
+        'api_token = """unterminated\n',
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    with pytest.raises(SecretDiscoveryLimitError, match="sensitiver Schlüssel"):
+        discover_secret_values(snapshot.archive)
+
 
 
 def test_secret_discovery_fails_closed_when_value_budget_is_exceeded(
