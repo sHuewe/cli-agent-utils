@@ -256,12 +256,17 @@ def _reject_semantic_maven_settings(project: Path) -> None:
             or token.startswith("-s")
             or token == "--settings"
             or token.startswith("--settings=")
+            or token == "-gs"
+            or token.startswith("-gs")
+            or token == "--global-settings"
+            or token.startswith("--global-settings=")
             for token in tokens
         )
         if has_settings_option:
             raise RuntimeError(
-                "Projekt-spezifische Maven-Settings via -s/--settings werden "
-                "vom Offline-Validator nicht unterstützt."
+                "Projekt-spezifische alternative Maven-Settings via "
+                "-s/--settings oder -gs/--global-settings werden vom "
+                "Offline-Validator nicht unterstützt."
             )
 
     settings = _default_maven_settings_path()
