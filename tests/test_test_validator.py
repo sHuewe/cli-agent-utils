@@ -30,6 +30,7 @@ from cli_agent_mcp.python_cache import (
 from cli_agent_mcp.test_validator import DockerTestValidator
 from cli_agent_mcp.test_validator_redaction import (
     OutputRedactor,
+    SecretDiscoveryLimitError,
     _secret_values_from_line,
     discover_secret_values,
 )
@@ -1166,3 +1167,59 @@ def test_secret_line_parser_handles_compact_json_fields() -> None:
     )
 
     assert "compact-json-secret" in values
+
+
+def test_json_secret_discovery_decodes_escaped_values(tmp_path: Path) -> None:
+    config = tmp_path / "config.json"
+    config.write_text(
+        '{"api_key":"abcd\\ndefgh","password":"quote\\\"inside"}',
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    values = discover_secret_values(snapshot.archive)
+
+    assert "abcd\ndefgh" in values
+    assert 'quote"inside' in values
+
+
+def test_secret_discovery_fails_closed_when_value_budget_is_exceeded(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(f"TOKEN_{index}=secret-{index:04d}" for index in range(5)),
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    with pytest.raises(SecretDiscoveryLimitError):
+        discover_secret_values(snapshot.archive, max_secret_values=2)
+
+
+def test_output_redactor_suppresses_output_when_discovery_is_incomplete() -> None:
+    redactor = OutputRedactor(suppress_output=True)
+
+    result = redactor.redact("API_TOKEN=should-never-be-returned")
+
+    assert "should-never-be-returned" not in result
+    assert "unterdrückt" in result
+
+
+def test_output_redactor_handles_many_exact_values_in_single_pass() -> None:
+    secrets = [f"secret-{index:04d}" for index in range(1000)]
+    redactor = OutputRedactor(secrets)
+    output = "prefix " + " ".join(secrets[::100]) + " suffix"
+
+    result = redactor.redact(output)
+
+    assert not any(secret in result for secret in secrets[::100])
+    assert "<redacted>" in result
