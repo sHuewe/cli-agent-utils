@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import platform
@@ -11,9 +10,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from .cache_identity import project_cache_key
 from .test_validator_types import TestValidationError
 
-_CACHE_SCHEMA = "cli-agent-python-cache-v4"
+_CACHE_SCHEMA = "cli-agent-python-cache-v5"
 _REQUIREMENTS_FILE = "requirements.txt"
 _INCLUDE_RE = re.compile(
     r"^\s*(?:(?:-r|-c)\s*=?\s*([^#\s]+)|"
@@ -319,32 +319,31 @@ def python_dependency_plan(project: Path) -> PythonDependencyPlan:
     return PythonDependencyPlan()
 
 
-def python_dependency_key(project: Path) -> str:
+def python_dependency_key(
+    project: Path,
+    *,
+    project_identity: str | None = None,
+) -> str:
     root = project.expanduser().resolve()
     python_dependency_plan(root)
-    files = _requirement_files(root)
-
-    digest = hashlib.sha256()
-    digest.update((_CACHE_SCHEMA + "\0").encode("utf-8"))
-    for path in files:
-        relative = path.relative_to(root).as_posix()
-        try:
-            content = path.read_bytes()
-        except OSError as exc:
-            raise TestValidationError(
-                f"Requirements-Datei konnte nicht gelesen werden: {relative}"
-            ) from exc
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(len(content).to_bytes(8, "big"))
-        digest.update(content)
-        digest.update(b"\0")
-    return "python-" + digest.hexdigest()
+    return project_cache_key(
+        "python",
+        root,
+        project_identity=project_identity,
+    )
 
 
-def python_cache_entry(cache_root: Path, project: Path) -> PythonCacheEntry:
+def python_cache_entry(
+    cache_root: Path,
+    project: Path,
+    *,
+    project_identity: str | None = None,
+) -> PythonCacheEntry:
     root = cache_root.expanduser().resolve()
-    return PythonCacheEntry(root=root, key=python_dependency_key(project))
+    return PythonCacheEntry(
+        root=root,
+        key=python_dependency_key(project, project_identity=project_identity),
+    )
 
 
 def validate_python_cache_tree(directory: Path) -> int:
