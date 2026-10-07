@@ -1334,6 +1334,19 @@ def test_malformed_structured_config_with_sensitive_hint_fails_closed(
 
 
 
+def test_short_sensitive_value_fails_closed(tmp_path: Path) -> None:
+    config = tmp_path / "config.json"
+    config.write_text('{"password":"123"}\n', encoding="utf-8")
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    with pytest.raises(SecretDiscoveryLimitError, match="zu kurz"):
+        discover_secret_values(snapshot.archive)
+
+
 def test_secret_discovery_fails_closed_when_value_budget_is_exceeded(
     tmp_path: Path,
 ) -> None:
