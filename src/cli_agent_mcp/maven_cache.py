@@ -77,7 +77,7 @@ class MavenCacheEntry:
         )
 
 
-def _reject_reactor_modules(root_pom: Path) -> None:
+def _validate_root_pom_contract(root_pom: Path) -> None:
     try:
         root = ET.parse(root_pom).getroot()
     except (OSError, ET.ParseError) as exc:
@@ -85,11 +85,14 @@ def _reject_reactor_modules(root_pom: Path) -> None:
             "Die Root-pom.xml konnte nicht sicher ausgewertet werden."
         ) from exc
 
+    def local_name(tag: str) -> str:
+        return tag.rsplit("}", 1)[-1]
+
     for element in root.iter():
-        if element.tag.rsplit("}", 1)[-1] != "modules":
+        if local_name(element.tag) != "modules":
             continue
         if any(
-            child.tag.rsplit("}", 1)[-1] == "module"
+            local_name(child.tag) == "module"
             and (child.text or "").strip()
             for child in element
         ):
@@ -98,6 +101,28 @@ def _reject_reactor_modules(root_pom: Path) -> None:
                 "Offline-Validator noch nicht unterstützt. Verwende vorerst "
                 "ein Single-Module-Projekt ohne <modules>."
             )
+
+    parent = next(
+        (child for child in root if local_name(child.tag) == "parent"),
+        None,
+    )
+    if parent is None:
+        return
+
+    relative_path = next(
+        (
+            child
+            for child in parent
+            if local_name(child.tag) == "relativePath"
+        ),
+        None,
+    )
+    if relative_path is None or (relative_path.text or "").strip():
+        raise TestValidationError(
+            "Lokale Maven-Parent-POMs werden vom v1-Offline-Validator noch "
+            "nicht unterstützt. Verwende für Repository-Parents ein explizit "
+            "leeres <relativePath/>."
+        )
 
 
 def maven_dependency_key(project: Path) -> str:
@@ -110,7 +135,7 @@ def maven_dependency_key(project: Path) -> str:
     if not root_pom.is_file():
         raise TestValidationError("Maven-Projekt benötigt eine pom.xml.")
 
-    _reject_reactor_modules(root_pom)
+    _validate_root_pom_contract(root_pom)
     files = [root_pom]
     for relative_name in _ROOT_MAVEN_FILES:
         candidate = root / relative_name
