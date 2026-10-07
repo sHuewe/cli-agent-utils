@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 
 from .test_validator_types import TestValidationError
 
-_CACHE_SCHEMA = "cli-agent-python-cache-v1"
+_CACHE_SCHEMA = "cli-agent-python-cache-v2"
 _STANDARD_REQUIREMENTS = (
     "requirements.txt",
     "requirements-dev.txt",
@@ -54,13 +54,54 @@ class PythonCacheEntry:
     def metadata_file(self) -> Path:
         return self.directory / "cache.json"
 
+    @property
+    def install_manifest_file(self) -> Path:
+        return self.wheels / "install-manifest.json"
+
+    def install_wheel_names(self) -> tuple[str, ...]:
+        if self.install_manifest_file.is_symlink() or not self.install_manifest_file.is_file():
+            raise TestValidationError(
+                "Der Python-Cache enthält kein gültiges Offline-Installationsmanifest."
+            )
+        try:
+            value = json.loads(self.install_manifest_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise TestValidationError(
+                "Das Python-Offline-Installationsmanifest konnte nicht gelesen werden."
+            ) from exc
+        if not isinstance(value, list):
+            raise TestValidationError(
+                "Das Python-Offline-Installationsmanifest ist ungültig."
+            )
+        names: list[str] = []
+        for item in value:
+            if (
+                not isinstance(item, str)
+                or not item
+                or Path(item).name != item
+                or not item.endswith(".whl")
+            ):
+                raise TestValidationError(
+                    "Das Python-Offline-Installationsmanifest enthält einen "
+                    "ungültigen Wheel-Namen."
+                )
+            wheel = self.wheels / item
+            if wheel.is_symlink() or not wheel.is_file():
+                raise TestValidationError(
+                    f"Vorbereitetes Wheel fehlt oder ist unsicher: {item}"
+                )
+            names.append(item)
+        return tuple(names)
+
     def metadata(self) -> dict[str, object] | None:
         if (
             self.directory.is_symlink()
             or self.wheels.is_symlink()
             or self.metadata_file.is_symlink()
+            or self.install_manifest_file.is_symlink()
             or not self.wheels.is_dir()
             or not self.metadata_file.is_file()
+            or not self.install_manifest_file.is_file()
         ):
             return None
         try:
@@ -406,6 +447,20 @@ def write_python_ready_metadata(
     key: str,
     plan: PythonDependencyPlan,
 ) -> None:
+    wheels = directory / "wheels"
+    wheel_names = sorted(
+        path.name
+        for path in wheels.iterdir()
+        if path.is_file() and not path.is_symlink() and path.name.endswith(".whl")
+    )
+    if plan.has_dependencies and not wheel_names:
+        raise TestValidationError(
+            "Python-Cache enthält trotz deklarierter Dependencies keine Wheels."
+        )
+    (wheels / "install-manifest.json").write_text(
+        json.dumps(wheel_names, indent=2) + "\n",
+        encoding="utf-8",
+    )
     (directory / "cache.json").write_text(
         json.dumps(
             {
