@@ -252,7 +252,12 @@ def _reject_semantic_maven_settings(project: Path) -> None:
             raise RuntimeError(
                 ".mvn/maven.config konnte nicht gelesen werden."
             ) from exc
-        tokens = config_text.split()
+        effective_config = "\n".join(
+            line
+            for line in config_text.splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        tokens = effective_config.split()
         has_settings_option = any(
             token == "-s"
             or token.startswith("-s")
