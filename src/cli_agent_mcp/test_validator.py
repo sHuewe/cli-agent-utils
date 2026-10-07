@@ -964,7 +964,8 @@ class DockerTestValidator:
         project_path: str = ".",
         build_system: Literal["auto", "maven", "gradle"] = "auto",
     ) -> dict[str, Any]:
-        """Build a Maven or Gradle project offline without executing tests."""
+        """Run the fixed Maven package or Gradle assemble validation command."""
+
         project = self._resolve_project(project_path)
         if build_system not in {"auto", "maven", "gradle"}:
             raise TestValidationError(
