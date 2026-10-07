@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
 from dataclasses import dataclass
@@ -28,6 +29,11 @@ _IGNORED_DIRECTORIES = {
     "target",
     "venv",
 }
+_INCLUDE_BUILD_RE = re.compile(
+    r"""includeBuild\s*\(?\s*["']([^"']+)["']\s*\)?"""
+)
+
+
 _RELEVANT_NAMES = {
     "build.gradle",
     "build.gradle.kts",
@@ -90,6 +96,43 @@ def default_source_gradle_user_home() -> Path:
     return (Path.home() / ".gradle").resolve()
 
 
+def _included_build_roots(project: Path) -> tuple[Path, ...]:
+    roots: dict[str, Path] = {}
+    for name in ("settings.gradle", "settings.gradle.kts"):
+        settings = project / name
+        if settings.is_symlink():
+            raise TestValidationError(
+                f"Gradle-Konfiguration darf kein Symlink sein: {name}"
+            )
+        if not settings.is_file():
+            continue
+        try:
+            text = settings.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise TestValidationError(
+                f"Gradle-Konfigurationsdatei konnte nicht gelesen werden: {name}"
+            ) from exc
+        for match in _INCLUDE_BUILD_RE.finditer(text):
+            raw = match.group(1)
+            candidate = (project / raw).resolve()
+            try:
+                relative = candidate.relative_to(project)
+            except ValueError as exc:
+                raise TestValidationError(
+                    f"Gradle includeBuild muss innerhalb des Projekts liegen: {raw!r}"
+                ) from exc
+            if candidate.is_symlink():
+                raise TestValidationError(
+                    f"Gradle includeBuild darf kein Symlink sein: {raw!r}"
+                )
+            if not candidate.is_dir():
+                raise TestValidationError(
+                    f"Gradle includeBuild existiert nicht: {raw!r}"
+                )
+            roots[relative.as_posix()] = candidate
+    return tuple(roots[name] for name in sorted(roots))
+
+
 def _iter_relevant_files(project: Path) -> tuple[Path, ...]:
     result: list[Path] = []
 
@@ -133,7 +176,9 @@ def _iter_relevant_files(project: Path) -> tuple[Path, ...]:
                     result.append(path)
 
     walk(project)
-    return tuple(result)
+    for included_root in _included_build_roots(project):
+        walk(included_root, include_all_regular_files=True)
+    return tuple(dict.fromkeys(result))
 
 
 def gradle_dependency_key(project: Path) -> str:
