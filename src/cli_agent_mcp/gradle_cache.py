@@ -11,6 +11,46 @@ from .cache_identity import project_cache_key
 from .test_validator_types import TestValidationError
 
 _CACHE_SCHEMA = "cli-agent-gradle-cache-v3"
+
+
+@dataclass(frozen=True)
+class GradleCacheEntry:
+    root: Path
+    key: str
+
+    @property
+    def directory(self) -> Path:
+        return self.root / self.key
+
+    @property
+    def gradle_home(self) -> Path:
+        return self.directory / "gradle-home"
+
+    @property
+    def metadata_file(self) -> Path:
+        return self.directory / "cache.json"
+
+    def is_ready(self) -> bool:
+        if (
+            self.directory.is_symlink()
+            or self.gradle_home.is_symlink()
+            or self.metadata_file.is_symlink()
+            or not self.gradle_home.is_dir()
+            or not self.metadata_file.is_file()
+        ):
+            return False
+        try:
+            metadata = json.loads(self.metadata_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        return (
+            isinstance(metadata, dict)
+            and metadata.get("schema") == _CACHE_SCHEMA
+            and metadata.get("key") == self.key
+            and metadata.get("ready") is True
+        )
+
+
 def default_gradle_cache_root() -> Path:
     return Path.home() / ".cli-agent" / "dependency-cache" / "gradle"
 
