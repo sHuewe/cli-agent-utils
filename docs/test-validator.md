@@ -188,7 +188,7 @@ No cache path therefore has to be added to the admin policy for each project or 
 The cache root is never selected by the model. For each Maven project the validator calculates a deterministic key from:
 
 - the root `pom.xml`,
-- existing literal reactor-module POMs reachable from the root through `<module>`, including nonstandard filenames such as `modules/child.xml`, followed recursively; unrelated fixture files named `pom.xml` are not parsed,
+- no reactor/module graph: Maven `<modules>` is rejected in the v1 validator,
 - root `.mvn/maven.config`,
 - root `.mvn/extensions.xml`,
 - root `.mvn/jvm.config`,
@@ -284,7 +284,7 @@ For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`.
 
 The command derives a deterministic key from Gradle build/configuration files. Generated output directories are excluded only contextually: a nested directory named `build`, `out`, `target` or `dist` that itself contains Gradle project files is treated as a real project directory and its build files are hashed. The key includes `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, dependency lock state (`*.lockfile` plus legacy `gradle/dependency-locks/*` files), all TOML files (including custom-named version catalogs), verification metadata and the full source/configuration trees of literal local `includeBuild(...)` builds such as `build-logic`. Ordinary application source-only changes therefore keep the same key.
 
-Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. The same init script disables every Gradle task of type `Test`, so project task wiring cannot cause tests to run during preparation.
+Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. Sandbox validation intentionally uses the Gradle executable supplied by the administrator-pinned image instead of downloading/executing the wrapper distribution. The administrator is therefore responsible for choosing an image Gradle version compatible with the project's wrapper/build configuration. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. The same init script disables every Gradle task of type `Test`, so project task wiring cannot cause tests to run during preparation.
 
 To support private repositories such as a company JFrog, the preparation command copies only the user's Gradle configuration files (`gradle.properties`, root init scripts and regular files in `init.d`) from the normal Gradle user home into that temporary isolated home. Before promotion, the preparer removes the copied user configuration and discards all generated Gradle user-home state except the downloaded module dependency cache at `caches/modules-2`. This also removes compiled init-script/DSL artifacts. Older pre-sanitization Gradle caches use a previous cache schema and are rejected.
 
@@ -404,3 +404,10 @@ Gradle -> gradle --offline --no-daemon --gradle-user-home /tmp/gradle assemble
 ```
 
 The separate Maven/Gradle build helpers are implementation details and are not exposed as MCP tools.
+
+
+### Unsupported v1 layouts
+
+The v1 Maven validator supports only a single root `pom.xml`. If that POM declares non-empty `<modules>`, preparation/cache-key calculation fails closed. Maven reactor/multi-module support is deferred to a later version.
+
+For Gradle, root-level directories named `build`, `target`, or `dist` are reserved as generated-output directories by snapshot creation. A project that explicitly maps a real Gradle module to one of those root-level paths is therefore unsupported in v1. Nested source directories with these names remain supported where they are not recognized as generated output.
