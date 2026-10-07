@@ -22,11 +22,7 @@ _IGNORED_DIRECTORIES = {
     ".venv",
     ".vscode",
     "__pycache__",
-    "build",
-    "dist",
     "node_modules",
-    "out",
-    "target",
     "venv",
 }
 _INCLUDE_BUILD_RE = re.compile(
@@ -133,6 +129,34 @@ def _included_build_roots(project: Path) -> tuple[Path, ...]:
     return tuple(roots[name] for name in sorted(roots))
 
 
+_GENERATED_DIRECTORY_NAMES = {"build", "dist", "out", "target"}
+
+
+def _is_generated_gradle_directory(project: Path, path: Path) -> bool:
+    if path.name not in _GENERATED_DIRECTORY_NAMES:
+        return False
+
+    # A directory that contains its own Gradle build file is a real project
+    # directory, even if its name happens to be "build", "out", etc.
+    if (
+        (path / "build.gradle").is_file()
+        or (path / "build.gradle.kts").is_file()
+        or (path / "settings.gradle").is_file()
+        or (path / "settings.gradle.kts").is_file()
+    ):
+        return False
+
+    relative = path.relative_to(project)
+    if len(relative.parts) == 1:
+        return True
+
+    parent = path.parent
+    return (
+        (parent / "build.gradle").is_file()
+        or (parent / "build.gradle.kts").is_file()
+    )
+
+
 def _iter_relevant_files(project: Path) -> tuple[Path, ...]:
     result: list[Path] = []
 
@@ -157,7 +181,10 @@ def _iter_relevant_files(project: Path) -> tuple[Path, ...]:
                     f"{path.relative_to(project)}"
                 )
             if stat.S_ISDIR(mode):
-                if entry.name in _IGNORED_DIRECTORIES:
+                if (
+                    entry.name in _IGNORED_DIRECTORIES
+                    or _is_generated_gradle_directory(project, path)
+                ):
                     continue
                 walk(
                     path,
