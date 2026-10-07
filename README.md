@@ -133,9 +133,9 @@ During tests the wheel cache is streamed into the sandbox and dependencies are i
 python -m pip install --no-index --find-links /tmp/python-wheels --target /tmp/python-deps ...
 ```
 
-If the Python dependency files change and the matching cache is missing, the MCP returns `dependencies_not_prepared` and explicitly tells the user to run `prepare-python` under WSL.
+The Python cache is project-scoped rather than dependency-content-scoped. The validator reuses the most recently prepared cache for that project until an offline install/test indicates that the cache may be stale. Running `prepare-python` always rebuilds and atomically replaces that project's cache.
 
-For Maven, the validator and preparation CLI use the same per-user cache root by default: `~/.cli-agent/dependency-cache/maven`. The admin policy therefore does **not** need a project-specific or user-specific cache path. An administrator can override the root once with `--maven-cache-root` if required. Each Maven dependency state gets a deterministic key from the root `pom.xml` and root `.mvn` configuration. Maven multi-module/reactor projects (`<modules>`) are intentionally not supported by the v1 validator and preparation fails closed; support can be added in a later version. Local parent-POM resolution is also unsupported in v1: projects inheriting from a repository parent must use an explicitly empty `<relativePath/>` so Maven does not resolve a parent file from the workspace. The user normally prepares that key in the same host environment as the MCP with the normal Maven/JFrog setup:
+For Maven, the validator and preparation CLI use the same per-user cache root by default: `~/.cli-agent/dependency-cache/maven`. The admin policy therefore does **not** need a project-specific or user-specific cache path. Each project gets one stable cache identity derived from the cache type plus the normalized absolute project root path; Maven/POM contents are deliberately not interpreted to decide cache freshness. The user prepares or refreshes that project cache in the same host environment as the MCP with the normal Maven/JFrog setup:
 
 ```powershell
 cli-agent-test-cache prepare-maven C:\dev\my-project
@@ -149,7 +149,7 @@ The command uses Maven's normal user/global configuration and credentials, inclu
 
 Project-provided alternate settings selectors in `.mvn/maven.config` (`-s/--settings` and `-gs/--global-settings`, including compact forms) are rejected because those files are not replayed in the offline sandbox. Alternate project files via `-f/--file` are likewise rejected; the v1 validator contract uses the normal `pom.xml`. This does not disable the user's normal Maven settings.
 
-Before promotion, Maven resolver provenance files named `_remote.repositories` are removed from the prepared repository. This is intentional: the sandbox does not receive the user's mirror/repository settings, and the prepared cache is treated as an explicit offline snapshot rather than as a normal Maven download cache. Artifacts therefore remain usable even when preparation used a company mirror such as JFrog. The test validator never receives Maven/JFrog credentials. It calculates the same key, streams only that prepared repository into container tmpfs, and executes Maven offline. Cache preparation now runs through the Maven `package` lifecycle with `-DskipTests`, so build/package plugins needed by `run_maven_build` are prepared as well. Source changes do not invalidate the cache; relevant POM/configuration changes produce a new key and require preparation again.
+Before promotion, Maven resolver provenance files named `_remote.repositories` are removed from the prepared repository. This is intentional: the sandbox does not receive the user's mirror/repository settings, and the prepared cache is treated as an explicit offline snapshot rather than as a normal Maven download cache. Artifacts therefore remain usable even when preparation used a company mirror such as JFrog. The test validator never receives Maven/JFrog credentials. It calculates the same project identity, streams only that prepared repository into container tmpfs, and executes Maven offline. Cache preparation runs through the Maven `package` lifecycle with `-DskipTests`, so build/package plugins needed by `run_maven_build` are prepared as well. Changes to POMs, parent POMs, modules or other Maven inputs do **not** create a new cache key. If the offline build reports unresolved/missing dependencies, the tool returns a user-facing hint to run `prepare-maven` again. Every preparation builds a fresh temporary cache and atomically replaces the previous cache for that project.
 
 For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache/gradle` by default. Prepare the current build configuration once as the normal user in the same host environment as the MCP:
 
@@ -159,13 +159,13 @@ cli-agent-test-cache prepare-gradle C:\dev\my-project
 
 Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup and prepares `assemble`, `testClasses`, and resolvable runtime classpaths (including `runtimeClasspath`, `testRuntimeClasspath`, and similarly named custom runtime classpaths). During preparation, all Gradle `Test` tasks are disabled by the validator-controlled init script so project wiring such as `assemble.dependsOn(test)` cannot execute tests. A project Gradle wrapper is preferred during preparation when present; otherwise Gradle from PATH is used. Sandbox validation always uses the Gradle executable from the administrator-pinned image, so keeping that Gradle version compatible with the project's wrapper version is an administrator responsibility. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation. Before promotion, all user configuration and compiled/script/DSL cache state is discarded and only Gradle's downloaded module dependency cache (`caches/modules-2`) is retained. Consequently, the offline sandboxed build must not depend on user-specific init scripts for build semantics. If an organization requires such rules during offline execution, provide them as project configuration or via a separately administered credential-free sandbox configuration rather than relying on the user's Gradle home. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
 
-Relevant Gradle build/configuration changes, including build files in nested project directories even when such a directory is named `build`, `out`, `target` or `dist`, dependency lockfiles (`*.lockfile` and legacy `gradle/dependency-locks/*` state), TOML catalogs, including custom-named version catalog files and literal local `includeBuild(...)` build-logic sources, generate a new dependency key. Ordinary application source-only changes keep the existing cache.
+Gradle cache freshness is deliberately **not** inferred from build scripts. The cache identity depends only on the normalized project root path, so arbitrary Gradle build logic such as `buildSrc`, `includeBuild(...)`, custom property files or dynamically computed dependency coordinates does not need to be parsed by cli-agent. If an offline Gradle build cannot resolve a dependency, the result includes a user-facing hint to rerun `prepare-gradle`; preparation always replaces that project's previous cache atomically.
 
-Maven and Gradle preparation normally works directly on Windows for typical platform-independent Java builds. Some projects intentionally resolve different dependencies or activate different build logic depending on operating system or architecture. If a Windows-prepared cache fails later in the Linux sandbox for that reason, retry preparation inside WSL while still targeting the Windows-hosted MCP cache and use `--force` so the existing cache entry is actually replaced:
+Maven and Gradle preparation normally works directly on Windows for typical platform-independent Java builds. Some projects intentionally resolve different dependencies or activate different build logic depending on operating system or architecture. If a Windows-prepared cache fails later in the Linux sandbox for that reason, rerun preparation inside WSL while targeting the Windows-hosted MCP cache. Preparation always replaces the existing project cache:
 
 ```bash
-cli-agent-test-cache prepare-maven . --target windows --force
-cli-agent-test-cache prepare-gradle . --target windows --force
+cli-agent-test-cache prepare-maven . --target windows
+cli-agent-test-cache prepare-gradle . --target windows
 ```
 
 For a cli-agent/MCP installation that itself runs inside WSL, omit `--target windows`; the default `--target native` correctly uses the WSL user's own cache.
@@ -294,7 +294,7 @@ There is deliberately no Python build tool.
 
 If both Maven and Gradle descriptors exist, set `build_system` explicitly.
 
-If the Maven or Gradle cache for the current dependency key is missing, the tool returns `reason = "dependencies_not_prepared"` and the required key. Run `cli-agent-test-cache prepare-maven <project>` or `prepare-gradle <project>` as the user, then retry. The machine-wide admin policy does not need to change per project.
+If a project cache has never been prepared, the tool returns `reason = "dependencies_not_prepared"` plus a user-facing preparation command. If a cached offline build fails with a recognized missing-dependency pattern, it returns `reason = "dependency_cache_may_be_stale"` and asks the user to rerun the matching `prepare-*` command. Cache freshness is therefore determined by the build/install attempt, not by cli-agent parsing dependency files.
 
 See [docs/test-validator.md](docs/test-validator.md) for the full security and configuration details.
 
@@ -313,6 +313,3 @@ cli-agent-python-validator-mcp
 See [docs/python-validator.md](docs/python-validator.md). New test automation should generally use the Sandbox Test Validator above.
 
 
-### v1 build-layout constraints
-
-For the initial validator release, Maven multi-module/reactor projects are intentionally unsupported. Gradle project directories mapped to root-level output-like names such as `build`, `target`, or `dist` are also unsupported because those names are reserved as generated-output directories in the project snapshot. These cases can be added later without widening the current v1 contract.
