@@ -153,7 +153,7 @@ For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache
 cli-agent-test-cache prepare-gradle C:\dev\my-project
 ```
 
-Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup and prepares `assemble`, `testClasses`, and resolvable runtime classpaths (including `runtimeClasspath`, `testRuntimeClasspath`, and similarly named custom runtime classpaths) without executing tests. A project Gradle wrapper is preferred when present; otherwise Gradle from PATH is used. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation and removed before the cache is marked ready. This allows private repository/JFrog credentials to be used during preparation without exposing those configuration files to the validator. Consequently, the offline sandboxed build must not depend on user-specific init scripts for build semantics. If an organization requires such rules during offline execution, provide them as project configuration or via a separately administered credential-free sandbox configuration rather than relying on the user's Gradle home. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
+Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup and prepares `assemble`, `testClasses`, and resolvable runtime classpaths (including `runtimeClasspath`, `testRuntimeClasspath`, and similarly named custom runtime classpaths) without executing tests. A project Gradle wrapper is preferred when present; otherwise Gradle from PATH is used. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation. Before promotion, all user configuration and compiled/script/DSL cache state is discarded and only Gradle's downloaded module dependency cache (`caches/modules-2`) is retained. Consequently, the offline sandboxed build must not depend on user-specific init scripts for build semantics. If an organization requires such rules during offline execution, provide them as project configuration or via a separately administered credential-free sandbox configuration rather than relying on the user's Gradle home. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
 
 Relevant Gradle build/configuration changes generate a new dependency key. Source-only changes keep the existing cache.
 
@@ -248,7 +248,7 @@ The fixed test command is equivalent to:
 python -m pytest -q [selector]
 ```
 
-When Python dependencies are declared in common `requirements*.txt`, `pyproject.toml` project dependencies, or test/dev dependency groups, a matching WSL-prepared wheel cache is required first.
+When Python dependencies are declared in common `requirements*.txt`, `pyproject.toml` project dependencies, or test/dev dependency groups, a matching WSL-prepared wheel cache is required first. Recursive requirements includes are resolved relative to the including file, and PEP 735 `include-group` entries are expanded recursively.
 
 For Java code changes, prefer `run_java_build`. Java test execution is intended only when the task concerns test cases. Java auto-detects Maven (`pom.xml`) or Gradle (`build.gradle` / `build.gradle.kts`):
 
