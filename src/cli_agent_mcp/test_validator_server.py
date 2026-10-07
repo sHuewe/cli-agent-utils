@@ -84,7 +84,8 @@ def create_server(validator: DockerTestValidator) -> FastMCP:
         If it succeeds, consider the implementation validated for normal coding
         tasks and do not additionally run tests unless the task itself concerns
         test cases. Auto detection uses pom.xml or build.gradle/build.gradle.kts.
-        Maven is fixed to package with -DskipTests; Gradle is fixed to assemble.
+        Maven is fixed to package with -DskipTests; Gradle is fixed to assemble
+        with Gradle Test tasks disabled by a validator-controlled init script.
         The model cannot supply arbitrary goals, tasks or command-line options.
         """
         return validator.run_java_build(
