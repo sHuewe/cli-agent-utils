@@ -1299,6 +1299,22 @@ def test_dotenv_parse_error_on_sensitive_line_fails_closed(
         discover_secret_values(snapshot.archive)
 
 
+def test_dotenv_sensitive_interpolation_fails_closed(tmp_path: Path) -> None:
+    (tmp_path / ".env").write_text(
+        "BASE=actual-secret\n"
+        "API_TOKEN=${BASE}\n",
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    with pytest.raises(SecretDiscoveryLimitError, match="Variableninterpolation"):
+        discover_secret_values(snapshot.archive)
+
+
 def test_malformed_structured_config_with_sensitive_hint_fails_closed(
     tmp_path: Path,
 ) -> None:
