@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import json
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -8,8 +10,11 @@ import pytest
 from cli_agent_mcp.docker_backend import (
     DockerBackend,
     DockerCommandResult,
-    _is_windows_reparse_point as _docker_reparse_point,
     _open_verified_stream_file,
+)
+from cli_agent_mcp.filesystem_safety import (
+    _is_windows_reparse_point,
+    _is_windows_reparse_point as _docker_reparse_point,
 )
 from cli_agent_mcp.gradle_cache import (
     gradle_cache_entry,
@@ -29,7 +34,6 @@ from cli_agent_mcp.test_validator_redaction import (
 )
 from cli_agent_mcp.test_validator_server import _workspace_from_core_environment
 from cli_agent_mcp.test_validator_snapshot import (
-    _is_windows_reparse_point,
     _open_verified_regular_file,
     create_project_snapshot,
 )
@@ -1135,3 +1139,20 @@ def test_redaction_scans_config_up_to_snapshot_file_limit(
     )
 
     assert "large-config-secret" in values
+
+
+
+def test_snapshot_preserves_empty_directories(tmp_path: Path) -> None:
+    empty = tmp_path / "tests" / "fixtures" / "empty"
+    empty.mkdir(parents=True)
+
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024,
+        max_project_bytes=4096,
+    )
+
+    with tarfile.open(fileobj=io.BytesIO(snapshot.archive), mode="r:") as archive:
+        member = archive.getmember("tests/fixtures/empty")
+
+    assert member.isdir()
