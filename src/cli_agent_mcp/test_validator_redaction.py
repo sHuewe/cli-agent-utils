@@ -215,8 +215,14 @@ def discover_secret_values(
 
     def add(candidate: str) -> None:
         nonlocal total_secret_chars
-        if len(candidate) < 4 or candidate in values:
+        if candidate in values:
             return
+        if not candidate:
+            return
+        if len(candidate) < 4:
+            raise SecretDiscoveryLimitError(
+                "Ein sensitiver Wert ist zu kurz für sichere exakte Redaction."
+            )
         if (
             len(values) >= max_secret_values
             or total_secret_chars + len(candidate) > max_secret_chars
