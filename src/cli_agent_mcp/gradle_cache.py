@@ -93,7 +93,7 @@ def default_source_gradle_user_home() -> Path:
 def _iter_relevant_files(project: Path) -> tuple[Path, ...]:
     result: list[Path] = []
 
-    def walk(directory: Path) -> None:
+    def walk(directory: Path, *, include_all_regular_files: bool = False) -> None:
         try:
             entries = sorted(os.scandir(directory), key=lambda item: item.name)
         except OSError as exc:
@@ -116,10 +116,16 @@ def _iter_relevant_files(project: Path) -> tuple[Path, ...]:
             if stat.S_ISDIR(mode):
                 if entry.name in _IGNORED_DIRECTORIES:
                     continue
-                walk(path)
+                walk(
+                    path,
+                    include_all_regular_files=(
+                        include_all_regular_files or path == project / "buildSrc"
+                    ),
+                )
             elif stat.S_ISREG(mode):
                 if (
-                    entry.name in _RELEVANT_NAMES
+                    include_all_regular_files
+                    or entry.name in _RELEVANT_NAMES
                     or entry.name.endswith(".gradle")
                     or entry.name.endswith(".gradle.kts")
                 ):
