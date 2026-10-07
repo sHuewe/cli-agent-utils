@@ -17,13 +17,15 @@ _IGNORED_DIRECTORY_NAMES = {
     ".tox",
     ".venv",
     "__pycache__",
-    ".gradle",
     ".cli-agent",
+    "node_modules",
+    "venv",
+}
+_ROOT_BUILD_OUTPUT_DIRECTORIES = {
+    ".gradle",
     "build",
     "dist",
     "target",
-    "node_modules",
-    "venv",
 }
 _IGNORED_FILE_SUFFIXES = {".pyc", ".pyo", ".class", ".log"}
 
@@ -66,7 +68,13 @@ def _safe_tree_files(
                     f"{path.relative_to(root)}"
                 )
             if stat.S_ISDIR(mode):
+                relative = path.relative_to(root)
                 if entry.name in _IGNORED_DIRECTORY_NAMES:
+                    continue
+                if (
+                    len(relative.parts) == 1
+                    and entry.name in _ROOT_BUILD_OUTPUT_DIRECTORIES
+                ):
                     continue
                 walk(path)
                 continue
