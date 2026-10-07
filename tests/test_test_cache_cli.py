@@ -575,3 +575,50 @@ def test_prepare_maven_rejects_long_settings_equals_option(
 
     with pytest.raises(RuntimeError, match="Projekt-spezifische Maven-Settings"):
         prepare_maven(project, tmp_path / "cache")
+
+
+
+def test_prepare_maven_rejects_compact_global_settings_option(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import pytest
+
+    project = tmp_path / "project"
+    config = project / ".mvn"
+    config.mkdir(parents=True)
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    (config / "maven.config").write_text(
+        "-gs../global-settings.xml\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
+        lambda: tmp_path / "missing-settings.xml",
+    )
+
+    with pytest.raises(RuntimeError, match="global-settings"):
+        prepare_maven(project, tmp_path / "cache")
+
+
+def test_prepare_maven_rejects_long_global_settings_equals_option(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import pytest
+
+    project = tmp_path / "project"
+    config = project / ".mvn"
+    config.mkdir(parents=True)
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    (config / "maven.config").write_text(
+        "--global-settings=../global-settings.xml\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
+        lambda: tmp_path / "missing-settings.xml",
+    )
+
+    with pytest.raises(RuntimeError, match="global-settings"):
+        prepare_maven(project, tmp_path / "cache")
