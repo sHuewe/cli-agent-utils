@@ -19,6 +19,9 @@ _INCLUDE_RE = re.compile(
     r"^\s*(?:(?:-r|-c)\s*=?\s*([^#\s]+)|"
     r"(?:--requirement|--constraint)(?:\s+|=)\s*([^#\s]+))"
 )
+_FROZEN_REQUIREMENT_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9.!+_-]*$"
+)
 
 
 @dataclass(frozen=True)
@@ -250,11 +253,12 @@ def _validate_frozen_requirement_line(relative: str, line: str) -> None:
             "Pakete sowie -r/--requirement und -c/--constraint. "
             f"Nicht unterstützte Option in {relative}: {candidate!r}"
         )
-    if "@" in candidate or "==" not in candidate:
+    if _FROZEN_REQUIREMENT_RE.fullmatch(candidate) is None:
         raise TestValidationError(
-            "requirements.txt muss für den Test-Validator eingefrorene "
-            "Index-Abhängigkeiten im Format package==version enthalten. "
-            f"Nicht unterstützter Eintrag in {relative}: {candidate!r}"
+            "requirements.txt muss für den Test-Validator ausschließlich "
+            "eingefrorene Index-Abhängigkeiten im Format package==version "
+            "enthalten. Pfade, URLs, VCS-Referenzen und Marker werden nicht "
+            f"unterstützt ({relative}: {candidate!r})."
         )
 
 
