@@ -811,6 +811,7 @@ class DockerTestValidator:
         dependency_repository: Path | None = None
         dependency_cache_key: str | None = None
         gradle_home: Path | None = None
+        pre_test_command: list[str] | None = None
         if selected == "maven":
             command = [
                 "mvn",
@@ -840,16 +841,6 @@ class DockerTestValidator:
                     }
                 dependency_repository = entry.repository
                 pre_test_command = None
-            else:
-                pre_test_command = [
-                    "sh",
-                    "-c",
-                    (
-                        "mkdir -p /tmp/m2; "
-                        "if [ -d /opt/cli-agent-test-cache/maven ]; then "
-                        "cp -R /opt/cli-agent-test-cache/maven/. /tmp/m2/; fi"
-                    ),
-                ]
             image = self.settings.maven_image
             framework = "maven"
         else:
@@ -884,16 +875,6 @@ class DockerTestValidator:
                     }
                 gradle_home = entry.gradle_home
                 pre_test_command = None
-            else:
-                pre_test_command = [
-                    "sh",
-                    "-c",
-                    (
-                        "mkdir -p /tmp/gradle; "
-                        "if [ -d /opt/cli-agent-test-cache/gradle ]; then "
-                        "cp -R /opt/cli-agent-test-cache/gradle/. /tmp/gradle/; fi"
-                    ),
-                ]
             image = self.settings.gradle_image
             framework = "gradle"
         return self._run_tests(
@@ -964,16 +945,6 @@ class DockerTestValidator:
                     ),
                 }
             dependency_repository = entry.repository
-        else:
-            pre_test_command = [
-                "sh",
-                "-c",
-                (
-                    "mkdir -p /tmp/m2; "
-                    "if [ -d /opt/cli-agent-test-cache/maven ]; then "
-                    "cp -R /opt/cli-agent-test-cache/maven/. /tmp/m2/; fi"
-                ),
-            ]
 
         result = self._run_tests(
             project_path=project_path,
@@ -1032,16 +1003,6 @@ class DockerTestValidator:
                     ),
                 }
             gradle_home = entry.gradle_home
-        else:
-            pre_test_command = [
-                "sh",
-                "-c",
-                (
-                    "mkdir -p /tmp/gradle; "
-                    "if [ -d /opt/cli-agent-test-cache/gradle ]; then "
-                    "cp -R /opt/cli-agent-test-cache/gradle/. /tmp/gradle/; fi"
-                ),
-            ]
 
         result = self._run_tests(
             project_path=project_path,
