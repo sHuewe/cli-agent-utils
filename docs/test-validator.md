@@ -128,6 +128,8 @@ Preparation builds wheels using pip:
 python -m pip wheel --wheel-dir <cache>/wheels ...
 ```
 
+After preparation, the cache contains a generated install manifest naming the prepared wheel files. During sandbox execution, pip installs only those local wheel paths. The original requirements or pyproject dependency strings are not replayed, so direct URL, VCS and local-project references do not trigger network or host-path access inside the offline container.
+
 This step may use network access and private package credentials because it is deliberately a user-run action outside the MCP sandbox. Source distributions may execute their normal Python build backend while wheels are being produced.
 
 The validator itself remains offline. It streams only the prepared wheel directory into `/tmp/python-wheels` and installs into disposable tmpfs with:
@@ -250,7 +252,7 @@ cli-agent-test-cache prepare-gradle . --target windows
 
 For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`.
 
-The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, all `*.versions.toml` version catalogs and verification metadata. Source-only changes therefore keep the same key.
+The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, all `*.versions.toml` version catalogs, verification metadata and the full source/configuration trees of literal local `includeBuild(...)` builds such as `build-logic`. Ordinary application source-only changes therefore keep the same key.
 
 Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. This downloads runtime-only and test-runtime-only dependencies without executing tests.
 
