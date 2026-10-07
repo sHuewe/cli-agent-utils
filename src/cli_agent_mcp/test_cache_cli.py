@@ -234,6 +234,10 @@ def _run(command: list[str], *, cwd: Path, timeout: int) -> None:
         )
 
 
+def _default_maven_settings_path() -> Path:
+    return Path.home() / ".m2" / "settings.xml"
+
+
 def _reject_semantic_maven_settings(project: Path) -> None:
     maven_config = project / ".mvn" / "maven.config"
     if maven_config.is_file():
@@ -253,7 +257,7 @@ def _reject_semantic_maven_settings(project: Path) -> None:
                 "vom Offline-Validator nicht unterstützt."
             )
 
-    settings = Path.home() / ".m2" / "settings.xml"
+    settings = _default_maven_settings_path()
     if not settings.is_file():
         return
     try:
