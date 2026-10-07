@@ -383,6 +383,8 @@ def write_python_ready_metadata(
     directory: Path,
     key: str,
     plan: PythonDependencyPlan,
+    *,
+    interpreter_metadata: dict[str, str] | None = None,
 ) -> None:
     wheels = directory / "wheels"
     wheel_names = sorted(
@@ -401,9 +403,21 @@ def write_python_ready_metadata(
                 "key": key,
                 "ready": True,
                 "prepared_under_wsl": True,
-                "python_version": platform.python_version(),
-                "python_implementation": platform.python_implementation(),
-                "machine": platform.machine(),
+                "python_version": (
+                    interpreter_metadata["python_version"]
+                    if interpreter_metadata is not None
+                    else platform.python_version()
+                ),
+                "python_implementation": (
+                    interpreter_metadata["python_implementation"]
+                    if interpreter_metadata is not None
+                    else platform.python_implementation()
+                ),
+                "machine": (
+                    interpreter_metadata["machine"]
+                    if interpreter_metadata is not None
+                    else platform.machine()
+                ),
                 "requirement_files": list(plan.requirement_files),
             },
             indent=2,
