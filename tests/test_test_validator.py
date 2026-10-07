@@ -1169,6 +1169,25 @@ def test_secret_line_parser_handles_compact_json_fields() -> None:
     assert "compact-json-secret" in values
 
 
+
+def test_yaml_sensitive_block_scalar_fails_closed(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "api_token: |\n"
+        "  line-one\n"
+        "  line-two\n",
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    with pytest.raises(SecretDiscoveryLimitError, match="Block-Scalar"):
+        discover_secret_values(snapshot.archive)
+
+
 def test_json_secret_discovery_decodes_escaped_values(tmp_path: Path) -> None:
     config = tmp_path / "config.json"
     config.write_text(
@@ -1254,3 +1273,19 @@ def test_output_redactor_handles_many_unmatched_private_key_markers() -> None:
 
     assert result.endswith("no matching end marker")
     assert result.count("-----BEGIN PRIVATE KEY-----") == 5000
+
+
+def test_output_redactor_redacts_private_key_after_standalone_delimiter() -> None:
+    redactor = OutputRedactor()
+    output = (
+        "-----\n"
+        "-----BEGIN PRIVATE KEY-----\n"
+        "SECRET\n"
+        "-----END PRIVATE KEY-----\n"
+    )
+
+    result = redactor.redact(output)
+
+    assert "SECRET" not in result
+    assert result.startswith("-----\n")
+    assert "<redacted-private-key>" in result
