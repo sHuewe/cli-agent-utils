@@ -253,7 +253,12 @@ def test_prepare_gradle_builds_isolated_gradle_home_and_removes_user_config(
     assert not (entry.gradle_home / "gradle.properties").exists()
     assert len(calls) == 1
     assert "--refresh-dependencies" in calls[0]
-    assert calls[0][-2:] == ["assemble", "testClasses"]
+    assert "--init-script" in calls[0]
+    assert calls[0][-3:] == [
+        "assemble",
+        "testClasses",
+        "_cliAgentResolveRuntimeDependencies",
+    ]
 
 
 def test_gradle_cache_entry_matches_preparation_key(tmp_path: Path) -> None:
