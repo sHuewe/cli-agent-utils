@@ -490,6 +490,50 @@ def test_python_plan_rejects_direct_url_requirement(tmp_path: Path) -> None:
         python_dependency_plan(project)
 
 
+def test_python_plan_compact_short_option_does_not_echo_credentials(
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    secret = "compact-secret-token"
+    (project / "requirements.txt").write_text(
+        f"-ihttps://user:{secret}@repo.example/simple\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        python_dependency_plan(project)
+
+    message = str(exc_info.value)
+    assert secret not in message
+    assert "https://user:" not in message
+
+
+def test_python_plan_include_error_does_not_echo_operand_credentials(
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    secret = "include-secret-token"
+    (project / "requirements.txt").write_text(
+        f"-r https://user:{secret}@repo.example/requirements.txt\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        python_dependency_plan(project)
+
+    message = str(exc_info.value)
+    assert secret not in message
+    assert "https://user:" not in message
+
+
 def test_python_plan_rejected_option_does_not_echo_credentials(
     tmp_path: Path,
 ) -> None:
