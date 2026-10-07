@@ -10,7 +10,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from .filesystem_safety import (
-    _is_same_file,
+    _same_file,
     _is_windows_reparse_point,
     verified_directory_scandir,
 )
