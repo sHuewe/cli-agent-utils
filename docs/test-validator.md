@@ -47,7 +47,8 @@ The snapshot:
 
 - includes ordinary project files, including `.env` when present,
 - omits common generated/cache directories. Build-output names such as `target`, `build`, `dist` and `.gradle` are excluded only at the selected project root or when their parent is recognizable as the corresponding Maven/Gradle/Python project, so legitimate nested source directories with those names remain in the snapshot,
-- rejects symlinks,
+- preserves safe empty directories,
+- rejects symlinks, junctions and other Windows reparse points,
 - rejects sockets, devices, FIFOs and other non-regular filesystem entries,
 - applies per-file, total-project and snapshot-entry-count limits (`--max-snapshot-entries`, default 20,000), so many empty files cannot exhaust memory through TAR headers alone.
 
@@ -215,7 +216,7 @@ cli-agent-test-cache prepare-maven C:\dev\my-project `
   --cache-root D:\cli-agent-dependency-cache\maven
 ```
 
-Preparation intentionally runs outside the MCP sandbox. Maven may use its normal user/global configuration, including the user's standard `~/.m2/settings.xml`, for repository, mirror and credential configuration. If user settings define profiles/active profiles that alter the effective build model, preparation fails closed; move that build semantics into the project POM before using the offline validator. Project-specific alternate settings via `-s` / `--settings` or `-gs` / `--global-settings` in `.mvn/maven.config` are also rejected, including attached/equals forms such as `-s../settings.xml` or `--global-settings=../settings.xml`. Alternate project files via `-f` / `--file` are also rejected; the v1 validator uses the normal project `pom.xml`. This restriction does not disable Maven's normal user/global settings. It builds an isolated local repository using:
+Preparation intentionally runs outside the MCP sandbox. Maven may use its normal user/global configuration, including the user's standard `~/.m2/settings.xml` and the selected Maven installation's global `conf/settings.xml`, for repository, mirror and credential configuration. If either settings file defines profiles/active profiles that alter the effective build model, preparation fails closed; move that build semantics into the project POM before using the offline validator. Project-specific alternate settings via `-s` / `--settings` or `-gs` / `--global-settings` in `.mvn/maven.config` are also rejected, including attached/equals forms such as `-s../settings.xml` or `--global-settings=../settings.xml`. Alternate project files via `-f` / `--file` are also rejected; the v1 validator uses the normal project `pom.xml`. This restriction does not disable Maven's normal user/global settings. It builds an isolated local repository using:
 
 ```text
 mvn -B -Dmaven.repo.local=<cache>/repository dependency:go-offline
