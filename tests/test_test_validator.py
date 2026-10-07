@@ -356,7 +356,7 @@ def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
 
     result = validator.run_java_tests(
         ".",
-        "com.example.ExampleTest.works",
+        "com.example.ExampleTest#works",
         build_system="gradle",
     )
 
@@ -1260,6 +1260,43 @@ def test_env_and_properties_secret_discovery_use_format_parsers(
 
     assert "env secret with spaces" in values
     assert "properties value" in values
+
+
+def test_properties_secret_discovery_honors_latin1_and_dotted_keys(
+    tmp_path: Path,
+) -> None:
+    properties = (
+        "service.api.key=pässwörd\n"
+        "service.access.key=zugangsschlüssel\n"
+    ).encode("latin-1")
+    (tmp_path / "application.properties").write_bytes(properties)
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    values = discover_secret_values(snapshot.archive)
+
+    assert "pässwörd" in values
+    assert "zugangsschlüssel" in values
+
+
+def test_dotenv_parse_error_on_sensitive_line_fails_closed(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".env").write_text(
+        'API_TOKEN="unterminated\n',
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    with pytest.raises(SecretDiscoveryLimitError, match="sensitive .env-Zeile"):
+        discover_secret_values(snapshot.archive)
 
 
 def test_malformed_structured_config_with_sensitive_hint_fails_closed(
