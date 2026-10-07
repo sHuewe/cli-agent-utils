@@ -92,6 +92,66 @@ def default_source_gradle_user_home() -> Path:
     return (Path.home() / ".gradle").resolve()
 
 
+def _strip_gradle_comments(text: str) -> str:
+    result: list[str] = []
+    index = 0
+    quote: str | None = None
+    escaped = False
+    in_line_comment = False
+    in_block_comment = False
+
+    while index < len(text):
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < len(text) else ""
+
+        if in_line_comment:
+            if char == "\n":
+                in_line_comment = False
+                result.append(char)
+            index += 1
+            continue
+
+        if in_block_comment:
+            if char == "*" and next_char == "/":
+                in_block_comment = False
+                index += 2
+            else:
+                if char == "\n":
+                    result.append(char)
+                index += 1
+            continue
+
+        if quote is not None:
+            result.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            index += 1
+            continue
+
+        if char in {'"', "'"}:
+            quote = char
+            result.append(char)
+            index += 1
+            continue
+        if char == "/" and next_char == "/":
+            in_line_comment = True
+            index += 2
+            continue
+        if char == "/" and next_char == "*":
+            in_block_comment = True
+            index += 2
+            continue
+
+        result.append(char)
+        index += 1
+
+    return "".join(result)
+
+
 def _included_build_roots(project: Path) -> tuple[Path, ...]:
     roots: dict[str, Path] = {}
     for name in ("settings.gradle", "settings.gradle.kts"):
@@ -108,7 +168,8 @@ def _included_build_roots(project: Path) -> tuple[Path, ...]:
             raise TestValidationError(
                 f"Gradle-Konfigurationsdatei konnte nicht gelesen werden: {name}"
             ) from exc
-        for match in _INCLUDE_BUILD_RE.finditer(text):
+        uncommented = _strip_gradle_comments(text)
+        for match in _INCLUDE_BUILD_RE.finditer(uncommented):
             raw = match.group(1)
             candidate = (project / raw).resolve()
             try:
