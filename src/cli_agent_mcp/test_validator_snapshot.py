@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .filesystem_safety import (
-    _is_same_file,
+    _same_file,
     _is_windows_reparse_point,
     verified_directory_scandir,
 )
@@ -71,7 +71,7 @@ def _open_verified_regular_file(
         stat.S_ISLNK(before.st_mode)
         or _is_windows_reparse_point(before)
         or not stat.S_ISREG(before.st_mode)
-        or not _is_same_file(expected, before)
+        or not _same_file(expected, before)
     ):
         raise TestValidationError(
             f"Projektdatei wurde während der Snapshot-Erstellung verändert: {path}"
@@ -88,7 +88,7 @@ def _open_verified_regular_file(
         if (
             not stat.S_ISREG(opened.st_mode)
             or _is_windows_reparse_point(opened)
-            or not _is_same_file(expected, opened)
+            or not _same_file(expected, opened)
             or opened.st_size != expected.st_size
         ):
             raise TestValidationError(
