@@ -1093,3 +1093,44 @@ def test_redaction_discovers_secrets_from_snapshot_not_host_path(
     values = discover_secret_values(snapshot.archive)
 
     assert "snapshot-secret" in values
+
+
+
+def test_snapshot_root_symlink_is_rejected_without_following(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("secret", encoding="utf-8")
+    project = tmp_path / "project"
+    project.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValidationError, match="Projektroot"):
+        create_project_snapshot(
+            project,
+            max_file_bytes=1024,
+            max_project_bytes=4096,
+        )
+
+
+def test_redaction_scans_config_up_to_snapshot_file_limit(
+    tmp_path: Path,
+) -> None:
+    prefix = "x" * (1_100_000)
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        prefix + "\nAPI_TOKEN=large-config-secret\n",
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=2 * 1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    values = discover_secret_values(
+        snapshot.archive,
+        max_file_bytes=2 * 1024 * 1024,
+    )
+
+    assert "large-config-secret" in values
