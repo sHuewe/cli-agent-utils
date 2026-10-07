@@ -69,7 +69,7 @@ Required properties include:
 - no unexpected image/volume mounts,
 - `/tmp`, `/work` and `/output` as tmpfs.
 
-Project data is then streamed as an in-memory TAR archive through `docker exec -i ... tar -xf -` into `/work`; the real workspace is never mounted.
+Project data is then streamed as an in-memory TAR archive through `docker exec -i ... tar -xf -` into `/work`; the real workspace is never mounted. The configured transfer timeout covers the streaming phase itself as well as the receiving process, while stdout/stderr are drained concurrently, so a blocked extraction cannot wait indefinitely before timeout handling begins.
 
 The Docker socket is never mounted into the test container.
 
@@ -254,15 +254,11 @@ For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`.
 
 The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, version catalogs and verification metadata. Source-only changes therefore keep the same key.
 
-Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. It uses a fresh isolated Gradle user home and executes:
-
-```text
-gradle --no-daemon --refresh-dependencies \
-  --gradle-user-home <cache>/gradle-home \
-  assemble testClasses
-```
+Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. This downloads runtime-only and test-runtime-only dependencies without executing tests.
 
 To support private repositories such as a company JFrog, the preparation command copies only the user's Gradle configuration files (`gradle.properties`, root init scripts and regular files in `init.d`) from the normal Gradle user home into that temporary isolated home. Those files may contain credentials and are therefore removed before the prepared cache is promoted to its final location. The MCP/test container receives only the resulting Gradle cache state, never those copied user configuration files.
+
+This is an intentional security boundary: user-specific `init.gradle(.kts)` / `init.d` rules are not replayed inside the sandbox. Therefore an offline build must not require those user-home init scripts for its build semantics after dependencies are already cached. If an organization needs mandatory repository/plugin-resolution logic during offline replay, that logic must be supplied separately in a credential-free, administrator-controlled form or moved into project configuration.
 
 If no matching ready cache exists, `run_java_tests(..., build_system="gradle")` returns `reason = "dependencies_not_prepared"`. There is no network fallback.
 
