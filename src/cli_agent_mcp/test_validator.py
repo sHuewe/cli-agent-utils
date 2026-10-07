@@ -283,6 +283,44 @@ class DockerTestValidator:
     def _public_text(self, value: str, redactor: OutputRedactor) -> str:
         return self._bounded(redactor.redact(value)).strip()
 
+    @staticmethod
+    def _dependency_refresh_message(framework: str, output: str) -> str | None:
+        value = output.casefold()
+        patterns: dict[str, tuple[str, ...]] = {
+            "maven": (
+                "could not resolve dependencies",
+                "could not find artifact",
+                "was not cached in the local repository",
+                "cannot access",
+                "plugin or one of its dependencies could not be resolved",
+            ),
+            "gradle": (
+                "no cached version",
+                "could not resolve all files",
+                "could not resolve",
+                "could not find",
+                "offline mode",
+            ),
+            "pytest": (
+                "modulenotfounderror",
+                "no module named",
+                "distributionnotfound",
+            ),
+        }
+        if not any(pattern in value for pattern in patterns.get(framework, ())):
+            return None
+        command = {
+            "maven": "cli-agent-test-cache prepare-maven <projekt>",
+            "gradle": "cli-agent-test-cache prepare-gradle <projekt>",
+            "pytest": "cli-agent-test-cache prepare-python <projekt>",
+        }[framework]
+        return (
+            "Der vorbereitete Dependency-Cache könnte für den aktuellen "
+            "Projektstand unvollständig oder veraltet sein. Führe außerhalb "
+            f"des Agents '{command}' aus und wiederhole den Vorgang."
+        )
+
+
     def _run_tests(
         self,
         *,
@@ -588,13 +626,22 @@ class DockerTestValidator:
                     timeout=self.settings.setup_timeout_seconds,
                 )
                 if prepared.returncode != 0:
+                    detail = prepared.stderr or prepared.stdout
                     result_payload = self._failure(
                         framework,
                         project_path,
                         redactor,
-                        prepared.stderr or prepared.stdout,
+                        detail,
                         verified_policy=verified_policy,
                     )
+                    refresh_message = (
+                        self._dependency_refresh_message(framework, detail)
+                        if python_wheels is not None
+                        else None
+                    )
+                    if refresh_message is not None:
+                        result_payload["reason"] = "dependency_cache_may_be_stale"
+                        result_payload["message_to_user"] = refresh_message
                     return result_payload
 
             try:
@@ -699,6 +746,18 @@ class DockerTestValidator:
                     "root_filesystem": "read-only",
                 },
             }
+            if tested.returncode != 0 and (
+                dependency_repository is not None
+                or gradle_home is not None
+                or python_wheels is not None
+            ):
+                refresh_message = self._dependency_refresh_message(
+                    framework,
+                    output,
+                )
+                if refresh_message is not None:
+                    result_payload["reason"] = "dependency_cache_may_be_stale"
+                    result_payload["message_to_user"] = refresh_message
             return result_payload
         finally:
             removed: bool | None = None
