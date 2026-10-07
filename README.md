@@ -108,13 +108,21 @@ registry.internal/gradle-tests@sha256:<64-hex-digest>
 
 The validator never downloads packages during a test. Python installs only from a prepared local wheel cache with `--no-index`; Maven runs with `-o`; Gradle runs with `--offline`.
 
-For Python, dependency preparation follows the same model but **must be executed inside WSL**. This is intentional: the Docker validator runs Linux containers, so preparing with Windows pip could create Windows-only wheels. Run from the project inside WSL:
+For Python, dependency preparation follows the same model but **must be executed inside WSL**. This is intentional: the Docker validator runs Linux containers, so preparing with Windows pip could create Windows-only wheels.
+
+Cache placement is explicit and consistent across Maven, Gradle and Python. `--target native` is the default and writes to the current environment's `~/.cli-agent/dependency-cache/<type>`. Use this when cli-agent and the MCP run in the same environment as preparation. For example, a fully WSL-hosted setup uses:
 
 ```bash
 cli-agent-test-cache prepare-python .
 ```
 
-The command prints that WSL is required and records that the cache was prepared under WSL. It uses the WSL user's normal pip configuration, including configured private PyPI/JFrog indexes and credentials, and builds a separate wheel cache. By default the cache is written to the Windows user's corresponding `~/.cli-agent/dependency-cache/python` directory so that the Windows-hosted MCP sees the same files. The validator itself never receives pip/JFrog credentials.
+If cli-agent/MCP run on Windows but preparation is deliberately executed inside WSL, target the Windows user's cache instead:
+
+```bash
+cli-agent-test-cache prepare-python . --target windows
+```
+
+Under WSL, `--target windows` resolves the Windows user profile and writes to the corresponding Windows `~/.cli-agent/dependency-cache/python` directory through the WSL mount. The command still uses the WSL user's normal pip configuration, including configured private PyPI/JFrog indexes and credentials. The validator itself never receives pip/JFrog credentials.
 
 During tests the wheel cache is streamed into the sandbox and dependencies are installed only with:
 
@@ -124,7 +132,7 @@ python -m pip install --no-index --find-links /tmp/python-wheels --target /tmp/p
 
 If the Python dependency files change and the matching cache is missing, the MCP returns `dependencies_not_prepared` and explicitly tells the user to run `prepare-python` under WSL.
 
-For Maven, the validator and preparation CLI use the same per-user cache root by default: `~/.cli-agent/dependency-cache/maven`. The admin policy therefore does **not** need a project-specific or user-specific cache path. An administrator can override the root once with `--maven-cache-root` if required. Each project dependency state gets a deterministic key derived from all relevant `pom.xml` files and root `.mvn` configuration. The user prepares that key outside the agent with the normal Maven/JFrog setup:
+For Maven, the validator and preparation CLI use the same per-user cache root by default: `~/.cli-agent/dependency-cache/maven`. The admin policy therefore does **not** need a project-specific or user-specific cache path. An administrator can override the root once with `--maven-cache-root` if required. Each project dependency state gets a deterministic key derived from all relevant `pom.xml` files and root `.mvn` configuration. The user normally prepares that key in the same host environment as the MCP with the normal Maven/JFrog setup:
 
 ```powershell
 cli-agent-test-cache prepare-maven C:\dev\my-project
@@ -138,7 +146,7 @@ The command uses the user's normal Maven configuration and credentials, but writ
 
 The test validator never receives Maven/JFrog credentials. It calculates the same key, streams only that prepared repository into container tmpfs, and executes Maven offline. Cache preparation now runs through the Maven `package` lifecycle with `-DskipTests`, so build/package plugins needed by `run_maven_build` are prepared as well. Source changes do not invalidate the cache; relevant POM/configuration changes produce a new key and require preparation again.
 
-For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache/gradle` by default. Prepare the current build configuration once as the normal user:
+For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache/gradle` by default. Prepare the current build configuration once as the normal user in the same host environment as the MCP:
 
 ```powershell
 cli-agent-test-cache prepare-gradle C:\dev\my-project
@@ -147,6 +155,15 @@ cli-agent-test-cache prepare-gradle C:\dev\my-project
 Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup and prepares both `assemble` and `testClasses` without executing tests. A project Gradle wrapper is preferred when present; otherwise Gradle from PATH is used. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation and removed before the cache is marked ready. This allows private repository/JFrog credentials to be used during preparation without exposing those configuration files to the validator. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
 
 Relevant Gradle build/configuration changes generate a new dependency key. Source-only changes keep the existing cache.
+
+Maven and Gradle preparation normally works directly on Windows for typical platform-independent Java builds. Some projects intentionally resolve different dependencies or activate different build logic depending on operating system or architecture. If a Windows-prepared cache fails later in the Linux sandbox for that reason, retry preparation inside WSL while still targeting the Windows-hosted MCP cache:
+
+```bash
+cli-agent-test-cache prepare-maven . --target windows
+cli-agent-test-cache prepare-gradle . --target windows
+```
+
+For a cli-agent/MCP installation that itself runs inside WSL, omit `--target windows`; the default `--target native` correctly uses the WSL user's own cache.
 
 The images must already exist in the Docker daemon because the validator uses `--pull never`.
 
