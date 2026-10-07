@@ -259,9 +259,7 @@ def create_project_snapshot(
     max_project_bytes: int,
     max_snapshot_entries: int = 20_000,
 ) -> ProjectSnapshot:
-    root = project.resolve()
-    if not root.is_dir():
-        raise TestValidationError(f"Projekt existiert nicht: {root}")
+    root = Path(os.path.abspath(project.expanduser()))
     entries, total_bytes = _safe_tree_files(
         root,
         max_file_bytes=max_file_bytes,
