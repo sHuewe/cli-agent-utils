@@ -222,7 +222,15 @@ def test_python_tests_use_fixed_no_shell_command_and_redact_output(
         "def test_ok():\n    assert True\n",
         encoding="utf-8",
     )
-    backend = FakeBackend(exec_output="token=super-secret-value\n1 passed")
+    backend = FakeBackend(
+        exec_output=(
+            "Traceback (most recent call last):\n"
+            '  File "/work/app.py", line 42, in run\n'
+            "    raise RuntimeError('boom')\n"
+            "RuntimeError: boom\n"
+            "token=super-secret-value\n"
+        )
+    )
     validator = DockerTestValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_python_tests(".", "test_demo.py::test_ok")
@@ -230,6 +238,9 @@ def test_python_tests_use_fixed_no_shell_command_and_redact_output(
     assert result["success"] is True
     assert result["container_removed"] is True
     assert "super-secret-value" not in result["output"]
+    assert "Traceback (most recent call last):" in result["output"]
+    assert 'File "/work/app.py", line 42, in run' in result["output"]
+    assert "RuntimeError: boom" in result["output"]
     exec_call = next(
         args
         for args, _ in backend.calls
