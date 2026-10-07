@@ -301,10 +301,16 @@ def _reject_unsupported_local_requirements(
                     "werden nicht unterstützt. Deklariere nur externe "
                     "Dependencies; der aktuelle Workspace-Code wird direkt getestet."
                 )
-            if (
-                lowered.startswith(("-e ", "--editable ", "file:"))
+            local_reference = (
+                lowered.startswith(
+                    ("-e ", "--editable ", "file:", "./", "../", "/", "~")
+                )
                 or " @ file:" in lowered
-            ):
+                or " @ ./" in lowered
+                or " @ ../" in lowered
+                or re.match(r"^[a-z]:[\\/]", line, re.IGNORECASE) is not None
+            )
+            if local_reference:
                 raise TestValidationError(
                     "Lokale/editierbare Python-Dependency-Referenzen werden "
                     f"nicht unterstützt ({relative}: {line!r}). "
