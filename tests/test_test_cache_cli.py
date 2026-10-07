@@ -490,6 +490,29 @@ def test_python_plan_rejects_direct_url_requirement(tmp_path: Path) -> None:
         python_dependency_plan(project)
 
 
+def test_python_plan_rejected_option_does_not_echo_credentials(
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    secret = "super-secret-token"
+    (project / "requirements.txt").write_text(
+        f"--extra-index-url https://user:{secret}@repo.example/simple\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        python_dependency_plan(project)
+
+    message = str(exc_info.value)
+    assert "--extra-index-url" in message
+    assert secret not in message
+    assert "https://user:" not in message
+
+
 def test_prepare_python_resolves_requirements_once(
     tmp_path: Path,
     monkeypatch,
