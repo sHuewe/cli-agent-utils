@@ -797,3 +797,16 @@ def test_snapshot_preserves_fixture_suffixes(tmp_path: Path) -> None:
 
     relative = {path.relative_to(tmp_path).as_posix() for path in snapshot.files}
     assert "tests/fixtures/server.log" in relative
+
+
+
+def test_java_selector_cannot_be_build_tool_option(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    validator = DockerTestValidator(tmp_path, settings(), backend=FakeBackend())
+
+    with pytest.raises(ValidationError, match="Build-Tool-Optionen"):
+        validator.run_java_tests(
+            ".",
+            "--version",
+            build_system="gradle",
+        )
