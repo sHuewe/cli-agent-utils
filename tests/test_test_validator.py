@@ -139,6 +139,27 @@ def test_snapshot_keeps_project_env_but_omits_agent_and_build_state(
     assert snapshot.archive
 
 
+
+
+def test_snapshot_keeps_nested_source_directory_named_build(tmp_path: Path) -> None:
+    nested = tmp_path / "src" / "main" / "java" / "com" / "example" / "build"
+    nested.mkdir(parents=True)
+    source = nested / "GeneratedLikeName.java"
+    source.write_text("class GeneratedLikeName {}\n", encoding="utf-8")
+    (tmp_path / "build").mkdir()
+    (tmp_path / "build" / "generated.class").write_bytes(b"x")
+
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    relative = {path.relative_to(tmp_path).as_posix() for path in snapshot.files}
+    assert "src/main/java/com/example/build/GeneratedLikeName.java" in relative
+    assert "build/generated.class" not in relative
+
+
 def test_snapshot_rejects_symlink_when_supported(tmp_path: Path) -> None:
     target = tmp_path / "target.txt"
     target.write_text("data", encoding="utf-8")
