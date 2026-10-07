@@ -239,8 +239,10 @@ mvn -o -B -Dmaven.repo.local=/tmp/m2 test
 or, with a selector:
 
 ```text
-mvn -o -B -Dmaven.repo.local=/tmp/m2 -Dtest=<selector> test
+mvn -o -B -Dmaven.repo.local=/tmp/m2 -Dtest=<selector> -Dsurefire.failIfNoSpecifiedTests=false test
 ```
+
+The Surefire flag keeps a reactor build from failing in modules that do not contain the selected test; modules with a matching test still execute it.
 
 The host cache is never bind-mounted and is never writable by project code. Maven build-only validation uses the same cache and fixed command:
 
