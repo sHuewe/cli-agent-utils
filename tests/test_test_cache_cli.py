@@ -6,6 +6,7 @@ from cli_agent_mcp.gradle_cache import gradle_cache_entry
 from cli_agent_mcp.maven_cache import cache_entry, default_maven_cache_root
 from cli_agent_mcp.python_cache import python_cache_entry
 from cli_agent_mcp.test_cache_cli import (
+    _resolve_cache_root,
     build_parser,
     prepare_gradle,
     prepare_maven,
@@ -91,10 +92,58 @@ def test_cache_key_matches_validator_lookup(tmp_path: Path) -> None:
     assert entry.directory == cache_root.resolve() / entry.key
 
 
-def test_prepare_parser_uses_shared_default_cache_root() -> None:
+def test_prepare_parser_uses_native_target_by_default() -> None:
     args = build_parser().parse_args(["prepare-maven", "."])
 
-    assert args.cache_root == default_maven_cache_root()
+    assert args.cache_root is None
+    assert args.target == "native"
+
+
+def test_native_cache_target_uses_current_environment_home(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.default_maven_cache_root",
+        lambda: tmp_path / "native-maven",
+    )
+
+    root = _resolve_cache_root("maven", explicit=None, target="native")
+
+    assert root == (tmp_path / "native-maven").resolve()
+
+
+def test_windows_cache_target_from_wsl_uses_windows_user_cache(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.sys.platform",
+        "linux",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.is_wsl",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.default_wsl_windows_cache_root",
+        lambda name: tmp_path / "windows-cache" / name,
+    )
+
+    root = _resolve_cache_root("gradle", explicit=None, target="windows")
+
+    assert root == (tmp_path / "windows-cache" / "gradle").resolve()
+
+
+def test_explicit_cache_root_rejects_windows_target(tmp_path: Path) -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="--cache-root"):
+        _resolve_cache_root(
+            "python",
+            explicit=tmp_path / "custom",
+            target="windows",
+        )
 
 
 def test_prepare_python_requires_wsl_and_builds_wheel_cache(
