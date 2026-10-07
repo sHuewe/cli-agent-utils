@@ -248,17 +248,18 @@ def _validate_frozen_requirement_line(relative: str, line: str) -> None:
     if _INCLUDE_RE.match(candidate):
         return
     if candidate.startswith("-"):
+        option_name = candidate.split(None, 1)[0].split("=", 1)[0]
         raise TestValidationError(
             "requirements.txt unterstützt im Test-Validator nur gepinnte "
             "Pakete sowie -r/--requirement und -c/--constraint. "
-            f"Nicht unterstützte Option in {relative}: {candidate!r}"
+            f"Nicht unterstützte Option in {relative}: {option_name!r}"
         )
     if _FROZEN_REQUIREMENT_RE.fullmatch(candidate) is None:
         raise TestValidationError(
             "requirements.txt muss für den Test-Validator ausschließlich "
             "eingefrorene Index-Abhängigkeiten im Format package==version "
             "enthalten. Pfade, URLs, VCS-Referenzen und Marker werden nicht "
-            f"unterstützt ({relative}: {candidate!r})."
+            f"unterstützt ({relative})."
         )
 
 
