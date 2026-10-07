@@ -47,7 +47,7 @@ def _candidate_config_file(path: Path) -> bool:
 def discover_secret_values(
     archive: bytes,
     *,
-    max_file_bytes: int = 1_000_000,
+    max_file_bytes: int = 16 * 1024 * 1024,
 ) -> tuple[str, ...]:
     values: set[str] = set()
     with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tar:
