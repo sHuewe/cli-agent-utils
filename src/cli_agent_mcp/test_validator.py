@@ -979,11 +979,22 @@ class DockerTestValidator:
             "--no-daemon",
             "--gradle-user-home",
             "/tmp/gradle",
+            "--init-script",
+            "/tmp/cli-agent-disable-tests.gradle",
             "assemble",
         ]
         gradle_home: Path | None = None
         dependency_cache_key: str | None = None
-        pre_test_command: list[str] | None = None
+        pre_test_command: list[str] | None = [
+            "sh",
+            "-c",
+            (
+                "printf '%s\\n' "
+                "'allprojects { tasks.withType(org.gradle.api.tasks.testing.Test)"
+                ".configureEach { enabled = false } }' "
+                "> /tmp/cli-agent-disable-tests.gradle"
+            ),
+        ]
         if self.settings.gradle_cache_root is not None:
             entry = gradle_cache_entry(self.settings.gradle_cache_root, project)
             dependency_cache_key = entry.key
@@ -1014,6 +1025,6 @@ class DockerTestValidator:
             gradle_home=gradle_home,
         )
         result["operation"] = "build"
-        result["tests_executed"] = False
+        result["test_tasks_disabled"] = True
         return result
 
