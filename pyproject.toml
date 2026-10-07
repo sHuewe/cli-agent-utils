@@ -9,7 +9,10 @@ description = "Optional Docker-related MCP servers for cli-agent"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "javaproperties>=0.8,<1",
     "mcp>=1.9,<2",
+    "python-dotenv>=1,<2",
+    "PyYAML>=6,<7",
 ]
 
 [project.optional-dependencies]
