@@ -6,7 +6,6 @@ import shutil
 import subprocess  # nosec B404
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .cache_identity import native_project_identity, windows_project_identity
@@ -252,112 +251,6 @@ def _run(command: list[str], *, cwd: Path, timeout: int) -> None:
         )
 
 
-def _default_maven_settings_path() -> Path:
-    return Path.home() / ".m2" / "settings.xml"
-
-
-def _default_global_maven_settings_path(maven_executable: str) -> Path | None:
-    configured_home = os.environ.get("MAVEN_HOME") or os.environ.get("M2_HOME")
-    if configured_home:
-        return Path(configured_home).expanduser() / "conf" / "settings.xml"
-
-    executable = Path(maven_executable).expanduser().resolve()
-    if executable.parent.name.casefold() == "bin":
-        return executable.parent.parent / "conf" / "settings.xml"
-    return None
-
-
-def _reject_semantic_maven_settings(
-    project: Path,
-    *,
-    global_settings: Path | None = None,
-) -> None:
-    maven_config = project / ".mvn" / "maven.config"
-    if maven_config.is_file():
-        try:
-            config_text = maven_config.read_text(
-                encoding="utf-8",
-                errors="replace",
-            )
-        except OSError as exc:
-            raise RuntimeError(
-                ".mvn/maven.config konnte nicht gelesen werden."
-            ) from exc
-        effective_config = "\n".join(
-            line
-            for line in config_text.splitlines()
-            if not line.lstrip().startswith("#")
-        )
-        tokens = effective_config.split()
-        has_settings_option = any(
-            token == "-s"
-            or token.startswith("-s")
-            or token == "--settings"
-            or token.startswith("--settings=")
-            or token == "-gs"
-            or token.startswith("-gs")
-            or token == "--global-settings"
-            or token.startswith("--global-settings=")
-            for token in tokens
-        )
-        if has_settings_option:
-            raise RuntimeError(
-                "Projekt-spezifische Maven-Settings via "
-                "-s/--settings oder -gs/--global-settings werden vom "
-                "Offline-Validator nicht unterstützt."
-            )
-
-        compact_file_option = any(
-            token.startswith("-f")
-            and token not in {"-fae", "-ff", "-fn"}
-            and token != "-f"
-            for token in tokens
-        )
-        has_file_option = (
-            "-f" in tokens
-            or "--file" in tokens
-            or any(token.startswith("--file=") for token in tokens)
-            or compact_file_option
-        )
-        if has_file_option:
-            raise RuntimeError(
-                "Alternative Maven-Projektdateien via -f/--file in "
-                ".mvn/maven.config werden vom Offline-Validator nicht "
-                "unterstützt. Verwende die normale pom.xml."
-            )
-
-    def local_name(tag: str) -> str:
-        return tag.rsplit("}", 1)[-1]
-
-    settings_files = [("user", _default_maven_settings_path())]
-    if global_settings is not None:
-        settings_files.append(("global", global_settings))
-
-    seen: set[Path] = set()
-    for scope, settings in settings_files:
-        normalized = settings.expanduser().absolute()
-        if normalized in seen or not settings.is_file():
-            continue
-        seen.add(normalized)
-        try:
-            root = ET.parse(settings).getroot()
-        except (OSError, ET.ParseError) as exc:
-            raise RuntimeError(
-                f"Maven {scope} settings.xml konnte nicht sicher ausgewertet werden."
-            ) from exc
-
-        for element in root.iter():
-            name = local_name(element.tag)
-            if name in {"profiles", "activeProfiles"} and list(element):
-                raise RuntimeError(
-                    f"Maven {scope} settings.xml enthält Build-Semantik über "
-                    f"{name}. Der Offline-Validator unterstützt settings.xml nur "
-                    "für Repository-/Mirror-/Credential-Konfiguration. "
-                    "Verschiebe aktive Profile/Properties in die Projekt-POM "
-                    "oder verwende settings.xml ohne Build-Semantik."
-                )
-
-
 def prepare_maven(
     project: Path,
     cache_root: Path,
@@ -373,10 +266,6 @@ def prepare_maven(
         raise ValueError("--timeout muss positiv sein.")
 
     executable = shutil.which(maven_command) or maven_command
-    _reject_semantic_maven_settings(
-        project,
-        global_settings=_default_global_maven_settings_path(executable),
-    )
     key = maven_dependency_key(project, project_identity=project_identity)
     root = cache_root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
