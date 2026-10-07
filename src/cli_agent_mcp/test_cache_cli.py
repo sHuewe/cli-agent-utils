@@ -347,7 +347,12 @@ def prepare_maven(
 def _write_gradle_runtime_resolver(directory: Path) -> Path:
     script = directory / "cli-agent-resolve-runtime.gradle"
     script.write_text(
-        """gradle.projectsEvaluated {
+        """allprojects {
+    tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+        enabled = false
+    }
+}
+gradle.projectsEvaluated {
     def root = gradle.rootProject
     root.tasks.register("_cliAgentResolveRuntimeDependencies") {
         doLast {
