@@ -8,6 +8,7 @@ import pytest
 from cli_agent_mcp.docker_backend import DockerBackend, DockerCommandResult
 from cli_agent_mcp.gradle_cache import (
     gradle_cache_entry,
+    gradle_dependency_key,
     write_gradle_ready_metadata,
 )
 from cli_agent_mcp.maven_cache import cache_entry, maven_dependency_key, write_ready_metadata
@@ -668,3 +669,24 @@ def test_java_build_rejects_ambiguous_project(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError, match="mehrdeutig"):
         validator.run_java_build(".")
+
+
+def test_gradle_dependency_key_changes_with_buildsrc_source(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    buildsrc = tmp_path / "buildSrc" / "src" / "main" / "kotlin"
+    buildsrc.mkdir(parents=True)
+    source = buildsrc / "Dependencies.kt"
+    source.write_text(
+        'const val jacksonVersion = "2.20.0"\n',
+        encoding="utf-8",
+    )
+
+    first = gradle_dependency_key(tmp_path)
+    source.write_text(
+        'const val jacksonVersion = "2.21.0"\n',
+        encoding="utf-8",
+    )
+    second = gradle_dependency_key(tmp_path)
+
+    assert first.startswith("gradle-")
+    assert first != second
