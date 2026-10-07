@@ -885,3 +885,113 @@ def test_gradle_dependency_key_keeps_nested_project_named_build(
     second = gradle_dependency_key(tmp_path)
 
     assert first != second
+
+
+
+def test_maven_dependency_key_changes_with_declared_nonstandard_module_pom(
+    tmp_path: Path,
+) -> None:
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    (tmp_path / "pom.xml").write_text(
+        """
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>root</artifactId>
+  <version>1.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>modules/child.xml</module>
+  </modules>
+</project>
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    child = modules / "child.xml"
+    child.write_text(
+        """
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>child</artifactId>
+  <version>1.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>com.example</groupId>
+      <artifactId>demo</artifactId>
+      <version>1.0</version>
+    </dependency>
+  </dependencies>
+</project>
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    first = maven_dependency_key(tmp_path)
+    child.write_text(
+        child.read_text(encoding="utf-8").replace(
+            "<version>1.0</version>\n    </dependency>",
+            "<version>2.0</version>\n    </dependency>",
+        ),
+        encoding="utf-8",
+    )
+    second = maven_dependency_key(tmp_path)
+
+    assert first != second
+
+
+def test_maven_dependency_key_follows_nested_nonstandard_module_poms(
+    tmp_path: Path,
+) -> None:
+    modules = tmp_path / "modules"
+    modules.mkdir()
+    (tmp_path / "pom.xml").write_text(
+        """
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>root</artifactId>
+  <version>1.0</version>
+  <packaging>pom</packaging>
+  <modules><module>modules/parent.xml</module></modules>
+</project>
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (modules / "parent.xml").write_text(
+        """
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>parent</artifactId>
+  <version>1.0</version>
+  <packaging>pom</packaging>
+  <modules><module>nested.xml</module></modules>
+</project>
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    nested = modules / "nested.xml"
+    nested.write_text(
+        "<project><modelVersion>4.0.0</modelVersion>"
+        "<groupId>com.example</groupId><artifactId>nested</artifactId>"
+        "<version>1.0</version></project>\n",
+        encoding="utf-8",
+    )
+
+    first = maven_dependency_key(tmp_path)
+    nested.write_text(
+        nested.read_text(encoding="utf-8").replace(
+            "<version>1.0</version>",
+            "<version>2.0</version>",
+        ),
+        encoding="utf-8",
+    )
+    second = maven_dependency_key(tmp_path)
+
+    assert first != second
