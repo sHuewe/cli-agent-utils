@@ -15,7 +15,7 @@ from .python_cache import (
     python_dependency_plan,
     validate_python_cache_tree,
 )
-from .test_validator_redaction import OutputRedactor, discover_secret_values
+from .test_validator_redaction import (\n    OutputRedactor,\n    SecretDiscoveryLimitError,\n    discover_secret_values,\n)
 from .test_validator_snapshot import create_project_snapshot
 from .test_validator_types import TestValidationError, TestValidatorSettings
 
@@ -341,12 +341,17 @@ class DockerTestValidator:
             max_project_bytes=self.settings.max_project_bytes,
             max_snapshot_entries=self.settings.max_snapshot_entries,
         )
-        redactor = OutputRedactor(
-            discover_secret_values(
+        try:
+            discovered_secrets = discover_secret_values(
                 snapshot.archive,
                 max_file_bytes=self.settings.max_file_bytes,
             )
-        )
+            redactor = OutputRedactor(discovered_secrets)
+        except SecretDiscoveryLimitError:
+            # Project configuration remains available inside the no-network
+            # sandbox, but output is fail-closed if bounded secret discovery
+            # cannot safely enumerate all candidate values.
+            redactor = OutputRedactor(suppress_output=True)
         container_name = f"cli-agent-test-validator-{uuid.uuid4().hex[:12]}"
         created = False
         verified_policy: dict[str, Any] | None = None
