@@ -270,6 +270,25 @@ def _reject_semantic_maven_settings(project: Path) -> None:
                 "Offline-Validator nicht unterstützt."
             )
 
+        compact_file_option = any(
+            token.startswith("-f")
+            and token not in {"-fae", "-ff", "-fn"}
+            and token != "-f"
+            for token in tokens
+        )
+        has_file_option = (
+            "-f" in tokens
+            or "--file" in tokens
+            or any(token.startswith("--file=") for token in tokens)
+            or compact_file_option
+        )
+        if has_file_option:
+            raise RuntimeError(
+                "Alternative Maven-Projektdateien via -f/--file in "
+                ".mvn/maven.config werden vom Offline-Validator nicht "
+                "unterstützt. Verwende die normale pom.xml."
+            )
+
     settings = _default_maven_settings_path()
     if not settings.is_file():
         return
