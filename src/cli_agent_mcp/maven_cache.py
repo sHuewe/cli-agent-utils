@@ -1,33 +1,15 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import stat
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
+from .cache_identity import project_cache_key
 from .test_validator_types import TestValidationError
 
-_CACHE_SCHEMA = "cli-agent-maven-cache-v3"
-_IGNORED_DIRECTORIES = {
-    ".git",
-    ".gradle",
-    ".idea",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".tox",
-    ".venv",
-    ".vscode",
-    "__pycache__",
-    "build",
-    "dist",
-    "node_modules",
-    "target",
-    "venv",
-}
+_CACHE_SCHEMA = "cli-agent-maven-cache-v4"
 def default_maven_cache_root() -> Path:
     return Path.home() / ".cli-agent" / "dependency-cache" / "maven"
 
@@ -77,55 +59,11 @@ class MavenCacheEntry:
         )
 
 
-def _validate_root_pom_contract(root_pom: Path) -> None:
-    try:
-        root = ET.parse(root_pom).getroot()
-    except (OSError, ET.ParseError) as exc:
-        raise TestValidationError(
-            "Die Root-pom.xml konnte nicht sicher ausgewertet werden."
-        ) from exc
-
-    def local_name(tag: str) -> str:
-        return tag.rsplit("}", 1)[-1]
-
-    for element in root.iter():
-        if local_name(element.tag) != "modules":
-            continue
-        if any(
-            local_name(child.tag) == "module"
-            and (child.text or "").strip()
-            for child in element
-        ):
-            raise TestValidationError(
-                "Maven-Multi-Module-/Reaktor-Projekte werden vom v1-"
-                "Offline-Validator noch nicht unterstützt. Verwende vorerst "
-                "ein Single-Module-Projekt ohne <modules>."
-            )
-
-    parent = next(
-        (child for child in root if local_name(child.tag) == "parent"),
-        None,
-    )
-    if parent is None:
-        return
-
-    relative_path = next(
-        (
-            child
-            for child in parent
-            if local_name(child.tag) == "relativePath"
-        ),
-        None,
-    )
-    if relative_path is None or (relative_path.text or "").strip():
-        raise TestValidationError(
-            "Lokale Maven-Parent-POMs werden vom v1-Offline-Validator noch "
-            "nicht unterstützt. Verwende für Repository-Parents ein explizit "
-            "leeres <relativePath/>."
-        )
-
-
-def maven_dependency_key(project: Path) -> str:
+def maven_dependency_key(
+    project: Path,
+    *,
+    project_identity: str | None = None,
+) -> str:
     root = project.expanduser().resolve()
     if not root.is_dir():
         raise TestValidationError(f"Maven-Projekt existiert nicht: {root}")
@@ -134,40 +72,24 @@ def maven_dependency_key(project: Path) -> str:
         raise TestValidationError("Die Root-pom.xml darf kein Symlink sein.")
     if not root_pom.is_file():
         raise TestValidationError("Maven-Projekt benötigt eine pom.xml.")
-
-    _validate_root_pom_contract(root_pom)
-    files = [root_pom]
-    for relative_name in _ROOT_MAVEN_FILES:
-        candidate = root / relative_name
-        if candidate.is_symlink():
-            raise TestValidationError(
-                f"Maven-Konfigurationsdatei darf kein Symlink sein: {relative_name}"
-            )
-        if candidate.is_file():
-            files.append(candidate)
-    files = sorted(set(files), key=lambda path: path.relative_to(root).as_posix())
-
-    digest = hashlib.sha256()
-    digest.update((_CACHE_SCHEMA + "\0").encode("utf-8"))
-    for path in files:
-        relative = path.relative_to(root).as_posix()
-        try:
-            content = path.read_bytes()
-        except OSError as exc:
-            raise TestValidationError(
-                f"Maven-Konfigurationsdatei konnte nicht gelesen werden: {relative}"
-            ) from exc
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(len(content).to_bytes(8, "big"))
-        digest.update(content)
-        digest.update(b"\0")
-    return "maven-" + digest.hexdigest()
+    return project_cache_key(
+        "maven",
+        root,
+        project_identity=project_identity,
+    )
 
 
-def cache_entry(cache_root: Path, project: Path) -> MavenCacheEntry:
+def cache_entry(
+    cache_root: Path,
+    project: Path,
+    *,
+    project_identity: str | None = None,
+) -> MavenCacheEntry:
     root = cache_root.expanduser().resolve()
-    return MavenCacheEntry(root=root, key=maven_dependency_key(project))
+    return MavenCacheEntry(
+        root=root,
+        key=maven_dependency_key(project, project_identity=project_identity),
+    )
 
 
 def validate_repository_tree(repository: Path) -> int:
