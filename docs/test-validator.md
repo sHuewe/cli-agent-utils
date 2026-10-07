@@ -49,7 +49,7 @@ The snapshot:
 - omits common generated/cache directories. Build-output names such as `target`, `build`, `dist` and `.gradle` are excluded only at the selected project root or when their parent is recognizable as the corresponding Maven/Gradle/Python project, so legitimate nested source directories with those names remain in the snapshot,
 - rejects symlinks,
 - rejects sockets, devices, FIFOs and other non-regular filesystem entries,
-- applies per-file and total-project size limits.
+- applies per-file, total-project and snapshot-entry-count limits (`--max-snapshot-entries`, default 20,000), so many empty files cannot exhaust memory through TAR headers alone.
 
 The TAR entries are written with container UID/GID `65532:65532`.
 
@@ -275,7 +275,7 @@ For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`.
 
 The Gradle cache identity is derived only from the cache type plus the normalized absolute project root path. cli-agent deliberately does not try to statically determine which files influence Gradle dependency resolution: Gradle build scripts are executable code and may read arbitrary project files. This avoids partial parsers for `includeBuild`, `buildSrc`, version catalogs, custom properties files or other build logic. The existing cache is tried offline; recognized dependency-resolution failures ask the user to rerun `prepare-gradle`.
 
-Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. Sandbox validation intentionally uses the Gradle executable supplied by the administrator-pinned image instead of downloading/executing the wrapper distribution. The administrator is therefore responsible for choosing an image Gradle version compatible with the project's wrapper/build configuration. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. The same init script disables every Gradle task of type `Test`, so project task wiring cannot cause tests to run during preparation.
+Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. Sandbox validation intentionally uses the Gradle executable supplied by the administrator-pinned image instead of downloading/executing the wrapper distribution. The administrator is therefore responsible for choosing an image Gradle version compatible with the project's wrapper/build configuration. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. The helper init script resolves the selected runtime classpaths only. Because Gradle build scripts are executable code, preparation does not claim to prevent project-defined tests or other tasks from running; the user must trust the project before invoking `prepare-gradle`.
 
 To support private repositories such as a company JFrog, the preparation command copies only the user's Gradle configuration files (`gradle.properties`, root init scripts and regular files in `init.d`) from the normal Gradle user home into that temporary isolated home. Before promotion, the preparer removes the copied user configuration and discards all generated Gradle user-home state except the downloaded module dependency cache at `caches/modules-2`. This also removes compiled init-script/DSL artifacts. Older pre-sanitization Gradle caches use a previous cache schema and are rejected.
 
@@ -298,16 +298,16 @@ gradle --offline --no-daemon --gradle-user-home /tmp/gradle test --tests <select
 The separate Gradle build tool uses the same prepared cache but runs only:
 
 ```text
-gradle --offline --no-daemon --gradle-user-home /tmp/gradle --init-script /tmp/cli-agent-disable-tests.gradle assemble
+gradle --offline --no-daemon --gradle-user-home /tmp/gradle assemble
 ```
 
-Before the build, the validator writes a fixed temporary init script that disables all Gradle tasks of type `org.gradle.api.tasks.testing.Test`; the build then invokes `assemble` with that init script. This prevents standard/custom Gradle Test tasks from being scheduled even if `assemble` depends on them. Arbitrary custom non-Test tasks remain part of project build semantics. The host cache is never bind-mounted or writable by project code. If an organization uses a non-default cache root, configure `--gradle-cache-root` once and pass the same root to `prepare-gradle --cache-root ...`.
+The validator requests only the fixed `assemble` task and does not expose arbitrary Gradle tasks or options to the model. Gradle project logic can nevertheless wire other tasks, including tests, into `assemble`; any such execution occurs inside the hardened no-network sandbox rather than on the host. The host cache is never bind-mounted or writable by project code. If an organization uses a non-default cache root, configure `--gradle-cache-root` once and pass the same root to `prepare-gradle --cache-root ...`.
 
 ## Output and secret handling
 
 Container stdout/stderr is redirected to the bounded `/output` tmpfs before it can reach the host process, then truncated/redacted before being returned to the model.
 
-Before testing, the validator scans common text configuration formats such as `.env`, `.properties`, YAML, JSON and TOML for values under sensitive keys including password, secret, token and API/access key names. Exact discovered values are redacted from returned output. Generic bearer-token, credential-assignment and PEM-private-key patterns are also redacted.
+Before testing, the validator scans common text configuration formats such as `.env`, `.properties`, YAML, JSON and TOML from the already verified in-memory snapshot archive. It does not reopen the original workspace paths for secret discovery. Values under sensitive keys including password, secret, token and API/access key names are added to the output redactor. Exact discovered values are redacted from returned output. Generic bearer-token, credential-assignment and PEM-private-key patterns are also redacted.
 
 This protects against common accidental leakage. It does not protect against malicious test code deliberately transforming a secret before printing it.
 
