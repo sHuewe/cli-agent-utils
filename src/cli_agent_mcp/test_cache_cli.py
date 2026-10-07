@@ -264,7 +264,7 @@ def _reject_semantic_maven_settings(project: Path) -> None:
         )
         if has_settings_option:
             raise RuntimeError(
-                "Projekt-spezifische alternative Maven-Settings via "
+                "Projekt-spezifische Maven-Settings via "
                 "-s/--settings oder -gs/--global-settings werden vom "
                 "Offline-Validator nicht unterstützt."
             )
@@ -487,6 +487,73 @@ def _run_gradle(command: list[str], *, cwd: Path, timeout: int) -> None:
         )
 
 
+def _python_interpreter_metadata(
+    python_command: str,
+    *,
+    timeout: int,
+) -> dict[str, str]:
+    probe = (
+        "import json, platform, sys; "
+        "print(json.dumps({"
+        "'sys_platform': sys.platform, "
+        "'python_version': platform.python_version(), "
+        "'python_implementation': platform.python_implementation(), "
+        "'machine': platform.machine()"
+        "}))"
+    )
+    try:
+        completed = subprocess.run(  # nosec B603
+            [python_command, "-c", probe],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=min(timeout, 30),
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(
+            "Der für --python-command ausgewählte Interpreter konnte nicht "
+            "geprüft werden."
+        ) from exc
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "Der für --python-command ausgewählte Interpreter konnte nicht "
+            "geprüft werden."
+        )
+    try:
+        value = json.loads(completed.stdout.strip())
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "Der für --python-command ausgewählte Interpreter lieferte "
+            "ungültige Plattforminformationen."
+        ) from exc
+    if not isinstance(value, dict) or not all(
+        isinstance(value.get(name), str)
+        for name in (
+            "sys_platform",
+            "python_version",
+            "python_implementation",
+            "machine",
+        )
+    ):
+        raise RuntimeError(
+            "Der für --python-command ausgewählte Interpreter lieferte "
+            "unvollständige Plattforminformationen."
+        )
+    if not value["sys_platform"].startswith("linux"):
+        raise RuntimeError(
+            "Python-Dependencies müssen mit einem Linux-Python unter WSL "
+            "vorbereitet werden. --python-command darf keinen Windows-"
+            "Interpreter auswählen."
+        )
+    return {
+        "python_version": value["python_version"],
+        "python_implementation": value["python_implementation"],
+        "machine": value["machine"],
+    }
+
+
 def prepare_python(
     project: Path,
     cache_root: Path | None,
@@ -501,6 +568,11 @@ def prepare_python(
         raise ValueError(f"Projektverzeichnis existiert nicht: {project}")
     if timeout <= 0:
         raise ValueError("--timeout muss positiv sein.")
+
+    interpreter_metadata = _python_interpreter_metadata(
+        python_command,
+        timeout=timeout,
+    )
 
     root = (
         cache_root.expanduser().resolve()
@@ -539,7 +611,12 @@ def prepare_python(
             cwd=project,
             timeout=timeout,
         )
-        write_python_ready_metadata(temporary, key, plan)
+        write_python_ready_metadata(
+            temporary,
+            key,
+            plan,
+            interpreter_metadata=interpreter_metadata,
+        )
         if entry.directory.exists():
             shutil.rmtree(entry.directory)
         temporary.replace(entry.directory)
