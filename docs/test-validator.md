@@ -46,7 +46,7 @@ The snapshot is created entirely in memory. No host-side temporary source direct
 The snapshot:
 
 - includes ordinary project files, including `.env` when present,
-- omits common generated/cache directories such as `.git`, `.venv`, `target`, `build`, `dist`, `.gradle`, `node_modules` and `.cli-agent`,
+- omits common generated/cache directories. Build-output names such as `target`, `build`, `dist` and `.gradle` are excluded only at the selected project root or when their parent is recognizable as the corresponding Maven/Gradle/Python project, so legitimate nested source directories with those names remain in the snapshot,
 - rejects symlinks,
 - rejects sockets, devices, FIFOs and other non-regular filesystem entries,
 - applies per-file and total-project size limits.
@@ -120,7 +120,7 @@ Preparation uses the current WSL Python and its normal pip configuration. Privat
 
 The same target option is available for Maven and Gradle. An explicit `--cache-root` remains available for custom layouts and overrides target-based default placement; it must not be combined with `--target windows`.
 
-The dependency key tracks supported Python dependency inputs including recursively included `requirements.txt` / `requirements-dev.txt` / `requirements-test*.txt` and `pyproject.toml`. Nested requirements includes are resolved relative to the file containing the include, matching pip behavior. PEP 735 dependency groups support recursive `{include-group = "..."}` expansion with missing-group and cycle validation. Lockfile-based resolution (`uv.lock`, `poetry.lock`, `Pipfile.lock`) is intentionally rejected instead of being silently ignored; export pinned test dependencies to a supported requirements file. Local/editable path dependencies are likewise rejected, including compact editable syntax and bare local paths, so the current workspace code can never be replaced by a cached project wheel. Empty/comment-only requirements files are accepted and produce an empty install manifest.
+The dependency key tracks supported Python dependency inputs including recursively included `requirements.txt` / `requirements-dev.txt` / `requirements-test*.txt` and `pyproject.toml`. Nested requirements includes are resolved relative to the file containing the include, matching pip behavior, including compact short forms such as `-rrequirements/base.txt` and `-cconstraints.txt`. PEP 735 dependency groups normalize names before selection/include expansion, reject duplicate normalized names, and support recursive `{include-group = "..."}` expansion with missing-group and cycle validation. Lockfile-based resolution (`uv.lock`, `poetry.lock`, `Pipfile.lock`) is intentionally rejected instead of being silently ignored; export pinned test dependencies to a supported requirements file. Editable/current-project requirements remain rejected so the code under test cannot be replaced by a cached copy. Relative PEP 508 dependencies declared in `pyproject.toml` are supported when they resolve inside the selected project. Their complete regular-file tree is hashed into the Python dependency key, so changes invalidate the prepared wheel cache. Relative paths escaping the selected project are rejected. Empty/comment-only requirements files are accepted and produce an empty install manifest.
 
 Preparation builds wheels using pip:
 
