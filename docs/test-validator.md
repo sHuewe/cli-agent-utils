@@ -14,6 +14,8 @@ The MCP exposes exactly:
 
 - `run_python_tests(project_path=".", test_selector=None)`
 - `run_java_tests(project_path=".", test_selector=None, build_system="auto")`
+
+Java method selectors use the common `com.example.ExampleTest#method` form at the MCP boundary. Maven receives that form directly; Gradle receives the equivalent `com.example.ExampleTest.method` pattern required by `--tests`.
 - `run_java_build(project_path=".", build_system="auto")`
 
 There is no arbitrary command, shell, Docker or package-install tool in the MCP contract. The Java build tool also does not accept arbitrary Maven goals, Gradle tasks or additional command-line arguments.
@@ -322,9 +324,9 @@ Container stdout/stderr is redirected to the bounded `/output` tmpfs before it c
 
 Configuration files such as `.env` intentionally remain part of the project snapshot because real test suites often require them. They are available only inside the no-network sandbox; the principal exposure path is therefore captured stdout/stderr returned to the model.
 
-Before testing, the validator scans common configuration formats from the already verified in-memory snapshot archive. It does not reopen the original workspace paths for secret discovery. JSON is parsed with Python's JSON parser, TOML with `tomllib`, YAML with PyYAML's safe parser, `.env` with python-dotenv and Java `.properties` with javaproperties. Sensitive keys including password, secret, token and API/access key names are then traversed from the parsed data model, so escaped strings, multiline TOML/YAML values, YAML tags/anchors and properties escaping follow the format parser's semantics instead of a custom partial grammar.
+Before testing, the validator scans common configuration formats from the already verified in-memory snapshot archive. It does not reopen the original workspace paths for secret discovery. JSON is parsed with Python's JSON parser, TOML with `tomllib`, YAML with PyYAML's safe parser, `.env` with python-dotenv and Java `.properties` with javaproperties. Java properties are passed to javaproperties as the original bytes so ISO-8859-1/escape semantics are preserved instead of being damaged by an unconditional UTF-8 decode. Sensitive keys including password, secret, token and API/access key names are then traversed from the parsed data model, so escaped strings, multiline TOML/YAML values, YAML tags/anchors and properties escaping follow the format parser's semantics instead of a custom partial grammar.
 
-If a candidate configuration file cannot be parsed and its text contains a possible sensitive-key marker, secret discovery fails closed: the isolated validation still runs, but its captured stdout/stderr is suppressed rather than risking an incomplete redaction. Parse failures in files without such a marker do not suppress diagnostic output.
+If a candidate configuration file cannot be parsed and its content contains a possible sensitive-key marker, secret discovery fails closed. For `.env`, individual parser bindings flagged as errors are inspected as well; a skipped malformed binding with a sensitive-looking key also fails closed: the isolated validation still runs, but its captured stdout/stderr is suppressed rather than risking an incomplete redaction. Parse failures in files without such a marker do not suppress diagnostic output.
 
 Discovered values are added to the exact multi-pattern redactor. Generic bearer-token, credential-assignment and PEM-private-key patterns remain a second defense-in-depth layer. Both discovery and redaction are explicitly bounded. If secret discovery exceeds its fixed value/count/structure budget, the validator likewise suppresses captured output. Exact multi-secret redaction uses a single-pass multi-pattern matcher rather than rescanning the whole output once per secret.
 
