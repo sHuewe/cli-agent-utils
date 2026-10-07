@@ -60,12 +60,10 @@ def discover_secret_values(
             extracted = tar.extractfile(member)
             if extracted is None:
                 continue
-            text = extracted.read(max_file_bytes + 1).decode(
-                "utf-8",
-                errors="replace",
-            )
-            if len(text.encode("utf-8", errors="replace")) > max_file_bytes:
+            content = extracted.read(max_file_bytes + 1)
+            if len(content) > max_file_bytes:
                 continue
+            text = content.decode("utf-8", errors="replace")
             for match in _ASSIGNMENT.finditer(text):
                 key = match.group(1)
                 if not _SENSITIVE_KEY.search(key):
