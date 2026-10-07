@@ -250,8 +250,15 @@ def _reject_semantic_maven_settings(project: Path) -> None:
             raise RuntimeError(
                 ".mvn/maven.config konnte nicht gelesen werden."
             ) from exc
-        tokens = config_text.replace("=", " ").split()
-        if "-s" in tokens or "--settings" in tokens:
+        tokens = config_text.split()
+        has_settings_option = any(
+            token == "-s"
+            or token.startswith("-s")
+            or token == "--settings"
+            or token.startswith("--settings=")
+            for token in tokens
+        )
+        if has_settings_option:
             raise RuntimeError(
                 "Projekt-spezifische Maven-Settings via -s/--settings werden "
                 "vom Offline-Validator nicht unterstützt."
