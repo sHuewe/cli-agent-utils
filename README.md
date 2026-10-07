@@ -109,7 +109,7 @@ registry.internal/gradle-tests@sha256:<64-hex-digest>
 
 The validator never downloads packages during a test. Python installs only from a prepared local wheel cache with `--no-index`; Maven runs with `-o`; Gradle runs with `--offline`.
 
-For Python, dependency preparation follows the same model but **must be executed inside WSL**. This is intentional: the Docker validator runs Linux containers, so preparing with Windows pip could create Windows-only wheels.
+For Python, dependency preparation follows the same model but **must be executed inside WSL**. This is intentional: the Docker validator runs Linux containers, so preparing with Windows pip could create Windows-only wheels. The interpreter selected by `--python-command` is probed as well and must itself report Linux; a Windows Python executable launched from WSL is rejected.
 
 **Operational compatibility requirement:** wheel preparation uses the selected WSL Python interpreter, while test execution uses the administrator-configured Docker image. The validator deliberately does not try to infer or enforce wheel-tag/ABI compatibility between those environments. The administrator is responsible for keeping Python implementation/version, architecture and relevant platform ABI compatible between preparation and the pinned test image. A mismatch can cause the offline install to fail even though a cache exists; it is not treated as a sandbox escape or credential boundary issue.
 
@@ -161,11 +161,11 @@ Preparation runs Gradle outside the MCP sandbox with the user's normal repositor
 
 Relevant Gradle build/configuration changes, including custom `*.versions.toml` catalogs and literal local `includeBuild(...)` build-logic sources, generate a new dependency key. Ordinary application source-only changes keep the existing cache.
 
-Maven and Gradle preparation normally works directly on Windows for typical platform-independent Java builds. Some projects intentionally resolve different dependencies or activate different build logic depending on operating system or architecture. If a Windows-prepared cache fails later in the Linux sandbox for that reason, retry preparation inside WSL while still targeting the Windows-hosted MCP cache:
+Maven and Gradle preparation normally works directly on Windows for typical platform-independent Java builds. Some projects intentionally resolve different dependencies or activate different build logic depending on operating system or architecture. If a Windows-prepared cache fails later in the Linux sandbox for that reason, retry preparation inside WSL while still targeting the Windows-hosted MCP cache and use `--force` so the existing cache entry is actually replaced:
 
 ```bash
-cli-agent-test-cache prepare-maven . --target windows
-cli-agent-test-cache prepare-gradle . --target windows
+cli-agent-test-cache prepare-maven . --target windows --force
+cli-agent-test-cache prepare-gradle . --target windows --force
 ```
 
 For a cli-agent/MCP installation that itself runs inside WSL, omit `--target windows`; the default `--target native` correctly uses the WSL user's own cache.
