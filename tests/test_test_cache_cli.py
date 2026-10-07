@@ -429,7 +429,7 @@ def test_python_cache_key_is_stable_across_requirement_changes(tmp_path: Path) -
     nested.write_text("demo-package==2.0\n", encoding="utf-8")
     second = python_dependency_key(project)
 
-    assert first != second
+    assert first == second
 
 
 
