@@ -586,18 +586,28 @@ def test_gradle_build_assembles_without_running_tests(tmp_path: Path) -> None:
 
     assert result["success"] is True
     assert result["operation"] == "build"
-    assert result["tests_executed"] is False
+    assert result["test_tasks_disabled"] is True
+    disable_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec"
+        and "cli-agent-disable-tests.gradle" in " ".join(args)
+        and "printf" in " ".join(args)
+    )
+    assert "tasks.withType(org.gradle.api.tasks.testing.Test)" in " ".join(disable_call)
     build_call = next(
         args
         for args, _ in backend.calls
         if args[0] == "exec" and "gradle" in args
     )
-    assert build_call[-6:] == [
+    assert build_call[-8:] == [
         "gradle",
         "--offline",
         "--no-daemon",
         "--gradle-user-home",
         "/tmp/gradle",
+        "--init-script",
+        "/tmp/cli-agent-disable-tests.gradle",
         "assemble",
     ]
 
