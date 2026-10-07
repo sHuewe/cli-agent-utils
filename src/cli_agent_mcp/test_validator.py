@@ -339,10 +339,9 @@ class DockerTestValidator:
             project,
             max_file_bytes=self.settings.max_file_bytes,
             max_project_bytes=self.settings.max_project_bytes,
+            max_snapshot_entries=self.settings.max_snapshot_entries,
         )
-        redactor = OutputRedactor(
-            discover_secret_values(project, snapshot.files)
-        )
+        redactor = OutputRedactor(discover_secret_values(snapshot.archive))
         container_name = f"cli-agent-test-validator-{uuid.uuid4().hex[:12]}"
         created = False
         verified_policy: dict[str, Any] | None = None
@@ -1038,7 +1037,7 @@ class DockerTestValidator:
         self,
         project_path: str = ".",
     ) -> dict[str, Any]:
-        """Assemble a Gradle project offline without executing tests."""
+        """Run the fixed Gradle assemble task inside the sandbox."""
         project = self._resolve_project(project_path)
         if not (
             (project / "build.gradle").is_file()
@@ -1054,22 +1053,11 @@ class DockerTestValidator:
             "--no-daemon",
             "--gradle-user-home",
             "/tmp/gradle",
-            "--init-script",
-            "/tmp/cli-agent-disable-tests.gradle",
             "assemble",
         ]
         gradle_home: Path | None = None
         dependency_cache_key: str | None = None
-        pre_test_command: list[str] | None = [
-            "sh",
-            "-c",
-            (
-                "printf '%s\\n' "
-                "'allprojects { tasks.withType(org.gradle.api.tasks.testing.Test)"
-                ".configureEach { enabled = false } }' "
-                "> /tmp/cli-agent-disable-tests.gradle"
-            ),
-        ]
+        pre_test_command: list[str] | None = None
         if self.settings.gradle_cache_root is not None:
             entry = gradle_cache_entry(self.settings.gradle_cache_root, project)
             dependency_cache_key = entry.key
@@ -1103,6 +1091,6 @@ class DockerTestValidator:
             gradle_home=gradle_home,
         )
         result["operation"] = "build"
-        result["test_tasks_disabled"] = True
+        result["requested_gradle_task"] = "assemble"
         return result
 
