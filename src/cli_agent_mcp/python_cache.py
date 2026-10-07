@@ -220,22 +220,22 @@ def _safe_relative_project_file(
     pure = PurePosixPath(raw)
     if pure.is_absolute() or ".." in pure.parts:
         raise TestValidationError(
-            f"Requirements-Include muss innerhalb des Projekts liegen: {value!r}"
+            "Requirements-Include muss innerhalb des Projekts liegen."
         )
     candidate = (relative_to / Path(*pure.parts)).resolve()
     try:
         candidate.relative_to(project)
     except ValueError as exc:
         raise TestValidationError(
-            f"Requirements-Include verweist außerhalb des Projekts: {value!r}"
+            "Requirements-Include verweist außerhalb des Projekts."
         ) from exc
     if candidate.is_symlink():
         raise TestValidationError(
-            f"Requirements-Datei darf kein Symlink sein: {value!r}"
+            "Requirements-Include darf kein Symlink sein."
         )
     if not candidate.is_file():
         raise TestValidationError(
-            f"Requirements-Datei existiert nicht: {value!r}"
+            "Requirements-Include verweist auf keine vorhandene Datei."
         )
     return candidate
 
@@ -248,11 +248,10 @@ def _validate_frozen_requirement_line(relative: str, line: str) -> None:
     if _INCLUDE_RE.match(candidate):
         return
     if candidate.startswith("-"):
-        option_name = candidate.split(None, 1)[0].split("=", 1)[0]
         raise TestValidationError(
             "requirements.txt unterstützt im Test-Validator nur gepinnte "
             "Pakete sowie -r/--requirement und -c/--constraint. "
-            f"Nicht unterstützte Option in {relative}: {option_name!r}"
+            f"Nicht unterstützte Option in {relative}."
         )
     if _FROZEN_REQUIREMENT_RE.fullmatch(candidate) is None:
         raise TestValidationError(
