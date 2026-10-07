@@ -91,7 +91,6 @@ def verified_directory_scandir(
 
     FILE_READ_ATTRIBUTES = 0x0080
     FILE_SHARE_READ = 0x00000001
-    FILE_SHARE_WRITE = 0x00000002
     OPEN_EXISTING = 3
     FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
     FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
@@ -116,7 +115,7 @@ def verified_directory_scandir(
     handle = create_file(
         str(path),
         FILE_READ_ATTRIBUTES,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        FILE_SHARE_READ,
         None,
         OPEN_EXISTING,
         FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
@@ -126,10 +125,11 @@ def verified_directory_scandir(
         raise error_type(f"{changed_message}: {path}")
 
     try:
-        # The handle was opened without FILE_SHARE_DELETE and with
-        # OPEN_REPARSE_POINT. While it is held, the directory itself cannot be
-        # replaced by a junction/symlink. Revalidate the path only after that
-        # lock is in place, then keep the handle alive for the whole scan.
+        # The handle permits only shared reads and uses OPEN_REPARSE_POINT.
+        # While it is held, the directory cannot be deleted/replaced or opened
+        # for metadata writes that could turn it into a reparse point. Revalidate
+        # the path only after that lock is in place, then keep the handle alive
+        # for the whole scan.
         try:
             opened = os.stat(path, follow_symlinks=False)
         except OSError as exc:
