@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .test_validator_types import TestValidationError
 
-_CACHE_SCHEMA = "cli-agent-gradle-cache-v1"
+_CACHE_SCHEMA = "cli-agent-gradle-cache-v2"
 _IGNORED_DIRECTORIES = {
     ".git",
     ".idea",
