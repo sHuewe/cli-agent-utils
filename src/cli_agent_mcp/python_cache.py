@@ -165,14 +165,20 @@ def default_wsl_python_cache_root() -> Path:
     return default_wsl_windows_cache_root("python")
 
 
-def _safe_relative_project_file(project: Path, value: str) -> Path:
+def _safe_relative_project_file(
+    project: Path,
+    value: str,
+    *,
+    relative_to: Path | None = None,
+) -> Path:
     raw = value.replace("\\", "/")
     pure = PurePosixPath(raw)
     if pure.is_absolute() or ".." in pure.parts:
         raise TestValidationError(
             f"Requirements-Include muss innerhalb des Projekts liegen: {value!r}"
         )
-    candidate = (project / Path(*pure.parts)).resolve()
+    base = relative_to if relative_to is not None else project
+    candidate = (base / Path(*pure.parts)).resolve()
     try:
         candidate.relative_to(project)
     except ValueError as exc:
@@ -217,7 +223,11 @@ def _requirement_files(project: Path) -> tuple[Path, ...]:
         for line in text.splitlines():
             match = _INCLUDE_RE.match(line)
             if match:
-                included = _safe_relative_project_file(project, match.group(1))
+                included = _safe_relative_project_file(
+                    project,
+                    match.group(1),
+                    relative_to=path.parent,
+                )
                 add(included)
 
     for path in roots:
@@ -269,12 +279,46 @@ def python_dependency_plan(project: Path) -> PythonDependencyPlan:
                         )
         groups = config.get("dependency-groups")
         if isinstance(groups, dict):
+            def expand_group(name: str, stack: tuple[str, ...] = ()) -> list[str]:
+                if name in stack:
+                    chain = " -> ".join((*stack, name))
+                    raise TestValidationError(
+                        f"Zyklischer dependency-group Include: {chain}"
+                    )
+                values = groups.get(name)
+                if values is None:
+                    raise TestValidationError(
+                        f"Unbekannte dependency-group: {name}"
+                    )
+                if not isinstance(values, list):
+                    raise TestValidationError(
+                        f"dependency-group {name!r} muss eine Liste sein."
+                    )
+
+                expanded: list[str] = []
+                for value in values:
+                    if isinstance(value, str):
+                        if value.strip():
+                            expanded.append(value)
+                        continue
+                    if isinstance(value, dict) and set(value) == {"include-group"}:
+                        included = value.get("include-group")
+                        if not isinstance(included, str) or not included.strip():
+                            raise TestValidationError(
+                                f"Ungültiger include-group Eintrag in {name!r}."
+                            )
+                        expanded.extend(
+                            expand_group(included, (*stack, name))
+                        )
+                        continue
+                    raise TestValidationError(
+                        f"Nicht unterstützter dependency-group Eintrag in {name!r}."
+                    )
+                return expanded
+
             for group in sorted(_OPTIONAL_DEPENDENCY_GROUPS):
-                values = groups.get(group, [])
-                if isinstance(values, list):
-                    for value in values:
-                        if isinstance(value, str) and value.strip():
-                            dependency_specs.append(value)
+                if group in groups:
+                    dependency_specs.extend(expand_group(group))
 
     # Included requirement files affect the key even though pip receives only
     # the top-level files and resolves nested -r/-c entries itself.
