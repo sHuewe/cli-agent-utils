@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import stat
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -110,6 +111,72 @@ def _iter_project_poms(project: Path) -> tuple[Path, ...]:
     return tuple(result)
 
 
+def _declared_module_poms(
+    project: Path,
+    initial_poms: tuple[Path, ...],
+) -> tuple[Path, ...]:
+    result: dict[str, Path] = {
+        path.relative_to(project).as_posix(): path for path in initial_poms
+    }
+    pending = list(initial_poms)
+    parsed: set[str] = set()
+
+    while pending:
+        pom = pending.pop()
+        relative_pom = pom.relative_to(project).as_posix()
+        if relative_pom in parsed:
+            continue
+        parsed.add(relative_pom)
+
+        try:
+            root = ET.parse(pom).getroot()
+        except (OSError, ET.ParseError) as exc:
+            raise TestValidationError(
+                f"Maven-POM konnte nicht sicher ausgewertet werden: {relative_pom}"
+            ) from exc
+
+        for element in root.iter():
+            if element.tag.rsplit("}", 1)[-1] != "module":
+                continue
+            raw = (element.text or "").strip()
+            if not raw or "${" in raw:
+                continue
+
+            candidate = (pom.parent / raw).resolve()
+            try:
+                candidate.relative_to(project)
+            except ValueError as exc:
+                raise TestValidationError(
+                    "Maven-Reaktor-Module müssen innerhalb des ausgewählten "
+                    f"Projekts liegen: {raw!r} in {relative_pom}"
+                ) from exc
+
+            if candidate.is_symlink():
+                raise TestValidationError(
+                    "Maven-Reaktor-POM darf kein Symlink sein: "
+                    f"{candidate.relative_to(project)}"
+                )
+            if candidate.is_dir():
+                candidate = candidate / "pom.xml"
+                if candidate.is_symlink():
+                    raise TestValidationError(
+                        "Maven-Reaktor-POM darf kein Symlink sein: "
+                        f"{candidate.relative_to(project)}"
+                    )
+            if not candidate.is_file():
+                # Maven itself decides whether a profile-specific or otherwise
+                # inactive module is required. Only existing literal module
+                # inputs participate in the deterministic cache key.
+                continue
+
+            relative = candidate.relative_to(project).as_posix()
+            if relative not in result:
+                result[relative] = candidate
+                pending.append(candidate)
+
+    return tuple(result[name] for name in sorted(result))
+
+
 def maven_dependency_key(project: Path) -> str:
     root = project.expanduser().resolve()
     if not root.is_dir():
@@ -120,7 +187,8 @@ def maven_dependency_key(project: Path) -> str:
     if not root_pom.is_file():
         raise TestValidationError("Maven-Projekt benötigt eine pom.xml.")
 
-    files = list(_iter_project_poms(root))
+    discovered_poms = _iter_project_poms(root)
+    files = list(_declared_module_poms(root, discovered_poms))
     for relative_name in _ROOT_MAVEN_FILES:
         candidate = root / relative_name
         if candidate.is_symlink():
