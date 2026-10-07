@@ -12,16 +12,16 @@ from typing import Any
 
 import javaproperties
 import yaml
-from dotenv import dotenv_values
+from dotenv.parser import parse_stream
 
 _SENSITIVE_KEY = re.compile(
-    r"(?i)(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
-    r"private[_-]?key|credential)"
+    r"(?i)(?:password|passwd|secret|token|api[_.-]?key|access[_.-]?key|"
+    r"private[_.-]?key|credential)"
 )
 _GENERIC_PATTERNS = (
     re.compile(r"(?i)(Authorization\s*:\s*Bearer\s+)[^\s]+"),
     re.compile(
-        r"(?i)((?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
+        r"(?i)((?:password|passwd|secret|token|api[_.-]?key|access[_.-]?key|"
         r"credential)\s*[:=]\s*)[^\s,;]+"
     ),
 )
