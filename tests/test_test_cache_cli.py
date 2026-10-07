@@ -163,6 +163,14 @@ def test_prepare_python_requires_wsl_and_builds_wheel_cache(
         "cli_agent_mcp.test_cache_cli.require_wsl",
         lambda: None,
     )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._python_interpreter_metadata",
+        lambda _command, *, timeout: {
+            "python_version": "3.12.0",
+            "python_implementation": "CPython",
+            "machine": "x86_64",
+        },
+    )
 
     def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
         calls.append(command)
@@ -489,6 +497,14 @@ def test_prepare_python_resolves_requirements_once(
         "cli_agent_mcp.test_cache_cli.require_wsl",
         lambda: None,
     )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._python_interpreter_metadata",
+        lambda _command, *, timeout: {
+            "python_version": "3.12.0",
+            "python_implementation": "CPython",
+            "machine": "x86_64",
+        },
+    )
 
     def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
         calls.append(command)
@@ -622,3 +638,29 @@ def test_prepare_maven_rejects_long_global_settings_equals_option(
 
     with pytest.raises(RuntimeError, match="global-settings"):
         prepare_maven(project, tmp_path / "cache")
+
+
+
+def test_python_interpreter_probe_rejects_windows_python(
+    monkeypatch,
+) -> None:
+    import subprocess
+    import pytest
+    from cli_agent_mcp.test_cache_cli import _python_interpreter_metadata
+
+    completed = subprocess.CompletedProcess(
+        args=["python.exe"],
+        returncode=0,
+        stdout=(
+            '{"sys_platform":"win32","python_version":"3.12.0",'
+            '"python_implementation":"CPython","machine":"AMD64"}\n'
+        ),
+        stderr="",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli.subprocess.run",
+        lambda *args, **kwargs: completed,
+    )
+
+    with pytest.raises(RuntimeError, match="Linux-Python"):
+        _python_interpreter_metadata("python.exe", timeout=30)
