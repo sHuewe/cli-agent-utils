@@ -9,7 +9,10 @@ from pathlib import Path
 from .cache_identity import project_cache_key
 from .test_validator_types import TestValidationError
 
-_CACHE_SCHEMA = "cli-agent-maven-cache-v4"
+_CACHE_SCHEMA = "cli-agent-maven-cache-v5"
+_MAVEN_TRANSIENT_FILES = {"_remote.repositories", "resolver-status.properties"}
+
+
 def default_maven_cache_root() -> Path:
     return Path.home() / ".cli-agent" / "dependency-cache" / "maven"
 
@@ -134,7 +137,7 @@ def validate_repository_tree(repository: Path) -> int:
 
 
 def sanitize_repository_for_offline_use(repository: Path) -> None:
-    """Remove remote-origin tracking that is not reproducible in the sandbox."""
+    """Keep the offline artifact repository, but drop resolver-only provenance/state."""
     root = repository.resolve()
     if repository.is_symlink() or not root.is_dir():
         raise TestValidationError(
@@ -164,12 +167,15 @@ def sanitize_repository_for_offline_use(repository: Path) -> None:
                 if stat.S_ISDIR(mode):
                     walk(path)
                 elif stat.S_ISREG(mode):
-                    if entry.name == "_remote.repositories":
+                    if (
+                        entry.name in _MAVEN_TRANSIENT_FILES
+                        or entry.name.endswith(".lastUpdated")
+                    ):
                         try:
                             path.unlink()
                         except OSError as exc:
                             raise TestValidationError(
-                                "Maven-Repository-Provenienz konnte nicht "
+                                "Maven-Repository-Metadaten konnten nicht "
                                 "bereinigt werden."
                             ) from exc
                 else:
