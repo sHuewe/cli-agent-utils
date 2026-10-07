@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from cli_agent_mcp.docker_backend import DockerBackend, DockerCommandResult
+from cli_agent_mcp.docker_backend import (
+    DockerBackend,
+    DockerCommandResult,
+    _is_windows_reparse_point as _docker_reparse_point,
+)
 from cli_agent_mcp.gradle_cache import (
     gradle_cache_entry,
     gradle_dependency_key,
@@ -891,11 +895,9 @@ def test_gradle_dependency_key_keeps_nested_project_named_build(
 
 
 
-def test_maven_dependency_key_changes_with_declared_nonstandard_module_pom(
+def test_maven_dependency_key_rejects_reactor_projects(
     tmp_path: Path,
 ) -> None:
-    modules = tmp_path / "modules"
-    modules.mkdir()
     (tmp_path / "pom.xml").write_text(
         """
 <project>
@@ -905,100 +907,16 @@ def test_maven_dependency_key_changes_with_declared_nonstandard_module_pom(
   <version>1.0</version>
   <packaging>pom</packaging>
   <modules>
-    <module>modules/child.xml</module>
+    <module>child</module>
   </modules>
 </project>
 """.strip()
         + "\n",
         encoding="utf-8",
     )
-    child = modules / "child.xml"
-    child.write_text(
-        """
-<project>
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>child</artifactId>
-  <version>1.0</version>
-  <dependencies>
-    <dependency>
-      <groupId>com.example</groupId>
-      <artifactId>demo</artifactId>
-      <version>1.0</version>
-    </dependency>
-  </dependencies>
-</project>
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
 
-    first = maven_dependency_key(tmp_path)
-    child.write_text(
-        child.read_text(encoding="utf-8").replace(
-            "<version>1.0</version>\n    </dependency>",
-            "<version>2.0</version>\n    </dependency>",
-        ),
-        encoding="utf-8",
-    )
-    second = maven_dependency_key(tmp_path)
-
-    assert first != second
-
-
-def test_maven_dependency_key_follows_nested_nonstandard_module_poms(
-    tmp_path: Path,
-) -> None:
-    modules = tmp_path / "modules"
-    modules.mkdir()
-    (tmp_path / "pom.xml").write_text(
-        """
-<project>
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>root</artifactId>
-  <version>1.0</version>
-  <packaging>pom</packaging>
-  <modules><module>modules/parent.xml</module></modules>
-</project>
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-    (modules / "parent.xml").write_text(
-        """
-<project>
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>parent</artifactId>
-  <version>1.0</version>
-  <packaging>pom</packaging>
-  <modules><module>nested.xml</module></modules>
-</project>
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-    nested = modules / "nested.xml"
-    nested.write_text(
-        "<project><modelVersion>4.0.0</modelVersion>"
-        "<groupId>com.example</groupId><artifactId>nested</artifactId>"
-        "<version>1.0</version></project>\n",
-        encoding="utf-8",
-    )
-
-    first = maven_dependency_key(tmp_path)
-    nested.write_text(
-        nested.read_text(encoding="utf-8").replace(
-            "<version>1.0</version>",
-            "<version>2.0</version>",
-        ),
-        encoding="utf-8",
-    )
-    second = maven_dependency_key(tmp_path)
-
-    assert first != second
-
+    with pytest.raises(ValidationError, match="Multi-Module"):
+        maven_dependency_key(tmp_path)
 
 
 def test_maven_dependency_key_ignores_unrelated_malformed_pom_fixture(
@@ -1053,3 +971,11 @@ def test_windows_reparse_point_detection() -> None:
         st_file_attributes = 0x0400
 
     assert _is_windows_reparse_point(FakeStat()) is True
+
+
+
+def test_docker_stream_reparse_point_detection() -> None:
+    class FakeStat:
+        st_file_attributes = 0x0400
+
+    assert _docker_reparse_point(FakeStat()) is True
