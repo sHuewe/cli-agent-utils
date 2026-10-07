@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cli_agent_mcp.gradle_cache import gradle_cache_entry
-from cli_agent_mcp.maven_cache import cache_entry, default_maven_cache_root
+from cli_agent_mcp.maven_cache import cache_entry
 from cli_agent_mcp.python_cache import python_cache_entry
 from cli_agent_mcp.test_cache_cli import (
     _resolve_cache_root,
