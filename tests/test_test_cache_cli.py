@@ -342,40 +342,6 @@ def test_gradle_cache_key_is_stable_across_included_build_logic_changes(
 
 
 
-def test_prepare_maven_rejects_semantic_user_settings(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    import pytest
-
-    project = tmp_path / "project"
-    project.mkdir()
-    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
-    settings = tmp_path / "settings.xml"
-    settings.write_text(
-        """
-<settings>
-  <profiles>
-    <profile>
-      <id>company</id>
-      <properties><revision>1.2.3</revision></properties>
-    </profile>
-  </profiles>
-</settings>
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
-        lambda: settings,
-    )
-
-    with pytest.raises(RuntimeError, match="Build-Semantik"):
-        prepare_maven(project, tmp_path / "cache")
-
-
-
 def test_python_cache_allows_empty_requirements(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
@@ -547,99 +513,42 @@ def test_python_plan_rejects_path_that_only_contains_double_equals(
         python_dependency_plan(project)
 
 
-def test_prepare_maven_rejects_compact_settings_option(
+
+def test_prepare_maven_accepts_operator_maven_semantics(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    import pytest
-
     project = tmp_path / "project"
     config = project / ".mvn"
     config.mkdir(parents=True)
     (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    (project / "alt.xml").write_text("<project/>", encoding="utf-8")
     (config / "maven.config").write_text(
-        "-s../settings.xml\n",
+        "--settings=../settings.xml\n"
+        "-falt.xml\n"
+        "-Pcompany\n",
         encoding="utf-8",
     )
+    cache_root = tmp_path / "cache"
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
+        calls.append(command)
+        repo_arg = next(
+            value for value in command if value.startswith("-Dmaven.repo.local=")
+        )
+        Path(repo_arg.split("=", 1)[1]).mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr("cli_agent_mcp.test_cache_cli._run", fake_run)
     monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
-        lambda: tmp_path / "missing-settings.xml",
+        "cli_agent_mcp.test_cache_cli.shutil.which",
+        lambda _command: "mvn",
     )
 
-    with pytest.raises(RuntimeError, match="Projekt-spezifische Maven-Settings"):
-        prepare_maven(project, tmp_path / "cache")
+    entry = prepare_maven(project, cache_root)
 
-
-def test_prepare_maven_rejects_long_settings_equals_option(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    import pytest
-
-    project = tmp_path / "project"
-    config = project / ".mvn"
-    config.mkdir(parents=True)
-    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
-    (config / "maven.config").write_text(
-        "--settings=../settings.xml\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
-        lambda: tmp_path / "missing-settings.xml",
-    )
-
-    with pytest.raises(RuntimeError, match="Projekt-spezifische Maven-Settings"):
-        prepare_maven(project, tmp_path / "cache")
-
-
-
-def test_prepare_maven_rejects_compact_global_settings_option(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    import pytest
-
-    project = tmp_path / "project"
-    config = project / ".mvn"
-    config.mkdir(parents=True)
-    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
-    (config / "maven.config").write_text(
-        "-gs../global-settings.xml\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
-        lambda: tmp_path / "missing-settings.xml",
-    )
-
-    with pytest.raises(RuntimeError, match="global-settings"):
-        prepare_maven(project, tmp_path / "cache")
-
-
-def test_prepare_maven_rejects_long_global_settings_equals_option(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    import pytest
-
-    project = tmp_path / "project"
-    config = project / ".mvn"
-    config.mkdir(parents=True)
-    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
-    (config / "maven.config").write_text(
-        "--global-settings=../global-settings.xml\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
-        lambda: tmp_path / "missing-settings.xml",
-    )
-
-    with pytest.raises(RuntimeError, match="global-settings"):
-        prepare_maven(project, tmp_path / "cache")
-
-
+    assert entry.is_ready()
+    assert len(calls) == 2
 
 def test_python_interpreter_probe_rejects_windows_python(
     monkeypatch,
@@ -667,30 +576,6 @@ def test_python_interpreter_probe_rejects_windows_python(
 
 
 
-def test_prepare_maven_rejects_alternate_pom_option(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    import pytest
-
-    project = tmp_path / "project"
-    config = project / ".mvn"
-    config.mkdir(parents=True)
-    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
-    (project / "alt.xml").write_text("<project/>", encoding="utf-8")
-    (config / "maven.config").write_text(
-        "-falt.xml\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
-        lambda: tmp_path / "missing-settings.xml",
-    )
-
-    with pytest.raises(RuntimeError, match="Alternative Maven-Projektdateien"):
-        prepare_maven(project, tmp_path / "cache")
-
-
 def test_prepare_maven_allows_fail_at_end_option(
     tmp_path: Path,
     monkeypatch,
@@ -700,10 +585,6 @@ def test_prepare_maven_allows_fail_at_end_option(
     config.mkdir(parents=True)
     (project / "pom.xml").write_text("<project/>", encoding="utf-8")
     (config / "maven.config").write_text("-fae\n", encoding="utf-8")
-    monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
-        lambda: tmp_path / "missing-settings.xml",
-    )
     monkeypatch.setattr(
         "cli_agent_mcp.test_cache_cli.shutil.which",
         lambda _command: "mvn",
@@ -746,6 +627,14 @@ def test_prepare_maven_removes_remote_repository_provenance(
             "demo-1.0.jar>company-mirror=\n",
             encoding="utf-8",
         )
+        (artifact_dir / "demo-1.0.jar.lastUpdated").write_text(
+            "https\\://repo.example/.lastUpdated=1\n",
+            encoding="utf-8",
+        )
+        (artifact_dir / "resolver-status.properties").write_text(
+            "maven-metadata-company.xml.lastUpdated=1\n",
+            encoding="utf-8",
+        )
 
     monkeypatch.setattr("cli_agent_mcp.test_cache_cli._run", fake_run)
     monkeypatch.setattr(
@@ -758,44 +647,8 @@ def test_prepare_maven_removes_remote_repository_provenance(
     artifact_dir = entry.repository / "com" / "example" / "demo" / "1.0"
     assert (artifact_dir / "demo-1.0.jar").is_file()
     assert not (artifact_dir / "_remote.repositories").exists()
-
-
-
-def test_prepare_maven_ignores_commented_settings_option(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    project = tmp_path / "project"
-    config = project / ".mvn"
-    config.mkdir(parents=True)
-    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
-    (config / "maven.config").write_text(
-        "# --settings was removed\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
-        lambda: tmp_path / "missing-settings.xml",
-    )
-    monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli.shutil.which",
-        lambda _command: "mvn",
-    )
-
-    calls: list[list[str]] = []
-
-    def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
-        calls.append(command)
-        repo_arg = next(
-            value for value in command if value.startswith("-Dmaven.repo.local=")
-        )
-        Path(repo_arg.split("=", 1)[1]).mkdir(parents=True, exist_ok=True)
-
-    monkeypatch.setattr("cli_agent_mcp.test_cache_cli._run", fake_run)
-
-    prepare_maven(project, tmp_path / "cache")
-
-    assert len(calls) == 2
+    assert not (artifact_dir / "demo-1.0.jar.lastUpdated").exists()
+    assert not (artifact_dir / "resolver-status.properties").exists()
 
 
 
@@ -832,10 +685,6 @@ def test_prepare_maven_rebuilds_existing_project_cache(
     project.mkdir()
     (project / "pom.xml").write_text("<project/>\n", encoding="utf-8")
     cache_root = tmp_path / "cache"
-    monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
-        lambda: tmp_path / "missing-settings.xml",
-    )
     monkeypatch.setattr(
         "cli_agent_mcp.test_cache_cli.shutil.which",
         lambda _command: "mvn",
@@ -897,36 +746,3 @@ def test_windows_target_project_identity_matches_windows_normalization(
     assert identity == windows_project_identity("C:\\Dev\\Project")
 
 
-
-def test_prepare_maven_rejects_semantic_global_settings(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    import pytest
-
-    project = tmp_path / "project"
-    project.mkdir()
-    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
-    settings = tmp_path / "global-settings.xml"
-    settings.write_text(
-        """
-<settings>
-  <activeProfiles>
-    <activeProfile>company</activeProfile>
-  </activeProfiles>
-</settings>
-""".strip()
-        + "\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
-        lambda: tmp_path / "missing-user-settings.xml",
-    )
-    monkeypatch.setattr(
-        "cli_agent_mcp.test_cache_cli._default_global_maven_settings_path",
-        lambda _executable: settings,
-    )
-
-    with pytest.raises(RuntimeError, match="global settings.xml.*Build-Semantik"):
-        prepare_maven(project, tmp_path / "cache")
