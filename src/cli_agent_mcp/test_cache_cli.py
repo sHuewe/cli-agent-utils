@@ -5,6 +5,7 @@ import shutil
 import subprocess  # nosec B404
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .gradle_cache import (
@@ -233,6 +234,50 @@ def _run(command: list[str], *, cwd: Path, timeout: int) -> None:
         )
 
 
+def _reject_semantic_maven_settings(project: Path) -> None:
+    maven_config = project / ".mvn" / "maven.config"
+    if maven_config.is_file():
+        try:
+            config_text = maven_config.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError as exc:
+            raise RuntimeError(
+                ".mvn/maven.config konnte nicht gelesen werden."
+            ) from exc
+        tokens = config_text.replace("=", " ").split()
+        if "-s" in tokens or "--settings" in tokens:
+            raise RuntimeError(
+                "Projekt-spezifische Maven-Settings via -s/--settings werden "
+                "vom Offline-Validator nicht unterstützt."
+            )
+
+    settings = Path.home() / ".m2" / "settings.xml"
+    if not settings.is_file():
+        return
+    try:
+        root = ET.parse(settings).getroot()
+    except (OSError, ET.ParseError) as exc:
+        raise RuntimeError(
+            "Maven settings.xml konnte nicht sicher ausgewertet werden."
+        ) from exc
+
+    def local_name(tag: str) -> str:
+        return tag.rsplit("}", 1)[-1]
+
+    for element in root.iter():
+        name = local_name(element.tag)
+        if name in {"profiles", "activeProfiles"} and list(element):
+            raise RuntimeError(
+                "Maven settings.xml enthält Build-Semantik über "
+                f"{name}. Der Offline-Validator unterstützt settings.xml nur "
+                "für Repository-/Mirror-/Credential-Konfiguration. "
+                "Verschiebe aktive Profile/Properties in die Projekt-POM "
+                "oder verwende eine settings.xml ohne Build-Semantik."
+            )
+
+
 def prepare_maven(
     project: Path,
     cache_root: Path,
@@ -247,6 +292,7 @@ def prepare_maven(
     if timeout <= 0:
         raise ValueError("--timeout muss positiv sein.")
 
+    _reject_semantic_maven_settings(project)
     key = maven_dependency_key(project)
     root = cache_root.expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
