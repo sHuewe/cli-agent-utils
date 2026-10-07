@@ -488,10 +488,11 @@ def test_python_uses_wsl_prepared_wheels_offline(tmp_path: Path) -> None:
         for args, _ in backend.calls
         if args[0] == "exec"
         and "--no-index" in args
-        and "/tmp/python-wheels" in args
+        and any(value.startswith("/tmp/python-wheels/") for value in args)
     )
     assert "--target" in install
     assert "/tmp/python-deps" in install
+    assert "-r" not in install
 
 
 def test_gradle_reports_missing_prepared_dependency_cache(tmp_path: Path) -> None:
@@ -710,3 +711,46 @@ def test_gradle_dependency_key_changes_with_custom_version_catalog(
     second = gradle_dependency_key(tmp_path)
 
     assert first != second
+
+
+
+def test_python_direct_url_requirement_is_not_replayed_in_sandbox(
+    tmp_path: Path,
+) -> None:
+    direct_url = "https://example.invalid/demo-package-1.0.tar.gz"
+    (tmp_path / "requirements.txt").write_text(
+        f"demo-package @ {direct_url}\n",
+        encoding="utf-8",
+    )
+    cache_root = tmp_path / "python-cache"
+    entry = python_cache_entry(cache_root, tmp_path)
+    entry.wheels.mkdir(parents=True)
+    wheel_name = "demo_package-1.0-py3-none-any.whl"
+    (entry.wheels / wheel_name).write_bytes(b"wheel")
+    write_python_ready_metadata(
+        entry.directory,
+        entry.key,
+        python_dependency_plan(tmp_path),
+    )
+
+    backend = FakeBackend()
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        python_cache_root=cache_root,
+    )
+    validator = DockerTestValidator(tmp_path, configured, backend=backend)
+
+    result = validator.run_python_tests(".")
+
+    assert result["success"] is True
+    install = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec" and "--no-index" in args
+    )
+    joined = " ".join(install)
+    assert direct_url not in joined
+    assert "-r" not in install
+    assert f"/tmp/python-wheels/{wheel_name}" in install
