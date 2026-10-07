@@ -84,8 +84,9 @@ def create_server(validator: DockerTestValidator) -> FastMCP:
         If it succeeds, consider the implementation validated for normal coding
         tasks and do not additionally run tests unless the task itself concerns
         test cases. Auto detection uses pom.xml or build.gradle/build.gradle.kts.
-        Maven is fixed to package with -DskipTests; Gradle is fixed to assemble
-        with Gradle Test tasks disabled by a validator-controlled init script.
+        Maven is fixed to package with -DskipTests; Gradle is fixed to the
+        assemble task. Gradle project build logic may wire other tasks into
+        assemble; that code still executes only inside the hardened sandbox.
         The model cannot supply arbitrary goals, tasks or command-line options.
         """
         return validator.run_java_build(
@@ -160,6 +161,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=16 * 1024 * 1024,
     )
+    parser.add_argument(
+        "--max-snapshot-entries",
+        type=int,
+        default=20_000,
+    )
     parser.add_argument("--max-output-chars", type=int, default=200_000)
     parser.add_argument(
         "--python-cache-root",
@@ -212,6 +218,7 @@ def main() -> None:
         tmp_tmpfs_size=args.tmp_tmpfs_size,
         max_project_bytes=args.max_project_bytes,
         max_file_bytes=args.max_file_bytes,
+        max_snapshot_entries=args.max_snapshot_entries,
         max_output_chars=args.max_output_chars,
         maven_cache_root=args.maven_cache_root,
         gradle_cache_root=args.gradle_cache_root,
