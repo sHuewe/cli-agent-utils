@@ -862,3 +862,26 @@ def test_gradle_dependency_key_changes_with_custom_named_toml_catalog(
     second = gradle_dependency_key(tmp_path)
 
     assert first != second
+
+
+
+def test_gradle_dependency_key_keeps_nested_project_named_build(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    module = tmp_path / "modules" / "build"
+    module.mkdir(parents=True)
+    build_file = module / "build.gradle"
+    build_file.write_text(
+        "dependencies { implementation 'com.example:demo:1.0' }\n",
+        encoding="utf-8",
+    )
+
+    first = gradle_dependency_key(tmp_path)
+    build_file.write_text(
+        "dependencies { implementation 'com.example:demo:2.0' }\n",
+        encoding="utf-8",
+    )
+    second = gradle_dependency_key(tmp_path)
+
+    assert first != second
