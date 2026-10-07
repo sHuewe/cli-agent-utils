@@ -768,6 +768,7 @@ class DockerTestValidator:
                     "preparation_environment": "WSL required",
                 }
             python_wheels = entry.wheels
+            wheel_names = entry.install_wheel_names()
             install = [
                 "python",
                 "-m",
@@ -775,14 +776,13 @@ class DockerTestValidator:
                 "install",
                 "--disable-pip-version-check",
                 "--no-index",
-                "--find-links",
-                "/tmp/python-wheels",
                 "--target",
                 "/tmp/python-deps",
+                *[
+                    f"/tmp/python-wheels/{wheel_name}"
+                    for wheel_name in wheel_names
+                ],
             ]
-            for requirement in plan.requirement_files:
-                install.extend(["-r", requirement])
-            install.extend(plan.dependency_specs)
             pre_test_command = install
 
         return self._run_tests(
