@@ -355,3 +355,65 @@ def test_gradle_dependency_key_changes_with_included_build_logic_source(
     second = gradle_dependency_key(project)
 
     assert first != second
+
+
+
+def test_python_plan_rejects_lockfiles(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "1.0"\ndependencies = ["requests>=2"]\n',
+        encoding="utf-8",
+    )
+    (project / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+
+    with pytest.raises(Exception, match="Lockfile-basierte"):
+        python_dependency_plan(project)
+
+
+def test_python_plan_rejects_current_project_reference(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "requirements.txt").write_text(".\n", encoding="utf-8")
+
+    with pytest.raises(Exception, match="aktuelle Python-Projekt"):
+        python_dependency_plan(project)
+
+
+def test_prepare_maven_rejects_semantic_user_settings(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import pytest
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    settings = tmp_path / "settings.xml"
+    settings.write_text(
+        """
+<settings>
+  <profiles>
+    <profile>
+      <id>company</id>
+      <properties><revision>1.2.3</revision></properties>
+    </profile>
+  </profiles>
+</settings>
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cli_agent_mcp.test_cache_cli._default_maven_settings_path",
+        lambda: settings,
+    )
+
+    with pytest.raises(RuntimeError, match="Build-Semantik"):
+        prepare_maven(project, tmp_path / "cache")
