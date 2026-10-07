@@ -823,10 +823,13 @@ class DockerTestValidator:
                     "reason": "dependencies_not_prepared",
                     "dependency_cache_key": entry.key,
                     "message": (
-                        "Für diesen Python-Dependency-Stand ist kein vorbereiteter "
-                        "Linux-Wheel-Cache vorhanden. Führe unter WSL außerhalb "
-                        "des Agents 'cli-agent-test-cache prepare-python <projekt>' "
-                        "aus und starte den Test anschließend erneut."
+                        "Für dieses Python-Projekt ist noch kein vorbereiteter "
+                        "Linux-Wheel-Cache vorhanden."
+                    ),
+                    "message_to_user": (
+                        "Python-Dependencies sind noch nicht vorbereitet. Führe "
+                        "unter WSL 'cli-agent-test-cache prepare-python <projekt>' "
+                        "aus und wiederhole den Test."
                     ),
                     "preparation_environment": "WSL required",
                 }
@@ -897,10 +900,13 @@ class DockerTestValidator:
                         "reason": "dependencies_not_prepared",
                         "dependency_cache_key": entry.key,
                         "message": (
-                            "Für diesen Maven-Dependency-Stand ist kein vorbereiteter "
-                            "Offline-Cache vorhanden. Führe außerhalb des Agents "
-                            "'cli-agent-test-cache prepare-maven <projekt> "
-                            f"--cache-root {self.settings.maven_cache_root}' aus."
+                            "Für dieses Maven-Projekt ist noch kein vorbereiteter "
+                            "Offline-Cache vorhanden."
+                        ),
+                        "message_to_user": (
+                            "Maven-Dependencies sind noch nicht vorbereitet. Führe "
+                            "außerhalb des Agents 'cli-agent-test-cache prepare-maven "
+                            "<projekt>' aus und wiederhole den Test."
                         ),
                     }
                 dependency_repository = entry.repository
@@ -930,11 +936,13 @@ class DockerTestValidator:
                         "reason": "dependencies_not_prepared",
                         "dependency_cache_key": entry.key,
                         "message": (
-                            "Für diesen Gradle-Dependency-Stand ist kein "
-                            "vorbereiteter Offline-Cache vorhanden. Führe "
-                            "außerhalb des Agents 'cli-agent-test-cache "
-                            "prepare-gradle <projekt>' aus und starte den Test "
-                            "anschließend erneut."
+                            "Für dieses Gradle-Projekt ist noch kein vorbereiteter "
+                            "Offline-Cache vorhanden."
+                        ),
+                        "message_to_user": (
+                            "Gradle-Dependencies sind noch nicht vorbereitet. Führe "
+                            "außerhalb des Agents 'cli-agent-test-cache prepare-gradle "
+                            "<projekt>' aus und wiederhole den Test."
                         ),
                     }
                 gradle_home = entry.gradle_home
@@ -1002,10 +1010,13 @@ class DockerTestValidator:
                     "reason": "dependencies_not_prepared",
                     "dependency_cache_key": entry.key,
                     "message": (
-                        "Für diesen Maven-Dependency-Stand ist kein vorbereiteter "
-                        "Offline-Cache vorhanden. Führe außerhalb des Agents "
-                        "'cli-agent-test-cache prepare-maven <projekt>' aus und "
-                        "starte den Build anschließend erneut."
+                        "Für dieses Maven-Projekt ist noch kein vorbereiteter "
+                        "Offline-Cache vorhanden."
+                    ),
+                    "message_to_user": (
+                        "Maven-Dependencies sind noch nicht vorbereitet. Führe "
+                        "außerhalb des Agents 'cli-agent-test-cache prepare-maven "
+                        "<projekt>' aus und wiederhole den Build."
                     ),
                 }
             dependency_repository = entry.repository
@@ -1071,10 +1082,13 @@ class DockerTestValidator:
                     "reason": "dependencies_not_prepared",
                     "dependency_cache_key": entry.key,
                     "message": (
-                        "Für diesen Gradle-Dependency-Stand ist kein "
-                        "vorbereiteter Offline-Cache vorhanden. Führe außerhalb "
-                        "des Agents 'cli-agent-test-cache prepare-gradle "
-                        "<projekt>' aus und starte den Build anschließend erneut."
+                        "Für dieses Gradle-Projekt ist noch kein vorbereiteter "
+                        "Offline-Cache vorhanden."
+                    ),
+                    "message_to_user": (
+                        "Gradle-Dependencies sind noch nicht vorbereitet. Führe "
+                        "außerhalb des Agents 'cli-agent-test-cache prepare-gradle "
+                        "<projekt>' aus und wiederhole den Build."
                     ),
                 }
             gradle_home = entry.gradle_home
