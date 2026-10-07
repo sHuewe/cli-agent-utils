@@ -79,7 +79,7 @@ Docker is a strong practical isolation layer but not a virtual-machine security 
 
 ## Images and dependencies
 
-All images must be digest-pinned and already present locally. `--pull never` is mandatory. The images must also provide a POSIX `sh`, `tar`, `cat`, `cp` and `mkdir`, which the fixed sandbox runner uses for lifecycle, snapshot extraction, bounded output capture and offline-cache preparation.
+All images must be digest-pinned and already present locally. `--pull never` is mandatory. The images must also provide a POSIX `sh`, `tar`, `cat`, `cp`, `mkdir` and `sleep`, which the fixed sandbox runner uses for lifecycle, keepalive, snapshot extraction, bounded output capture and offline-cache preparation.
 
 ### Python
 
@@ -189,6 +189,7 @@ The cache root is never selected by the model. For each Maven project the valida
 
 - the root `pom.xml`,
 - no reactor/module graph: Maven `<modules>` is rejected in the v1 validator,
+- no local parent-POM resolution: when `<parent>` is present, v1 requires an explicitly empty `<relativePath/>` so the parent is resolved from the prepared repository instead of the workspace,
 - root `.mvn/maven.config`,
 - root `.mvn/extensions.xml`,
 - root `.mvn/jvm.config`,
@@ -408,6 +409,6 @@ The separate Maven/Gradle build helpers are implementation details and are not e
 
 ### Unsupported v1 layouts
 
-The v1 Maven validator supports only a single root `pom.xml`. If that POM declares non-empty `<modules>`, preparation/cache-key calculation fails closed. Maven reactor/multi-module support is deferred to a later version.
+The v1 Maven validator supports only a single root `pom.xml`. If that POM declares non-empty `<modules>`, preparation/cache-key calculation fails closed. Maven reactor/multi-module support is deferred to a later version. Local parent-POM files are likewise unsupported in v1; a project with `<parent>` must use an explicitly empty `<relativePath/>` and resolve that parent from the prepared repository.
 
 For Gradle, root-level directories named `build`, `target`, or `dist` are reserved as generated-output directories by snapshot creation. A project that explicitly maps a real Gradle module to one of those root-level paths is therefore unsupported in v1. Nested source directories with these names remain supported where they are not recognized as generated output.
