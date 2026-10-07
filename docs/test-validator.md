@@ -205,7 +205,7 @@ If a project has OS-/architecture-dependent Maven profiles or dependencies and t
 
 ```bash
 cd /mnt/c/dev/my-project
-cli-agent-test-cache prepare-maven . --target windows
+cli-agent-test-cache prepare-maven . --target windows --force
 ```
 
 For a fully WSL-hosted cli-agent/MCP installation, run the same command in WSL without `--target windows`.
@@ -276,12 +276,12 @@ If platform-dependent Gradle build logic or dependencies make the Windows-prepar
 
 ```bash
 cd /mnt/c/dev/my-project
-cli-agent-test-cache prepare-gradle . --target windows
+cli-agent-test-cache prepare-gradle . --target windows --force
 ```
 
 For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`.
 
-The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, dependency lock state (`*.lockfile` plus legacy `gradle/dependency-locks/*` files), all `*.versions.toml` version catalogs, verification metadata and the full source/configuration trees of literal local `includeBuild(...)` builds such as `build-logic`. Ordinary application source-only changes therefore keep the same key.
+The command derives a deterministic key from Gradle build/configuration files, including `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, dependency lock state (`*.lockfile` plus legacy `gradle/dependency-locks/*` files), all TOML files (including custom-named version catalogs), verification metadata and the full source/configuration trees of literal local `includeBuild(...)` builds such as `build-logic`. Ordinary application source-only changes therefore keep the same key.
 
 Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. The same init script disables every Gradle task of type `Test`, so project task wiring cannot cause tests to run during preparation.
 
