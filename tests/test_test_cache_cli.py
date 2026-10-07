@@ -229,9 +229,12 @@ def test_prepare_gradle_builds_isolated_gradle_home_and_removes_user_config(
     def fake_run(command: list[str], *, cwd: Path, timeout: int) -> None:
         calls.append(command)
         gradle_home = Path(command[command.index("--gradle-user-home") + 1])
-        cache_dir = gradle_home / "caches"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        (cache_dir / "artifact.bin").write_bytes(b"cache")
+        modules = gradle_home / "caches" / "modules-2" / "files-2.1"
+        modules.mkdir(parents=True, exist_ok=True)
+        (modules / "artifact.bin").write_bytes(b"cache")
+        compiled = gradle_home / "caches" / "jars-9" / "init"
+        compiled.mkdir(parents=True, exist_ok=True)
+        (compiled / "Init.class").write_bytes(b"repoToken=secret")
 
     monkeypatch.setattr(
         "cli_agent_mcp.test_cache_cli._run_gradle",
@@ -249,8 +252,15 @@ def test_prepare_gradle_builds_isolated_gradle_home_and_removes_user_config(
     )
 
     assert entry.is_ready()
-    assert (entry.gradle_home / "caches" / "artifact.bin").is_file()
+    assert (
+        entry.gradle_home
+        / "caches"
+        / "modules-2"
+        / "files-2.1"
+        / "artifact.bin"
+    ).is_file()
     assert not (entry.gradle_home / "gradle.properties").exists()
+    assert not (entry.gradle_home / "caches" / "jars-9").exists()
     assert len(calls) == 1
     assert "--refresh-dependencies" in calls[0]
     assert "--init-script" in calls[0]
@@ -271,3 +281,46 @@ def test_gradle_cache_entry_matches_preparation_key(tmp_path: Path) -> None:
 
     assert entry.directory == cache_root.resolve() / entry.key
     assert entry.key.startswith("gradle-")
+
+
+
+def test_python_nested_requirements_are_resolved_relative_to_including_file(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    nested = project / "requirements"
+    nested.mkdir(parents=True)
+    (project / "requirements.txt").write_text(
+        "-r requirements/base.txt\n",
+        encoding="utf-8",
+    )
+    (nested / "base.txt").write_text("-r common.txt\n", encoding="utf-8")
+    (nested / "common.txt").write_text("demo-package==1.0\n", encoding="utf-8")
+
+    from cli_agent_mcp.python_cache import python_dependency_key
+
+    key = python_dependency_key(project)
+
+    assert key.startswith("python-")
+
+
+def test_python_dependency_groups_expand_pep735_include_group(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pyproject.toml").write_text(
+        """
+[dependency-groups]
+base = ["pytest==9.0"]
+test = [{include-group = "base"}, "coverage==7.0"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    plan = python_dependency_plan(project)
+
+    assert plan.dependency_specs == ("pytest==9.0", "coverage==7.0")
