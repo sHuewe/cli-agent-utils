@@ -23,7 +23,10 @@ from cli_agent_mcp.python_cache import (
     write_python_ready_metadata,
 )
 from cli_agent_mcp.test_validator import DockerTestValidator
-from cli_agent_mcp.test_validator_redaction import OutputRedactor
+from cli_agent_mcp.test_validator_redaction import (
+    OutputRedactor,
+    discover_secret_values,
+)
 from cli_agent_mcp.test_validator_server import _workspace_from_core_environment
 from cli_agent_mcp.test_validator_snapshot import (
     _is_windows_reparse_point,
@@ -611,7 +614,7 @@ def test_maven_build_packages_without_running_tests(tmp_path: Path) -> None:
     ]
 
 
-def test_gradle_build_assembles_without_running_tests(tmp_path: Path) -> None:
+def test_gradle_build_requests_fixed_assemble_task(tmp_path: Path) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
     backend = FakeBackend()
     validator = DockerTestValidator(tmp_path, settings(), backend=backend)
@@ -620,30 +623,21 @@ def test_gradle_build_assembles_without_running_tests(tmp_path: Path) -> None:
 
     assert result["success"] is True
     assert result["operation"] == "build"
-    assert result["test_tasks_disabled"] is True
-    disable_call = next(
-        args
-        for args, _ in backend.calls
-        if args[0] == "exec"
-        and "cli-agent-disable-tests.gradle" in " ".join(args)
-        and "printf" in " ".join(args)
-    )
-    assert "tasks.withType(org.gradle.api.tasks.testing.Test)" in " ".join(disable_call)
+    assert result["requested_gradle_task"] == "assemble"
     build_call = next(
         args
         for args, _ in backend.calls
         if args[0] == "exec" and "gradle" in args
     )
-    assert build_call[-8:] == [
+    assert build_call[-6:] == [
         "gradle",
         "--offline",
         "--no-daemon",
         "--gradle-user-home",
         "/tmp/gradle",
-        "--init-script",
-        "/tmp/cli-agent-disable-tests.gradle",
         "assemble",
     ]
+    assert "cli-agent-disable-tests.gradle" not in " ".join(build_call)
 
 
 def test_maven_build_requires_prepared_cache_when_configured(tmp_path: Path) -> None:
@@ -1067,3 +1061,35 @@ def test_cache_stream_verified_open_rejects_replaced_file(
 
     with pytest.raises(ValueError, match="changed during transfer"):
         _open_verified_stream_file(path, expected)
+
+
+
+def test_snapshot_enforces_entry_count_limit(tmp_path: Path) -> None:
+    for index in range(3):
+        (tmp_path / f"empty-{index}.txt").write_text("", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="Eintragslimit"):
+        create_project_snapshot(
+            tmp_path,
+            max_file_bytes=1024,
+            max_project_bytes=1024,
+            max_snapshot_entries=2,
+        )
+
+
+def test_redaction_discovers_secrets_from_snapshot_not_host_path(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("API_TOKEN=snapshot-secret\n", encoding="utf-8")
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+    env_file.unlink()
+    env_file.symlink_to(tmp_path / "missing-target")
+
+    values = discover_secret_values(snapshot.archive)
+
+    assert "snapshot-secret" in values
