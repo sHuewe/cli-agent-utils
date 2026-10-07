@@ -172,6 +172,11 @@ def _iter_relevant_files(project: Path) -> tuple[Path, ...]:
                     or entry.name.endswith(".gradle")
                     or entry.name.endswith(".gradle.kts")
                     or entry.name.endswith(".versions.toml")
+                    or entry.name.endswith(".lockfile")
+                    or (
+                        "gradle/dependency-locks/"
+                        in path.relative_to(project).as_posix()
+                    )
                 ):
                     result.append(path)
 
