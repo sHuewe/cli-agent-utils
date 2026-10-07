@@ -417,3 +417,65 @@ def test_prepare_maven_rejects_semantic_user_settings(
 
     with pytest.raises(RuntimeError, match="Build-Semantik"):
         prepare_maven(project, tmp_path / "cache")
+
+
+
+def test_python_plan_rejects_compact_editable_reference(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "requirements.txt").write_text("-e.\n", encoding="utf-8")
+
+    with pytest.raises(Exception, match="Lokale/editierbare"):
+        python_dependency_plan(project)
+
+
+def test_python_plan_rejects_bare_relative_local_path(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    vendor = project / "vendor" / "pkg"
+    vendor.mkdir(parents=True)
+    (project / "requirements.txt").write_text("vendor/pkg\n", encoding="utf-8")
+
+    with pytest.raises(Exception, match="Lokale/editierbare"):
+        python_dependency_plan(project)
+
+
+def test_python_cache_allows_empty_requirements(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "requirements.txt").write_text("# no dependencies\n", encoding="utf-8")
+    cache_root = tmp_path / "python-cache"
+
+    entry = python_cache_entry(cache_root, project)
+    entry.wheels.mkdir(parents=True)
+    from cli_agent_mcp.python_cache import (
+        python_dependency_plan,
+        write_python_ready_metadata,
+    )
+
+    write_python_ready_metadata(
+        entry.directory,
+        entry.key,
+        python_dependency_plan(project),
+    )
+
+    assert entry.is_ready()
+    assert entry.install_wheel_names() == ()
+
+
+def test_prepare_gradle_runtime_resolver_disables_test_tasks(
+    tmp_path: Path,
+) -> None:
+    from cli_agent_mcp.test_cache_cli import _write_gradle_runtime_resolver
+
+    script = _write_gradle_runtime_resolver(tmp_path)
+    content = script.read_text(encoding="utf-8")
+
+    assert "tasks.withType(org.gradle.api.tasks.testing.Test)" in content
+    assert "enabled = false" in content
