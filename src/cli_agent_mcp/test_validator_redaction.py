@@ -10,18 +10,6 @@ _SENSITIVE_KEY = re.compile(
     r"(?i)(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
     r"private[_-]?key|credential)"
 )
-_ASSIGNMENT = re.compile(
-    r"""(?ix)
-    ["']?([A-Za-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|
-    access[_-]?key|private[_-]?key|credential)[A-Za-z0-9_.-]*)["']?
-    \s*[:=]\s*
-    (?:
-        ["']([^"'\r\n]{4,})["']
-        |
-        ([^\s#;,}{\]\[][^\r\n#;,}{\]\[]*)
-    )
-    """
-)
 _GENERIC_PATTERNS = (
     re.compile(r"(?i)(Authorization\s*:\s*Bearer\s+)[^\s]+"),
     re.compile(
@@ -44,6 +32,60 @@ def _candidate_config_file(path: Path) -> bool:
     return path.suffix.casefold() in _TEXT_CONFIG_SUFFIXES
 
 
+def _secret_values_from_line(line: str) -> tuple[str, ...]:
+    values: list[str] = []
+    key_chars = set(
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789_.-"
+    )
+    length = len(line)
+
+    for index, char in enumerate(line):
+        if char not in {":", "="}:
+            continue
+
+        left = index - 1
+        while left >= 0 and line[left].isspace():
+            left -= 1
+        if left >= 0 and line[left] in {"'", '"'}:
+            left -= 1
+
+        key_end = left + 1
+        while left >= 0 and line[left] in key_chars:
+            left -= 1
+        key = line[left + 1 : key_end]
+        if not key or not _SENSITIVE_KEY.search(key):
+            continue
+
+        right = index + 1
+        while right < length and line[right].isspace():
+            right += 1
+        if right >= length:
+            continue
+
+        quote = line[right] if line[right] in {"'", '"'} else None
+        if quote is not None:
+            right += 1
+            end = line.find(quote, right)
+            if end < 0:
+                end = length
+        else:
+            end = right
+            while (
+                end < length
+                and not line[end].isspace()
+                and line[end] not in "#;,}{]["
+            ):
+                end += 1
+
+        value = line[right:end].strip()
+        if len(value) >= 4:
+            values.append(value)
+
+    return tuple(values)
+
+
 def discover_secret_values(
     archive: bytes,
     *,
@@ -64,13 +106,8 @@ def discover_secret_values(
             if len(content) > max_file_bytes:
                 continue
             text = content.decode("utf-8", errors="replace")
-            for match in _ASSIGNMENT.finditer(text):
-                key = match.group(1)
-                if not _SENSITIVE_KEY.search(key):
-                    continue
-                value = (match.group(2) or match.group(3) or "").strip().strip("'\"")
-                if len(value) >= 4:
-                    values.add(value)
+            for line in text.splitlines():
+                values.update(_secret_values_from_line(line))
     return tuple(sorted(values, key=len, reverse=True))
 
 
