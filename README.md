@@ -248,7 +248,7 @@ The fixed test command is equivalent to:
 python -m pytest -q [selector]
 ```
 
-When Python dependencies are declared in common `requirements*.txt`, `pyproject.toml` project dependencies, or test/dev dependency groups, a matching WSL-prepared wheel cache is required first. Recursive requirements includes are resolved relative to the including file, and PEP 735 `include-group` entries are expanded recursively.
+When Python dependencies are declared in common `requirements*.txt`, `pyproject.toml` project dependencies, or test/dev dependency groups, a matching WSL-prepared wheel cache is required first. Recursive requirements includes are resolved relative to the including file, and PEP 735 `include-group` entries are expanded recursively. Lockfile-based resolution (`uv.lock`, `poetry.lock`, `Pipfile.lock`) and local/editable project references are rejected explicitly; export pinned dependencies to a supported requirements file instead.
 
 For Java code changes, prefer `run_java_build`. Java test execution is intended only when the task concerns test cases. Java auto-detects Maven (`pom.xml`) or Gradle (`build.gradle` / `build.gradle.kts`):
 
@@ -277,7 +277,7 @@ It uses the same auto-detection rules as `run_java_tests`. The underlying comman
 
 ```text
 mvn -o -B -Dmaven.repo.local=/tmp/m2 -DskipTests package
-gradle --offline --no-daemon --gradle-user-home /tmp/gradle assemble
+gradle --offline --no-daemon --gradle-user-home /tmp/gradle --init-script /tmp/cli-agent-disable-tests.gradle assemble
 ```
 
 There is deliberately no Python build tool.
