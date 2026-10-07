@@ -77,40 +77,6 @@ class MavenCacheEntry:
         )
 
 
-def _iter_project_poms(project: Path) -> tuple[Path, ...]:
-    result: list[Path] = []
-
-    def walk(directory: Path) -> None:
-        try:
-            entries = sorted(os.scandir(directory), key=lambda item: item.name)
-        except OSError as exc:
-            raise TestValidationError(
-                f"Maven-Projekt konnte nicht gelesen werden: {directory}"
-            ) from exc
-        for entry in entries:
-            path = Path(entry.path)
-            try:
-                mode = entry.stat(follow_symlinks=False).st_mode
-            except OSError as exc:
-                raise TestValidationError(
-                    f"Maven-Projektpfad konnte nicht geprüft werden: {path}"
-                ) from exc
-            if stat.S_ISLNK(mode):
-                raise TestValidationError(
-                    f"Symlink in Maven-Konfiguration ist nicht erlaubt: "
-                    f"{path.relative_to(project)}"
-                )
-            if stat.S_ISDIR(mode):
-                if entry.name in _IGNORED_DIRECTORIES:
-                    continue
-                walk(path)
-            elif stat.S_ISREG(mode) and entry.name == "pom.xml":
-                result.append(path)
-
-    walk(project)
-    return tuple(result)
-
-
 def _declared_module_poms(
     project: Path,
     initial_poms: tuple[Path, ...],
@@ -142,7 +108,13 @@ def _declared_module_poms(
             if not raw or "${" in raw:
                 continue
 
-            candidate = (pom.parent / raw).resolve()
+            raw_candidate = pom.parent / raw
+            if raw_candidate.is_symlink():
+                raise TestValidationError(
+                    "Maven-Reaktor-POM darf kein Symlink sein: "
+                    f"{raw_candidate.relative_to(project)}"
+                )
+            candidate = raw_candidate.resolve()
             try:
                 candidate.relative_to(project)
             except ValueError as exc:
@@ -187,8 +159,7 @@ def maven_dependency_key(project: Path) -> str:
     if not root_pom.is_file():
         raise TestValidationError("Maven-Projekt benötigt eine pom.xml.")
 
-    discovered_poms = _iter_project_poms(root)
-    files = list(_declared_module_poms(root, discovered_poms))
+    files = list(_declared_module_poms(root, (root_pom,)))
     for relative_name in _ROOT_MAVEN_FILES:
         candidate = root / relative_name
         if candidate.is_symlink():
