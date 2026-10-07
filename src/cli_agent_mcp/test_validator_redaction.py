@@ -18,12 +18,10 @@ _GENERIC_PATTERNS = (
         r"(?i)((?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
         r"credential)\s*[:=]\s*)[^\s,;]+"
     ),
-    re.compile(
-        r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?"
-        r"-----END [A-Z0-9 ]*PRIVATE KEY-----",
-        re.DOTALL,
-    ),
 )
+_PRIVATE_KEY_BEGIN = "-----BEGIN "
+_PRIVATE_KEY_SUFFIX = "PRIVATE KEY-----"
+_PRIVATE_KEY_END_PREFIX = "-----END "
 _TEXT_CONFIG_SUFFIXES = {".env", ".properties", ".yaml", ".yml", ".json", ".toml"}
 _MAX_DISCOVERED_SECRET_VALUES = 4096
 _MAX_DISCOVERED_SECRET_CHARS = 1024 * 1024
@@ -265,6 +263,54 @@ class _ExactSecretMatcher:
         return "".join(chunks)
 
 
+
+def _redact_private_keys(value: str) -> str:
+    """Redact PEM private-key blocks without regex backtracking."""
+    result: list[str] = []
+    cursor = 0
+    length = len(value)
+
+    while cursor < length:
+        begin = value.find(_PRIVATE_KEY_BEGIN, cursor)
+        if begin < 0:
+            result.append(value[cursor:])
+            break
+
+        header_end = value.find("-----", begin + len(_PRIVATE_KEY_BEGIN))
+        if header_end < 0:
+            result.append(value[cursor:])
+            break
+
+        header = value[begin : header_end + 5]
+        if not header.endswith(_PRIVATE_KEY_SUFFIX):
+            result.append(value[cursor : begin + 1])
+            cursor = begin + 1
+            continue
+
+        key_type = header[
+            len(_PRIVATE_KEY_BEGIN) : -len(_PRIVATE_KEY_SUFFIX)
+        ].strip()
+        if not key_type:
+            result.append(value[cursor : begin + 1])
+            cursor = begin + 1
+            continue
+
+        end_marker = f"{_PRIVATE_KEY_END_PREFIX}{key_type} {_PRIVATE_KEY_SUFFIX}"
+        end = value.find(end_marker, header_end + 5)
+        if end < 0:
+            # Unmatched begin markers are not expanded into a potentially
+            # quadratic search. Keep scanning after the marker.
+            result.append(value[cursor : header_end + 5])
+            cursor = header_end + 5
+            continue
+
+        result.append(value[cursor:begin])
+        result.append("<redacted-private-key>")
+        cursor = end + len(end_marker)
+
+    return "".join(result)
+
+
 class OutputRedactor:
     def __init__(
         self,
@@ -291,5 +337,4 @@ class OutputRedactor:
         text = self._matcher.redact(value)
         text = _GENERIC_PATTERNS[0].sub(r"\1<redacted>", text)
         text = _GENERIC_PATTERNS[1].sub(r"\1<redacted>", text)
-        text = _GENERIC_PATTERNS[2].sub("<redacted-private-key>", text)
-        return text
+        return _redact_private_keys(text)
