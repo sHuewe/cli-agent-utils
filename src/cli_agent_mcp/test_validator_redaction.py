@@ -135,6 +135,28 @@ def _iter_json_secret_values(value: object) -> Iterator[str]:
             )
 
 
+def _is_yaml_block_scalar_header(value: str) -> bool:
+    """Recognize YAML literal/folded block-scalar headers conservatively."""
+    if not value or value[0] not in {"|", ">"}:
+        return False
+    modifiers = value[1:]
+    if not modifiers:
+        return True
+    if len(modifiers) > 2:
+        return False
+
+    chomping = 0
+    indentation = 0
+    for char in modifiers:
+        if char in {"+", "-"}:
+            chomping += 1
+        elif char in "123456789":
+            indentation += 1
+        else:
+            return False
+    return chomping <= 1 and indentation <= 1
+
+
 def discover_secret_values(
     archive: bytes,
     *,
@@ -191,7 +213,7 @@ def discover_secret_values(
             if suffix in {".yaml", ".yml"}:
                 for line in text.splitlines():
                     for candidate in _iter_sensitive_assignment_values(line):
-                        if candidate in {"|", "|-", "|+", ">", ">-", ">+"}:
+                        if _is_yaml_block_scalar_header(candidate):
                             raise SecretDiscoveryLimitError(
                                 "Ein sensitiver YAML-Schlüssel verwendet einen "
                                 "Block-Scalar; sichere Secret-Erkennung ist "
