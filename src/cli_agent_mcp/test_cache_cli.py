@@ -293,6 +293,33 @@ def prepare_maven(
         raise
 
 
+def _write_gradle_runtime_resolver(directory: Path) -> Path:
+    script = directory / "cli-agent-resolve-runtime.gradle"
+    script.write_text(
+        """gradle.projectsEvaluated {
+    def root = gradle.rootProject
+    root.tasks.register("_cliAgentResolveRuntimeDependencies") {
+        doLast {
+            root.allprojects.each { project ->
+                project.configurations.findAll { configuration ->
+                    configuration.canBeResolved && (
+                        configuration.name == "runtimeClasspath" ||
+                        configuration.name == "testRuntimeClasspath" ||
+                        configuration.name.endsWith("RuntimeClasspath")
+                    )
+                }.each { configuration ->
+                    configuration.resolve()
+                }
+            }
+        }
+    }
+}
+""",
+        encoding="utf-8",
+    )
+    return script
+
+
 def prepare_gradle(
     project: Path,
     cache_root: Path,
@@ -341,6 +368,7 @@ def prepare_gradle(
         else default_source_gradle_user_home()
     )
     copied = seed_gradle_user_configuration(source_home, gradle_home)
+    runtime_resolver = _write_gradle_runtime_resolver(temporary)
     try:
         _run_gradle(
             [
@@ -349,12 +377,16 @@ def prepare_gradle(
                 "--refresh-dependencies",
                 "--gradle-user-home",
                 str(gradle_home),
+                "--init-script",
+                str(runtime_resolver),
                 "assemble",
                 "testClasses",
+                "_cliAgentResolveRuntimeDependencies",
             ],
             cwd=project,
             timeout=timeout,
         )
+        runtime_resolver.unlink(missing_ok=True)
         remove_seeded_gradle_user_configuration(gradle_home, copied)
         copied = ()
         write_gradle_ready_metadata(temporary, key)
@@ -363,6 +395,7 @@ def prepare_gradle(
         temporary.replace(entry.directory)
         return entry
     except BaseException:
+        runtime_resolver.unlink(missing_ok=True)
         if copied:
             try:
                 remove_seeded_gradle_user_configuration(gradle_home, copied)
