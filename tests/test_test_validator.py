@@ -810,3 +810,32 @@ def test_java_selector_cannot_be_build_tool_option(tmp_path: Path) -> None:
             "--version",
             build_system="gradle",
         )
+
+
+
+def test_gradle_dependency_key_changes_with_lockfile(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    lockfile = tmp_path / "gradle.lockfile"
+    lockfile.write_text("com.example:demo:1.0=runtimeClasspath\n", encoding="utf-8")
+
+    first = gradle_dependency_key(tmp_path)
+    lockfile.write_text("com.example:demo:2.0=runtimeClasspath\n", encoding="utf-8")
+    second = gradle_dependency_key(tmp_path)
+
+    assert first != second
+
+
+def test_gradle_dependency_key_changes_with_legacy_lockfile(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    locks = tmp_path / "gradle" / "dependency-locks"
+    locks.mkdir(parents=True)
+    lockfile = locks / "runtimeClasspath.lockfile"
+    lockfile.write_text("com.example:demo:1.0\n", encoding="utf-8")
+
+    first = gradle_dependency_key(tmp_path)
+    lockfile.write_text("com.example:demo:2.0\n", encoding="utf-8")
+    second = gradle_dependency_key(tmp_path)
+
+    assert first != second
