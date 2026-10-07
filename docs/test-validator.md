@@ -120,7 +120,7 @@ Preparation uses the current WSL Python and its normal pip configuration. Privat
 
 The same target option is available for Maven and Gradle. An explicit `--cache-root` remains available for custom layouts and overrides target-based default placement; it must not be combined with `--target windows`.
 
-The dependency key tracks common Python dependency inputs including recursively included `requirements.txt` / `requirements-dev.txt` / `requirements-test*.txt`, `pyproject.toml`, and common lock files. Source-only changes therefore keep the same cache key; dependency-file changes produce a new one.
+The dependency key tracks common Python dependency inputs including recursively included `requirements.txt` / `requirements-dev.txt` / `requirements-test*.txt`, `pyproject.toml`, and common lock files. Nested requirements includes are resolved relative to the file containing the include, matching pip behavior. PEP 735 dependency groups support recursive `{include-group = "..."}` expansion with missing-group and cycle validation. Source-only changes therefore keep the same cache key; dependency-file changes produce a new one.
 
 Preparation builds wheels using pip:
 
@@ -256,7 +256,7 @@ The command derives a deterministic key from Gradle build/configuration files, i
 
 Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. This downloads runtime-only and test-runtime-only dependencies without executing tests.
 
-To support private repositories such as a company JFrog, the preparation command copies only the user's Gradle configuration files (`gradle.properties`, root init scripts and regular files in `init.d`) from the normal Gradle user home into that temporary isolated home. Those files may contain credentials and are therefore removed before the prepared cache is promoted to its final location. The MCP/test container receives only the resulting Gradle cache state, never those copied user configuration files.
+To support private repositories such as a company JFrog, the preparation command copies only the user's Gradle configuration files (`gradle.properties`, root init scripts and regular files in `init.d`) from the normal Gradle user home into that temporary isolated home. Before promotion, the preparer removes the copied user configuration and discards all generated Gradle user-home state except the downloaded module dependency cache at `caches/modules-2`. This also removes compiled init-script/DSL artifacts. Older pre-sanitization Gradle caches use a previous cache schema and are rejected.
 
 This is an intentional security boundary: user-specific `init.gradle(.kts)` / `init.d` rules are not replayed inside the sandbox. Therefore an offline build must not require those user-home init scripts for its build semantics after dependencies are already cached. If an organization needs mandatory repository/plugin-resolution logic during offline replay, that logic must be supplied separately in a credential-free, administrator-controlled form or moved into project configuration.
 
