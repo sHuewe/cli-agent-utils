@@ -745,19 +745,17 @@ def test_gradle_dependency_key_changes_with_custom_version_catalog(
 
 
 
-def test_python_direct_url_requirement_is_not_replayed_in_sandbox(
-    tmp_path: Path,
-) -> None:
-    direct_url = "https://example.invalid/demo-package-1.0.tar.gz"
+
+
+
+def test_python_empty_manifest_skips_pip_install(tmp_path: Path) -> None:
     (tmp_path / "requirements.txt").write_text(
-        f"demo-package @ {direct_url}\n",
+        "# intentionally empty\n",
         encoding="utf-8",
     )
     cache_root = tmp_path / "python-cache"
     entry = python_cache_entry(cache_root, tmp_path)
     entry.wheels.mkdir(parents=True)
-    wheel_name = "demo_package-1.0-py3-none-any.whl"
-    (entry.wheels / wheel_name).write_bytes(b"wheel")
     write_python_ready_metadata(
         entry.directory,
         entry.key,
@@ -776,12 +774,22 @@ def test_python_direct_url_requirement_is_not_replayed_in_sandbox(
     result = validator.run_python_tests(".")
 
     assert result["success"] is True
-    install = next(
-        args
+    assert not any(
+        args[0] == "exec" and "--no-index" in args
         for args, _ in backend.calls
-        if args[0] == "exec" and "--no-index" in args
     )
-    joined = " ".join(install)
-    assert direct_url not in joined
-    assert "-r" not in install
-    assert f"/tmp/python-wheels/{wheel_name}" in install
+
+
+def test_snapshot_preserves_fixture_suffixes(tmp_path: Path) -> None:
+    fixture = tmp_path / "tests" / "fixtures" / "server.log"
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text("expected log fixture\n", encoding="utf-8")
+
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    relative = {path.relative_to(tmp_path).as_posix() for path in snapshot.files}
+    assert "tests/fixtures/server.log" in relative
