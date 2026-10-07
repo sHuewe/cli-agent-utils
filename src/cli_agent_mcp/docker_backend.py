@@ -52,16 +52,58 @@ def _iter_safe_stream_paths(source: Path):
                     f"{path}"
                 )
             if stat.S_ISDIR(entry_stat.st_mode):
-                yield path
+                yield path, entry_stat
                 yield from walk(path)
             elif stat.S_ISREG(entry_stat.st_mode):
-                yield path
+                yield path, entry_stat
             else:
                 raise ValueError(
                     f"Unsupported filesystem entry in streamed directory: {path}"
                 )
 
     yield from walk(source)
+
+
+def _same_file(expected: os.stat_result, actual: os.stat_result) -> bool:
+    return (
+        expected.st_dev == actual.st_dev
+        and expected.st_ino == actual.st_ino
+        and stat.S_IFMT(expected.st_mode) == stat.S_IFMT(actual.st_mode)
+    )
+
+
+def _open_verified_stream_file(path: Path, expected: os.stat_result):
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        before = os.stat(path, follow_symlinks=False)
+    except OSError as exc:
+        raise ValueError(f"Streamed file could not be re-inspected: {path}") from exc
+    if (
+        stat.S_ISLNK(before.st_mode)
+        or _is_windows_reparse_point(before)
+        or not stat.S_ISREG(before.st_mode)
+        or not _same_file(expected, before)
+    ):
+        raise ValueError(f"Streamed file changed during transfer: {path}")
+
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError(f"Streamed file could not be safely opened: {path}") from exc
+    try:
+        opened = os.fstat(fd)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or _is_windows_reparse_point(opened)
+            or not _same_file(expected, opened)
+            or opened.st_size != expected.st_size
+        ):
+            raise ValueError(f"Streamed file changed during transfer: {path}")
+        return os.fdopen(fd, "rb", closefd=True), opened
+    except BaseException:
+        os.close(fd)
+        raise
 
 
 @dataclass(frozen=True)
@@ -167,22 +209,29 @@ class DockerBackend:
         def write_archive() -> None:
             try:
                 with tarfile.open(fileobj=stdin, mode="w|") as archive:
-                    for path in _iter_safe_stream_paths(source):
+                    for path, expected in _iter_safe_stream_paths(source):
                         relative = path.relative_to(source).as_posix()
-                        if path.is_dir():
-                            info = archive.gettarinfo(str(path), arcname=relative)
+                        if stat.S_ISDIR(expected.st_mode):
+                            info = tarfile.TarInfo(relative)
+                            info.type = tarfile.DIRTYPE
+                            info.mode = stat.S_IMODE(expected.st_mode)
+                            info.mtime = int(expected.st_mtime)
                             info.uid = 65532
                             info.gid = 65532
                             info.uname = ""
                             info.gname = ""
                             archive.addfile(info)
-                        elif path.is_file():
-                            info = archive.gettarinfo(str(path), arcname=relative)
-                            info.uid = 65532
-                            info.gid = 65532
-                            info.uname = ""
-                            info.gname = ""
-                            with path.open("rb") as handle:
+                        elif stat.S_ISREG(expected.st_mode):
+                            handle, opened = _open_verified_stream_file(path, expected)
+                            with handle:
+                                info = tarfile.TarInfo(relative)
+                                info.size = opened.st_size
+                                info.mode = stat.S_IMODE(opened.st_mode)
+                                info.mtime = int(opened.st_mtime)
+                                info.uid = 65532
+                                info.gid = 65532
+                                info.uname = ""
+                                info.gname = ""
                                 archive.addfile(info, handle)
                         else:
                             raise ValueError(
