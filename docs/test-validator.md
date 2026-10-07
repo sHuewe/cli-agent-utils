@@ -173,7 +173,7 @@ python -m pip install \
 
 The test process uses `PYTHONPATH=/tmp/python-deps:/work:/work/src`. No pip index configuration or credentials are copied into the sandbox.
 
-If the matching cache is missing, `run_python_tests` returns `reason = "dependencies_not_prepared"` and explicitly states that `cli-agent-test-cache prepare-python <project>` must be run under WSL.
+The Python cache identity is project-scoped and does not change when requirements files change. If the project has never been prepared, `run_python_tests` returns `reason = "dependencies_not_prepared"` and explicitly states that `cli-agent-test-cache prepare-python <project>` must be run under WSL. Running preparation always rebuilds and atomically replaces the existing project cache. If a later offline install/test shows a recognized missing-package pattern, the tool returns `dependency_cache_may_be_stale` with a user-facing refresh hint.
 
 ### Maven
 
@@ -185,17 +185,7 @@ The Maven image must contain Maven. By default both the validator and the prepar
 
 No cache path therefore has to be added to the admin policy for each project or user. If an organization wants another location, it can configure one shared root once with `--maven-cache-root`; the user then passes the same root to `cli-agent-test-cache prepare-maven --cache-root ...`.
 
-The cache root is never selected by the model. For each Maven project the validator calculates a deterministic key from:
-
-- the root `pom.xml`,
-- no reactor/module graph: Maven `<modules>` is rejected in the v1 validator,
-- no local parent-POM resolution: when `<parent>` is present, v1 requires an explicitly empty `<relativePath/>` so the parent is resolved from the prepared repository instead of the workspace,
-- root `.mvn/maven.config`,
-- root `.mvn/extensions.xml`,
-- root `.mvn/jvm.config`,
-- the cache schema version.
-
-Ordinary source changes therefore keep the same dependency key. Dependency/build-configuration changes produce a new key.
+The cache root is never selected by the model. For each Maven project the validator calculates a stable project cache identity from the cache type plus the normalized absolute project root path. It deliberately does **not** parse POM contents, modules, parent POMs or other build inputs to decide whether dependencies are still current. Maven itself remains authoritative for that question during the offline build.
 
 Prepare the cache as the normal user. For the normal Windows-hosted MCP case:
 
@@ -203,11 +193,11 @@ Prepare the cache as the normal user. For the normal Windows-hosted MCP case:
 cli-agent-test-cache prepare-maven C:\dev\my-project
 ```
 
-If a project has OS-/architecture-dependent Maven profiles or dependencies and the Linux sandbox cannot use the Windows-prepared offline cache, retry preparation from WSL while targeting the Windows cache and force replacement of the existing cache entry:
+If a project has OS-/architecture-dependent Maven profiles or dependencies and the Linux sandbox cannot use the Windows-prepared offline cache, rerun preparation from WSL while targeting the Windows cache. Preparation always replaces the existing project cache:
 
 ```bash
 cd /mnt/c/dev/my-project
-cli-agent-test-cache prepare-maven . --target windows --force
+cli-agent-test-cache prepare-maven . --target windows
 ```
 
 For a fully WSL-hosted cli-agent/MCP installation, run the same command in WSL without `--target windows`.
@@ -234,13 +224,13 @@ mvn -B -Dmaven.repo.local=<cache>/repository -DskipTests package
 
 Before promotion, the preparer removes Maven resolver provenance files named `_remote.repositories`. Those files tie downloaded artifacts to remote repository IDs such as a company mirror; the sandbox deliberately does not receive the user's mirror/settings configuration. Removing only this provenance makes the prepared repository an explicit offline snapshot while keeping `settings.xml`, JFrog credentials and other user configuration out of the cache. The preparation command then stores only the sanitized generated Maven repository and a small readiness marker under `maven-<sha256>`.
 
-During a test or build the validator computes the same key. If no matching ready cache exists, it returns:
+During a test or build the validator computes the same project cache identity. If no ready cache exists yet, it returns:
 
 ```text
 reason = "dependencies_not_prepared"
 ```
 
-No network fallback occurs. When the cache exists, its repository tree is validated, streamed directly from the host through Docker stdin into `/tmp/m2`, and Maven runs:
+No network fallback occurs. When the cache exists, its repository tree is validated, streamed directly from the host through Docker stdin into `/tmp/m2`, and Maven runs. If Maven reports a recognized unresolved/missing-dependency condition, the result includes `reason = "dependency_cache_may_be_stale"` and a `message_to_user` asking the user to rerun `prepare-maven`:
 
 ```text
 mvn -o -B -Dmaven.repo.local=/tmp/m2 test
@@ -274,16 +264,16 @@ Prepare the cache as the normal user. For the normal Windows-hosted MCP case:
 cli-agent-test-cache prepare-gradle C:\dev\my-project
 ```
 
-If platform-dependent Gradle build logic or dependencies make the Windows-prepared cache incomplete for the Linux sandbox, retry from WSL while targeting the Windows cache and force replacement of the existing cache entry:
+If platform-dependent Gradle build logic or dependencies make the Windows-prepared cache incomplete for the Linux sandbox, rerun preparation from WSL while targeting the Windows cache. Preparation always replaces the existing project cache:
 
 ```bash
 cd /mnt/c/dev/my-project
-cli-agent-test-cache prepare-gradle . --target windows --force
+cli-agent-test-cache prepare-gradle . --target windows
 ```
 
 For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`.
 
-The command derives a deterministic key from Gradle build/configuration files. Generated output directories are excluded only contextually: a nested directory named `build`, `out`, `target` or `dist` that itself contains Gradle project files is treated as a real project directory and its build files are hashed. The key includes `build.gradle(.kts)`, `settings.gradle(.kts)`, Gradle properties, wrapper properties, dependency lock state (`*.lockfile` plus legacy `gradle/dependency-locks/*` files), all TOML files (including custom-named version catalogs), verification metadata and the full source/configuration trees of literal local `includeBuild(...)` builds such as `build-logic`. Ordinary application source-only changes therefore keep the same key.
+The Gradle cache identity is derived only from the cache type plus the normalized absolute project root path. cli-agent deliberately does not try to statically determine which files influence Gradle dependency resolution: Gradle build scripts are executable code and may read arbitrary project files. This avoids partial parsers for `includeBuild`, `buildSrc`, version catalogs, custom properties files or other build logic. The existing cache is tried offline; recognized dependency-resolution failures ask the user to rerun `prepare-gradle`.
 
 Preparation prefers the project's Gradle wrapper (`gradlew.bat` on Windows or `gradlew` otherwise) and falls back to Gradle from PATH. Sandbox validation intentionally uses the Gradle executable supplied by the administrator-pinned image instead of downloading/executing the wrapper distribution. The administrator is therefore responsible for choosing an image Gradle version compatible with the project's wrapper/build configuration. It uses a fresh isolated Gradle user home and executes `assemble` and `testClasses` plus an internal temporary init script that resolves all resolvable runtime classpaths named `runtimeClasspath`, `testRuntimeClasspath`, or ending in `RuntimeClasspath`. The same init script disables every Gradle task of type `Test`, so project task wiring cannot cause tests to run during preparation.
 
@@ -291,7 +281,7 @@ To support private repositories such as a company JFrog, the preparation command
 
 This is an intentional security boundary: user-specific `init.gradle(.kts)` / `init.d` rules are not replayed inside the sandbox. Therefore an offline build must not require those user-home init scripts for its build semantics after dependencies are already cached. If an organization needs mandatory repository/plugin-resolution logic during offline replay, that logic must be supplied separately in a credential-free, administrator-controlled form or moved into project configuration.
 
-If no matching ready cache exists, `run_java_tests(..., build_system="gradle")` returns `reason = "dependencies_not_prepared"`. There is no network fallback.
+If no ready project cache exists, `run_java_tests(..., build_system="gradle")` returns `reason = "dependencies_not_prepared"`. There is no network fallback. A recognized offline dependency-resolution failure with an existing cache returns `reason = "dependency_cache_may_be_stale"` and a `message_to_user` asking for `prepare-gradle`.
 
 When a cache exists, its prepared Gradle user home is validated and streamed into disposable container tmpfs at `/tmp/gradle`. The validator test tool then runs:
 
@@ -407,8 +397,3 @@ Gradle -> gradle --offline --no-daemon --gradle-user-home /tmp/gradle assemble
 The separate Maven/Gradle build helpers are implementation details and are not exposed as MCP tools.
 
 
-### Unsupported v1 layouts
-
-The v1 Maven validator supports only a single root `pom.xml`. If that POM declares non-empty `<modules>`, preparation/cache-key calculation fails closed. Maven reactor/multi-module support is deferred to a later version. Local parent-POM files are likewise unsupported in v1; a project with `<parent>` must use an explicitly empty `<relativePath/>` and resolve that parent from the prepared repository.
-
-For Gradle, root-level directories named `build`, `target`, or `dist` are reserved as generated-output directories by snapshot creation. A project that explicitly maps a real Gradle module to one of those root-level paths is therefore unsupported in v1. Nested source directories with these names remain supported where they are not recognized as generated output.
