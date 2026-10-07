@@ -43,7 +43,8 @@ def _candidate_config_file(path: Path) -> bool:
     return path.suffix.casefold() in _TEXT_CONFIG_SUFFIXES
 
 
-def _iter_secret_values_from_line(line: str) -> Iterator[str]:
+def _iter_sensitive_assignment_values(line: str) -> Iterator[str]:
+    """Yield raw values assigned to sensitive keys, including short markers."""
     key_chars = set(
         "abcdefghijklmnopqrstuvwxyz"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -97,9 +98,7 @@ def _iter_secret_values_from_line(line: str) -> Iterator[str]:
                 ):
                     value_end += 1
 
-            value = line[value_start:value_end].strip()
-            if len(value) >= 4:
-                yield value
+            yield line[value_start:value_end].strip()
             index = max(
                 index + 1,
                 value_end + (1 if quote is not None and value_end < length else 0),
@@ -108,6 +107,11 @@ def _iter_secret_values_from_line(line: str) -> Iterator[str]:
 
         index += 1
 
+
+def _iter_secret_values_from_line(line: str) -> Iterator[str]:
+    for value in _iter_sensitive_assignment_values(line):
+        if len(value) >= 4:
+            yield value
 
 def _secret_values_from_line(line: str) -> tuple[str, ...]:
     """Best-effort parser for simple assignment-style text configuration."""
@@ -186,7 +190,7 @@ def discover_secret_values(
 
             if suffix in {".yaml", ".yml"}:
                 for line in text.splitlines():
-                    for candidate in _iter_secret_values_from_line(line):
+                    for candidate in _iter_sensitive_assignment_values(line):
                         if candidate in {"|", "|-", "|+", ">", ">-", ">+"}:
                             raise SecretDiscoveryLimitError(
                                 "Ein sensitiver YAML-Schlüssel verwendet einen "
