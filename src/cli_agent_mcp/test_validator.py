@@ -769,21 +769,22 @@ class DockerTestValidator:
                 }
             python_wheels = entry.wheels
             wheel_names = entry.install_wheel_names()
-            install = [
-                "python",
-                "-m",
-                "pip",
-                "install",
-                "--disable-pip-version-check",
-                "--no-index",
-                "--target",
-                "/tmp/python-deps",
-                *[
-                    f"/tmp/python-wheels/{wheel_name}"
-                    for wheel_name in wheel_names
-                ],
-            ]
-            pre_test_command = install
+            if wheel_names:
+                install = [
+                    "python",
+                    "-m",
+                    "pip",
+                    "install",
+                    "--disable-pip-version-check",
+                    "--no-index",
+                    "--target",
+                    "/tmp/python-deps",
+                    *[
+                        f"/tmp/python-wheels/{wheel_name}"
+                        for wheel_name in wheel_names
+                    ],
+                ]
+                pre_test_command = install
 
         return self._run_tests(
             project_path=project_path,
