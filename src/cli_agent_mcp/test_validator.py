@@ -941,7 +941,8 @@ class DockerTestValidator:
                 "test",
             ]
             if selector:
-                command.extend(["--tests", selector])
+                gradle_selector = selector.replace("#", ".", 1)
+                command.extend(["--tests", gradle_selector])
             gradle_home: Path | None = None
             if self.settings.gradle_cache_root is not None:
                 entry = gradle_cache_entry(self.settings.gradle_cache_root, project)
