@@ -243,12 +243,10 @@ def test_java_maven_selector_is_translated_without_shell(
         "-Dtest=com.example.ExampleTest#works",
         "test",
     ]
-    cache_setup = next(
-        args
+    assert not any(
+        "/opt/cli-agent-test-cache/maven" in " ".join(args)
         for args, _ in backend.calls
-        if args[0] == "exec" and "/opt/cli-agent-test-cache/maven" in " ".join(args)
     )
-    assert "sh" in cache_setup
 
 
 def test_java_auto_detection_rejects_ambiguous_project(tmp_path: Path) -> None:
@@ -324,10 +322,9 @@ def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
         "--tests",
         "com.example.ExampleTest.works",
     ]
-    assert any(
+    assert not any(
         "/opt/cli-agent-test-cache/gradle" in " ".join(args)
         for args, _ in backend.calls
-        if args[0] == "exec"
     )
 
 
@@ -689,4 +686,27 @@ def test_gradle_dependency_key_changes_with_buildsrc_source(tmp_path: Path) -> N
     second = gradle_dependency_key(tmp_path)
 
     assert first.startswith("gradle-")
+    assert first != second
+
+
+
+def test_gradle_dependency_key_changes_with_custom_version_catalog(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    gradle_dir = tmp_path / "gradle"
+    gradle_dir.mkdir()
+    catalog = gradle_dir / "test.versions.toml"
+    catalog.write_text(
+        '[versions]\njunit = "5.11.0"\n',
+        encoding="utf-8",
+    )
+
+    first = gradle_dependency_key(tmp_path)
+    catalog.write_text(
+        '[versions]\njunit = "5.12.0"\n',
+        encoding="utf-8",
+    )
+    second = gradle_dependency_key(tmp_path)
+
     assert first != second
