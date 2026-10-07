@@ -23,6 +23,7 @@ from .maven_cache import (
     MavenCacheEntry,
     default_maven_cache_root,
     maven_dependency_key,
+    sanitize_repository_for_offline_use,
     write_ready_metadata,
 )
 from .python_cache import (
@@ -365,6 +366,7 @@ def prepare_maven(
             cwd=project,
             timeout=timeout,
         )
+        sanitize_repository_for_offline_use(repository)
         write_ready_metadata(temporary, key)
 
         if entry.directory.exists():
