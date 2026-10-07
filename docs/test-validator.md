@@ -120,15 +120,32 @@ Preparation uses the current WSL Python and its normal pip configuration. Privat
 
 The same target option is available for Maven and Gradle. An explicit `--cache-root` remains available for custom layouts and overrides target-based default placement; it must not be combined with `--target windows`.
 
-The dependency key tracks supported Python dependency inputs including recursively included `requirements.txt` / `requirements-dev.txt` / `requirements-test*.txt` and `pyproject.toml`. Nested requirements includes are resolved relative to the file containing the include, matching pip behavior, including compact short forms such as `-rrequirements/base.txt` and `-cconstraints.txt`. PEP 735 dependency groups normalize names before selection/include expansion, reject duplicate normalized names, and support recursive `{include-group = "..."}` expansion with missing-group and cycle validation. Lockfile-based resolution (`uv.lock`, `poetry.lock`, `Pipfile.lock`) is intentionally rejected instead of being silently ignored; export pinned test dependencies to a supported requirements file. Editable/current-project requirements remain rejected so the code under test cannot be replaced by a cached copy. Relative PEP 508 dependencies declared in `pyproject.toml` are supported when they resolve inside the selected project. Their complete regular-file tree is hashed into the Python dependency key, so changes invalidate the prepared wheel cache. Relative paths escaping the selected project are rejected. Empty/comment-only requirements files are accepted and produce an empty install manifest.
+Python test validation requires a `requirements.txt` in the selected project root. The v1 dependency contract is deliberately narrow: the root file and any recursive `-r/--requirement` or `-c/--constraint` files must stay inside the selected project and may contain pinned index dependencies in the form `package==version`. Compact include forms such as `-rrequirements/base.txt` and `-cconstraints.txt` are supported.
+
+The validator does not derive Python dependencies from `pyproject.toml`, `uv.lock`, `poetry.lock` or `Pipfile.lock`, and it rejects editable installs, local path dependencies, direct URLs, VCS references and other pip options in the requirements graph. This is intentional: pip remains responsible for dependency resolution while the validator keeps a small, auditable cache contract.
+
+To create the required file from the currently activated project environment, first ensure that the runtime and test dependencies you want to validate are installed in that environment, then run:
+
+```bash
+python -m pip freeze --exclude-editable > requirements.txt
+```
+
+For example, in a project that installs its test dependencies through an extra, a typical workflow is:
+
+```bash
+python -m pip install -e ".[test]"
+python -m pip freeze --exclude-editable > requirements.txt
+```
+
+The exact install command before `pip freeze` is project-specific. `--exclude-editable` prevents the current project itself from being written as an editable/local dependency. Commit or otherwise maintain `requirements.txt` as the explicit validator dependency input.
 
 Preparation builds wheels using pip:
 
 ```text
-python -m pip wheel --wheel-dir <cache>/wheels ...
+python -m pip wheel --wheel-dir <cache>/wheels -r requirements.txt
 ```
 
-After preparation, the cache contains a generated install manifest naming the prepared wheel files. During sandbox execution, pip installs only those local wheel paths. The original requirements or pyproject dependency strings are not replayed, so direct URL, VCS and local-project references do not trigger network or host-path access inside the offline container.
+Preparation invokes pip exactly once for the complete requirements graph rooted at `requirements.txt`. This lets one pip resolver produce a coherent wheel set instead of resolving multiple inputs independently. After preparation, the cache contains a generated install manifest naming the prepared wheel files. During sandbox execution, pip installs only those local wheel paths; if the manifest is empty, the install step is skipped.
 
 This step may use network access and private package credentials because it is deliberately a user-run action outside the MCP sandbox. Source distributions may execute their normal Python build backend while wheels are being produced.
 
