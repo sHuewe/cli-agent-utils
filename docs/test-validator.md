@@ -173,7 +173,7 @@ python -m pip install \
 
 The test process uses `PYTHONPATH=/tmp/python-deps:/work:/work/src`. No pip index configuration or credentials are copied into the sandbox.
 
-The Python cache identity is project-scoped and does not change when requirements files change. If the project has never been prepared, `run_python_tests` returns `reason = "dependencies_not_prepared"` and explicitly states that `cli-agent-test-cache prepare-python <project>` must be run under WSL. Running preparation always rebuilds and atomically replaces the existing project cache. If a later offline install/test shows a recognized missing-package pattern, the tool returns `dependency_cache_may_be_stale` with a user-facing refresh hint.
+The Python cache identity is project-scoped and does not change when requirements files change. If the project has never been prepared, `run_python_tests` returns `reason = "dependencies_not_prepared"` and explicitly states that `cli-agent-test-cache prepare-python <project>` must be run under WSL. Running preparation always rebuilds and replaces only after a successful preparation the existing project cache. If a later offline install/test shows a recognized missing-package pattern, the tool returns `dependency_cache_may_be_stale` with a user-facing refresh hint.
 
 ### Maven
 
