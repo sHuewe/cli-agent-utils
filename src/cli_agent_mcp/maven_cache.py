@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .test_validator_types import TestValidationError
 
-_CACHE_SCHEMA = "cli-agent-maven-cache-v1"
+_CACHE_SCHEMA = "cli-agent-maven-cache-v2"
 _IGNORED_DIRECTORIES = {
     ".git",
     ".gradle",
@@ -193,6 +193,54 @@ def validate_repository_tree(repository: Path) -> int:
 
     walk(root)
     return total_bytes
+
+
+def sanitize_repository_for_offline_use(repository: Path) -> None:
+    """Remove remote-origin tracking that is not reproducible in the sandbox."""
+    root = repository.resolve()
+    if repository.is_symlink() or not root.is_dir():
+        raise TestValidationError(
+            "Der vorbereitete Maven-Cache ist kein Verzeichnis."
+        )
+
+    def walk(directory: Path) -> None:
+        try:
+            entries = os.scandir(directory)
+        except OSError as exc:
+            raise TestValidationError(
+                "Der vorbereitete Maven-Cache konnte nicht gelesen werden."
+            ) from exc
+        with entries:
+            for entry in entries:
+                path = Path(entry.path)
+                try:
+                    mode = entry.stat(follow_symlinks=False).st_mode
+                except OSError as exc:
+                    raise TestValidationError(
+                        "Ein Maven-Cache-Eintrag konnte nicht geprüft werden."
+                    ) from exc
+                if stat.S_ISLNK(mode):
+                    raise TestValidationError(
+                        "Symlinks sind im vorbereiteten Maven-Cache nicht erlaubt."
+                    )
+                if stat.S_ISDIR(mode):
+                    walk(path)
+                elif stat.S_ISREG(mode):
+                    if entry.name == "_remote.repositories":
+                        try:
+                            path.unlink()
+                        except OSError as exc:
+                            raise TestValidationError(
+                                "Maven-Repository-Provenienz konnte nicht "
+                                "bereinigt werden."
+                            ) from exc
+                else:
+                    raise TestValidationError(
+                        "Der Maven-Cache darf nur reguläre Dateien und "
+                        "Verzeichnisse enthalten."
+                    )
+
+    walk(root)
 
 
 def write_ready_metadata(directory: Path, key: str) -> None:
