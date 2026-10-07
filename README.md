@@ -123,7 +123,7 @@ If cli-agent/MCP run on Windows but preparation is deliberately executed inside 
 cli-agent-test-cache prepare-python . --target windows
 ```
 
-Under WSL, `--target windows` resolves the Windows user profile and writes to the corresponding Windows `~/.cli-agent/dependency-cache/python` directory through the WSL mount. The command still uses the WSL user's normal pip configuration, including configured private PyPI/JFrog indexes and credentials. The validator itself never receives pip/JFrog credentials.
+Under WSL, `--target windows` resolves the Windows user profile and writes to the corresponding Windows `~/.cli-agent/dependency-cache/python` directory through the WSL mount. The command still uses the WSL user's normal pip configuration, including configured private PyPI/JFrog indexes and credentials. The validator itself never receives pip/JFrog credentials. Preparation also writes a cache-local wheel manifest. The sandbox installs only those prepared wheel files and never replays original direct URL, VCS, or local-project requirement references.
 
 During tests the wheel cache is streamed into the sandbox and dependencies are installed only with:
 
@@ -155,7 +155,7 @@ cli-agent-test-cache prepare-gradle C:\dev\my-project
 
 Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup and prepares `assemble`, `testClasses`, and resolvable runtime classpaths (including `runtimeClasspath`, `testRuntimeClasspath`, and similarly named custom runtime classpaths) without executing tests. A project Gradle wrapper is preferred when present; otherwise Gradle from PATH is used. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation. Before promotion, all user configuration and compiled/script/DSL cache state is discarded and only Gradle's downloaded module dependency cache (`caches/modules-2`) is retained. Consequently, the offline sandboxed build must not depend on user-specific init scripts for build semantics. If an organization requires such rules during offline execution, provide them as project configuration or via a separately administered credential-free sandbox configuration rather than relying on the user's Gradle home. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
 
-Relevant Gradle build/configuration changes, including custom `*.versions.toml` catalogs, generate a new dependency key. Source-only changes keep the existing cache.
+Relevant Gradle build/configuration changes, including custom `*.versions.toml` catalogs and literal local `includeBuild(...)` build-logic sources, generate a new dependency key. Ordinary application source-only changes keep the existing cache.
 
 Maven and Gradle preparation normally works directly on Windows for typical platform-independent Java builds. Some projects intentionally resolve different dependencies or activate different build logic depending on operating system or architecture. If a Windows-prepared cache fails later in the Linux sandbox for that reason, retry preparation inside WSL while still targeting the Windows-hosted MCP cache:
 
