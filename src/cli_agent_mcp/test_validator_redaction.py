@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import re
+import tarfile
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -43,28 +45,34 @@ def _candidate_config_file(path: Path) -> bool:
 
 
 def discover_secret_values(
-    project: Path,
-    files: Iterable[Path],
+    archive: bytes,
     *,
     max_file_bytes: int = 1_000_000,
 ) -> tuple[str, ...]:
     values: set[str] = set()
-    for path in files:
-        if not _candidate_config_file(path):
-            continue
-        try:
-            if path.stat().st_size > max_file_bytes:
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tar:
+        for member in tar:
+            path = Path(member.name)
+            if not member.isfile() or not _candidate_config_file(path):
                 continue
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        for match in _ASSIGNMENT.finditer(text):
-            key = match.group(1)
-            if not _SENSITIVE_KEY.search(key):
+            if member.size > max_file_bytes:
                 continue
-            value = (match.group(2) or match.group(3) or "").strip().strip("'\"")
-            if len(value) >= 4:
-                values.add(value)
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                continue
+            text = extracted.read(max_file_bytes + 1).decode(
+                "utf-8",
+                errors="replace",
+            )
+            if len(text.encode("utf-8", errors="replace")) > max_file_bytes:
+                continue
+            for match in _ASSIGNMENT.finditer(text):
+                key = match.group(1)
+                if not _SENSITIVE_KEY.search(key):
+                    continue
+                value = (match.group(2) or match.group(3) or "").strip().strip("'\"")
+                if len(value) >= 4:
+                    values.add(value)
     return tuple(sorted(values, key=len, reverse=True))
 
 
