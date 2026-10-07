@@ -20,7 +20,10 @@ from cli_agent_mcp.python_cache import (
 from cli_agent_mcp.test_validator import DockerTestValidator
 from cli_agent_mcp.test_validator_redaction import OutputRedactor
 from cli_agent_mcp.test_validator_server import _workspace_from_core_environment
-from cli_agent_mcp.test_validator_snapshot import create_project_snapshot
+from cli_agent_mcp.test_validator_snapshot import (
+    _is_windows_reparse_point,
+    create_project_snapshot,
+)
 from cli_agent_mcp.test_validator_types import (
     TestValidationError as ValidationError,
     TestValidatorSettings as ValidatorSettings,
@@ -1042,3 +1045,11 @@ def test_gradle_include_build_inside_string_is_not_treated_as_comment(
     key = gradle_dependency_key(tmp_path)
 
     assert key.startswith("gradle-")
+
+
+
+def test_windows_reparse_point_detection() -> None:
+    class FakeStat:
+        st_file_attributes = 0x0400
+
+    assert _is_windows_reparse_point(FakeStat()) is True
