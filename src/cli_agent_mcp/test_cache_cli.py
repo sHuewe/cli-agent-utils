@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "Explicit shared Maven cache root. Do not combine with --target windows."
+            "Explicit shared Maven cache root."
         ),
     )
     prepare.add_argument(
@@ -94,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "Explicit shared Gradle cache root. Do not combine with --target windows."
+            "Explicit shared Gradle cache root."
         ),
     )
     prepare_gradle.add_argument(
@@ -144,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "Explicit Python cache root. Do not combine with --target windows."
+            "Explicit Python cache root."
         ),
     )
     prepare_python.add_argument(
@@ -181,10 +181,6 @@ def _resolve_cache_root(
     target: str,
 ) -> Path:
     if explicit is not None:
-        if target != "native":
-            raise ValueError(
-                "--cache-root kann nicht mit --target windows kombiniert werden."
-            )
         return explicit.expanduser().resolve()
     if target == "native":
         defaults = {
