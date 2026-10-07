@@ -13,7 +13,6 @@ from typing import Any
 import javaproperties
 import yaml
 from dotenv import dotenv_values
-from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
 _SENSITIVE_KEY = re.compile(
     r"(?i)(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
@@ -74,16 +73,7 @@ def _iter_scalar_values(value: object) -> Iterator[str]:
                 "Konfigurationsstruktur ist zu groß für sichere Secret-Erkennung."
             )
 
-        if isinstance(current, str):
-            yield current
-            continue
         if current is None:
-            continue
-        if isinstance(current, bool):
-            yield "true" if current else "false"
-            continue
-        if isinstance(current, (int, float)):
-            yield str(current)
             continue
 
         if isinstance(current, Mapping):
@@ -100,6 +90,16 @@ def _iter_scalar_values(value: object) -> Iterator[str]:
                 continue
             seen.add(identity)
             stack.extend(current)
+            continue
+
+        if isinstance(current, bytes):
+            try:
+                yield current.decode("utf-8")
+            except UnicodeDecodeError:
+                yield current.hex()
+            continue
+
+        yield str(current)
 
 
 def _iter_mapping_secret_values(value: object) -> Iterator[str]:
@@ -133,65 +133,10 @@ def _iter_mapping_secret_values(value: object) -> Iterator[str]:
             stack.extend(current)
 
 
-def _iter_yaml_scalar_values(node: Node) -> Iterator[str]:
-    stack = [node]
-    seen: set[int] = set()
-    visited = 0
-
-    while stack:
-        current = stack.pop()
-        visited += 1
-        if visited > _MAX_STRUCTURED_NODES:
-            raise SecretDiscoveryLimitError(
-                "YAML-Struktur ist zu groß für sichere Secret-Erkennung."
-            )
-
-        identity = id(current)
-        if identity in seen:
-            continue
-        seen.add(identity)
-
-        if isinstance(current, ScalarNode):
-            yield current.value
-        elif isinstance(current, SequenceNode):
-            stack.extend(current.value)
-        elif isinstance(current, MappingNode):
-            for key_node, value_node in current.value:
-                stack.extend((key_node, value_node))
-
-
 def _iter_yaml_secret_values(text: str) -> Iterator[str]:
-    documents = yaml.compose_all(text, Loader=yaml.SafeLoader)
-    visited = 0
-    for document in documents:
-        if document is None:
-            continue
-        stack = [document]
-        seen: set[int] = set()
-
-        while stack:
-            current = stack.pop()
-            visited += 1
-            if visited > _MAX_STRUCTURED_NODES:
-                raise SecretDiscoveryLimitError(
-                    "YAML-Struktur ist zu groß für sichere Secret-Erkennung."
-                )
-
-            identity = id(current)
-            if identity in seen:
-                continue
-            seen.add(identity)
-
-            if isinstance(current, MappingNode):
-                for key_node, value_node in current.value:
-                    if (
-                        isinstance(key_node, ScalarNode)
-                        and _is_sensitive_key(key_node.value)
-                    ):
-                        yield from _iter_yaml_scalar_values(value_node)
-                    stack.append(value_node)
-            elif isinstance(current, SequenceNode):
-                stack.extend(current.value)
+    for document in yaml.safe_load_all(text):
+        if document is not None:
+            yield from _iter_mapping_secret_values(document)
 
 
 def _parse_structured_secret_values(path: Path, text: str) -> tuple[str, ...]:
