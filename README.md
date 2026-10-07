@@ -141,7 +141,7 @@ For Maven, the validator and preparation CLI use the same per-user cache root by
 cli-agent-test-cache prepare-maven C:\dev\my-project
 ```
 
-The command uses Maven's normal user/global configuration and credentials, including the user's standard `~/.m2/settings.xml` for mirrors, repositories and server credentials, but writes dependencies into a separate repository below:
+The command uses Maven's normal user/global configuration and credentials, including the user's standard `~/.m2/settings.xml` and the selected Maven installation's global `conf/settings.xml` for mirrors, repositories and server credentials. Both settings files are rejected when they contain profiles/activeProfiles that would change build semantics not replayed in the sandbox. Dependencies are written into a separate repository below:
 
 ```text
 %USERPROFILE%\.cli-agent\dependency-cache\maven\maven-<sha256>\repository
