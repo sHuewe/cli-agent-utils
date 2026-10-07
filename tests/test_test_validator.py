@@ -9,6 +9,7 @@ from cli_agent_mcp.docker_backend import (
     DockerBackend,
     DockerCommandResult,
     _is_windows_reparse_point as _docker_reparse_point,
+    _open_verified_stream_file,
 )
 from cli_agent_mcp.gradle_cache import (
     gradle_cache_entry,
@@ -26,6 +27,7 @@ from cli_agent_mcp.test_validator_redaction import OutputRedactor
 from cli_agent_mcp.test_validator_server import _workspace_from_core_environment
 from cli_agent_mcp.test_validator_snapshot import (
     _is_windows_reparse_point,
+    _open_verified_regular_file,
     create_project_snapshot,
 )
 from cli_agent_mcp.test_validator_types import (
@@ -1040,3 +1042,28 @@ def test_gradle_offline_dependency_failure_requests_cache_refresh(
     assert result["success"] is False
     assert result["reason"] == "dependency_cache_may_be_stale"
     assert "prepare-gradle" in result["message_to_user"]
+
+
+
+def test_snapshot_verified_open_rejects_replaced_file(tmp_path: Path) -> None:
+    path = tmp_path / "data.txt"
+    path.write_text("first", encoding="utf-8")
+    expected = path.stat()
+    path.unlink()
+    path.write_text("second", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="verändert"):
+        _open_verified_regular_file(path, expected)
+
+
+def test_cache_stream_verified_open_rejects_replaced_file(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "artifact.bin"
+    path.write_bytes(b"first")
+    expected = path.stat()
+    path.unlink()
+    path.write_bytes(b"second")
+
+    with pytest.raises(ValueError, match="changed during transfer"):
+        _open_verified_stream_file(path, expected)
