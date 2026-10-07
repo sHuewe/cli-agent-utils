@@ -293,23 +293,52 @@ def _reject_unsupported_local_requirements(
             if not line or line.startswith("#"):
                 continue
             lowered = line.casefold()
-            if lowered.startswith(("-r ", "--requirement ", "-c ", "--constraint ")):
+            if _INCLUDE_RE.match(line):
                 continue
-            if lowered in {".", "-e .", "--editable ."}:
+
+            if lowered.startswith("-e") or lowered.startswith("--editable"):
                 raise TestValidationError(
-                    "Lokale Projekt-Referenzen auf das aktuelle Python-Projekt "
-                    "werden nicht unterstützt. Deklariere nur externe "
-                    "Dependencies; der aktuelle Workspace-Code wird direkt getestet."
+                    "Lokale/editierbare Python-Dependency-Referenzen werden "
+                    f"nicht unterstützt ({relative}: {line!r}). "
+                    "Verwende gepinnte externe Dependencies."
                 )
+
             local_reference = (
-                lowered.startswith(
-                    ("-e ", "--editable ", "file:", "./", "../", "/", "~")
-                )
+                lowered in {"."}
+                or lowered.startswith(("file:", "./", "../", "/", "~"))
                 or " @ file:" in lowered
                 or " @ ./" in lowered
                 or " @ ../" in lowered
                 or re.match(r"^[a-z]:[\\/]", line, re.IGNORECASE) is not None
             )
+
+            candidate_text = line.split(";", 1)[0].strip()
+            remote_reference = (
+                "://" in candidate_text
+                or candidate_text.casefold().startswith(
+                    ("git+", "hg+", "svn+", "bzr+")
+                )
+            )
+            if not remote_reference and not local_reference:
+                candidate_path = candidate_text
+                if " @ " in candidate_path:
+                    candidate_path = candidate_path.split(" @ ", 1)[1].strip()
+                path_like = (
+                    "/" in candidate_path
+                    or "\\" in candidate_path
+                    or candidate_path in {".", ".."}
+                )
+                if path_like:
+                    local_reference = True
+                else:
+                    local_candidate = (path.parent / candidate_path).resolve()
+                    try:
+                        local_candidate.relative_to(project)
+                    except ValueError:
+                        pass
+                    else:
+                        local_reference = local_candidate.exists()
+
             if local_reference:
                 raise TestValidationError(
                     "Lokale/editierbare Python-Dependency-Referenzen werden "
@@ -514,10 +543,6 @@ def write_python_ready_metadata(
         for path in wheels.iterdir()
         if path.is_file() and not path.is_symlink() and path.name.endswith(".whl")
     )
-    if plan.has_dependencies and not wheel_names:
-        raise TestValidationError(
-            "Python-Cache enthält trotz deklarierter Dependencies keine Wheels."
-        )
     (wheels / "install-manifest.json").write_text(
         json.dumps(wheel_names, indent=2) + "\n",
         encoding="utf-8",
