@@ -6,8 +6,14 @@ Concept path: `{{var:concept_path}}`
 Assessment:
 {{var:assessment}}
 
+Pre-split concept snapshot:
+{{var:snapshot}}
+
 Rules:
 - If the assessment action is `keep`, `needs_attention` or `skip`, do not modify files.
+- Before ANY write for a split, require snapshot.status to be captured, a complete non-empty snapshot.content, and matching snapshot.concept_path. Otherwise return needs_attention without writing.
+- Re-read the original concept and compare its FULL content to snapshot.content before writing. If it has changed since the snapshot, stop without modifying files and return needs_attention.
+- Use the complete snapshot as the authoritative pre-split baseline; the assessment scope is not a complete inventory of knowledge.
 - For `split`, read the current target concept and its direct folder `index.md`.
 - Before writing, confirm every proposed part path is still absent. If a proposed target already exists, do not overwrite it; return `needs_attention` without modifying files.
 - Use only information already present in the original concept. Do not inspect source code/manuals and do not introduce new factual claims.
