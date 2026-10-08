@@ -534,6 +534,25 @@ def test_python_plan_include_error_does_not_echo_operand_credentials(
     assert "https://user:" not in message
 
 
+def test_python_plan_rejects_interpolated_requirement_include(
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    literal = "${REQ_FILE}"
+    (project / literal).write_text("demo-package==1.0\n", encoding="utf-8")
+    (project / "requirements.txt").write_text(
+        f"-r {literal}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception, match="Interpolation"):
+        python_dependency_plan(project)
+
+
 def test_python_plan_allows_hash_inside_include_operand(tmp_path: Path) -> None:
     from cli_agent_mcp.python_cache import python_dependency_plan
 
