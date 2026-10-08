@@ -393,6 +393,7 @@ class DockerTestValidator:
                     project_path,
                     redactor,
                     "Docker-Container-Erstellung lief in ein Timeout.",
+                    timed_out=True,
                 )
                 return result_payload
             created = created_result.returncode == 0
