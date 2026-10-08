@@ -194,6 +194,16 @@ def test_snapshot_rejects_symlink_when_supported(tmp_path: Path) -> None:
         )
 
 
+def test_generic_redaction_removes_short_values_without_marker_echo() -> None:
+    redactor = OutputRedactor()
+
+    result = redactor.redact("password=x\nAuthorization: Bearer y")
+
+    assert "password=x" not in result
+    assert "Bearer y" not in result
+    assert result == "password=\nAuthorization: Bearer "
+
+
 def test_output_redactor_removes_known_and_generic_secrets() -> None:
     redactor = OutputRedactor(["super-secret-value"])
 
