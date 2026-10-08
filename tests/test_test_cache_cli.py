@@ -304,6 +304,28 @@ def test_gradle_promotion_rejects_repository_url_credentials(
         sanitize_gradle_home_for_promotion(gradle_home)
 
 
+def test_gradle_promotion_rejects_repository_url_query_credentials(
+    tmp_path: Path,
+) -> None:
+    import pytest
+
+    gradle_home = tmp_path / "gradle-home"
+    metadata = (
+        gradle_home
+        / "caches"
+        / "modules-2"
+        / "metadata-2.107"
+        / "resource-at-url.bin"
+    )
+    metadata.parent.mkdir(parents=True)
+    metadata.write_bytes(
+        b"prefix https://repo.example/artifacts?token=super-secret-token suffix"
+    )
+
+    with pytest.raises(Exception, match="Query-Parametern"):
+        sanitize_gradle_home_for_promotion(gradle_home)
+
+
 def test_gradle_promotion_keeps_repository_metadata_without_url_credentials(
     tmp_path: Path,
 ) -> None:
