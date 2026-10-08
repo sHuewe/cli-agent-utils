@@ -1080,7 +1080,6 @@ class DockerTestValidator:
             if selector:
                 command.extend(
                     [
-                        "--no-test-dry-run",
                         "--rerun-tasks",
                         "--init-script",
                         _GRADLE_SELECTOR_INIT_PATH,
@@ -1089,7 +1088,13 @@ class DockerTestValidator:
             command.append("test")
             if selector:
                 gradle_selector = selector.replace("#", ".", 1)
-                command.extend(["--tests", gradle_selector])
+                command.extend(
+                    [
+                        "--no-test-dry-run",
+                        "--tests",
+                        gradle_selector,
+                    ]
+                )
                 pre_test_command = [
                     "sh",
                     "-c",
