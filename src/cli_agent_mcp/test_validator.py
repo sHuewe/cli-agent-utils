@@ -367,7 +367,16 @@ class DockerTestValidator:
                     ["version", "--format", "{{.Server.Version}}"],
                     timeout=10,
                 )
-            except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            except subprocess.TimeoutExpired:
+                result_payload = self._failure(
+                    framework,
+                    project_path,
+                    redactor,
+                    "Docker-Verfügbarkeitsprüfung lief in ein Timeout.",
+                    timed_out=True,
+                )
+                return result_payload
+            except FileNotFoundError as exc:
                 result_payload = self._failure(
                     framework,
                     project_path,
