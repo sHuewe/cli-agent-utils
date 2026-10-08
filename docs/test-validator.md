@@ -145,7 +145,18 @@ Preparation uses the current WSL Python and its normal pip configuration. Privat
 ~/.cli-agent/dependency-cache/python/python-<sha256>/wheels
 ```
 
-The same target option is available for Maven and Gradle. An explicit `--cache-root` remains available for custom layouts and overrides target-based default placement; it must not be combined with `--target windows`.
+The same target option is available for Maven and Gradle. An explicit `--cache-root` remains available for custom layouts and overrides only the cache placement; it does not replace the target identity selection. In particular, when preparation runs in WSL for a Windows-hosted MCP that is configured with a non-default cache root, use **both** `--target windows` and `--cache-root`: `--target windows` makes the preparer compute the same Windows project identity that the Windows validator uses, while `--cache-root` selects the administrator-configured shared cache location.
+
+For example, if the Windows MCP uses `D:\\cli-agent-dependency-cache\\python` as its Python cache root and that directory is mounted as `/mnt/d/cli-agent-dependency-cache/python` in WSL:
+
+```bash
+cd /mnt/c/dev/my-project
+cli-agent-test-cache prepare-python . \
+  --target windows \
+  --cache-root /mnt/d/cli-agent-dependency-cache/python
+```
+
+Use the analogous combination for Maven and Gradle when their Windows-hosted validator cache roots are non-default.
 
 Python test validation requires a `requirements.txt` in the selected project root. The v1 dependency contract is deliberately narrow. Requirement and constraint files are size-checked before host-side parsing and use the validator's configured `max_file_bytes` limit, so dependency-plan validation cannot bypass the later snapshot bound: the root file and any recursive `-r/--requirement` or `-c/--constraint` files must stay inside the selected project and may contain pinned index dependencies in the form `package==version`. Compact include forms such as `-rrequirements/base.txt` and `-cconstraints.txt` are supported.
 
@@ -230,6 +241,15 @@ cli-agent-test-cache prepare-maven C:\dev\my-project `
   --cache-root D:\cli-agent-dependency-cache\maven
 ```
 
+If preparation for that Windows-hosted validator is instead run from WSL, keep the same Windows target identity and point to the WSL-mounted form of the configured root:
+
+```bash
+cd /mnt/c/dev/my-project
+cli-agent-test-cache prepare-maven . \
+  --target windows \
+  --cache-root /mnt/d/cli-agent-dependency-cache/maven
+```
+
 Preparation intentionally runs outside the MCP sandbox. Maven may use its normal user/global configuration, including the user's standard `~/.m2/settings.xml`, the selected Maven installation's global `conf/settings.xml`, active profiles, mirrors, repository credentials and project Maven configuration. Those inputs belong to the trusted preparation environment. The validator deliberately does not parse or reject them merely because the later sandbox invocation will not replay the same semantics. It builds an isolated local repository using:
 
 ```text
@@ -288,7 +308,7 @@ cd /mnt/c/dev/my-project
 cli-agent-test-cache prepare-gradle . --target windows
 ```
 
-For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`.
+For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`. If a Windows-hosted validator uses a non-default Gradle cache root and preparation runs from WSL, pass both `--target windows` and the WSL-mounted cache path via `--cache-root`.
 
 The Gradle cache identity is derived only from the cache type plus the normalized absolute project root path. cli-agent deliberately does not try to statically determine which files influence Gradle dependency resolution: Gradle build scripts are executable code and may read arbitrary project files. This avoids partial parsers for `includeBuild`, `buildSrc`, version catalogs, custom properties files or other build logic. The existing cache is tried offline; recognized dependency-resolution failures ask the user to rerun `prepare-gradle`.
 
