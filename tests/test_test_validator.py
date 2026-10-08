@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import tarfile
 from pathlib import Path
 
@@ -310,6 +311,38 @@ def test_python_tests_use_fixed_no_shell_command_and_redact_output(
     )
     assert snapshot_transfer[1]
     assert snapshot_transfer[0][-3:] == ["tar", "-xf", "-"]
+
+
+def test_snapshot_transfer_timeout_returns_structured_failure(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "# no external dependencies\n",
+        encoding="utf-8",
+    )
+
+    class SnapshotTimeoutBackend(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            self.calls.append((args, input_bytes))
+            if args[0] == "inspect":
+                return DockerCommandResult(0, inspect_payload(), "")
+            if args[0] == "exec" and input_bytes is not None:
+                raise subprocess.TimeoutExpired(args, timeout)
+            return DockerCommandResult(0, "ok", "")
+
+    validator = DockerTestValidator(
+        tmp_path,
+        settings(),
+        backend=SnapshotTimeoutBackend(),
+    )
+
+    result = validator.run_python_tests(".")
+
+    assert result["success"] is False
+    assert result["timed_out"] is True
+    assert "Timeout" in result["output"]
+    assert result["container_removed"] is True
 
 
 def test_java_maven_selector_is_translated_without_shell(
