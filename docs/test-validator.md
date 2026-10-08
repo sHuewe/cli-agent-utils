@@ -145,7 +145,7 @@ Preparation uses the current WSL Python and its normal pip configuration. Privat
 
 The same target option is available for Maven and Gradle. An explicit `--cache-root` remains available for custom layouts and overrides target-based default placement; it must not be combined with `--target windows`.
 
-Python test validation requires a `requirements.txt` in the selected project root. The v1 dependency contract is deliberately narrow: the root file and any recursive `-r/--requirement` or `-c/--constraint` files must stay inside the selected project and may contain pinned index dependencies in the form `package==version`. Compact include forms such as `-rrequirements/base.txt` and `-cconstraints.txt` are supported.
+Python test validation requires a `requirements.txt` in the selected project root. The v1 dependency contract is deliberately narrow. Requirement and constraint files are size-checked before host-side parsing and use the validator's configured `max_file_bytes` limit, so dependency-plan validation cannot bypass the later snapshot bound: the root file and any recursive `-r/--requirement` or `-c/--constraint` files must stay inside the selected project and may contain pinned index dependencies in the form `package==version`. Compact include forms such as `-rrequirements/base.txt` and `-cconstraints.txt` are supported.
 
 The validator does not derive Python dependencies from `pyproject.toml`, `uv.lock`, `poetry.lock` or `Pipfile.lock`, and it rejects editable installs, local path dependencies, direct URLs, VCS references and other pip options in the requirements graph. This is intentional: pip remains responsible for dependency resolution while the validator keeps a small, auditable cache contract.
 
