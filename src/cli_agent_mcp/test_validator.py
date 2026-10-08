@@ -33,7 +33,12 @@ allprojects {
     tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->
         task.filter.setFailOnNoMatchingTests(false)
         task.reports.junitXml.outputLocation.set(
-            file("/output/gradle-test-results/" + project.path.replace(':', '_'))
+            file(
+                "/output/gradle-test-results/"
+                + project.path.replace(':', '_')
+                + "/"
+                + task.name
+            )
         )
     }
 }
@@ -46,6 +51,23 @@ for report in /output/surefire-reports/TEST-*.xml; do
             *'<testcase '*|*'<testcase>'*) exit 0 ;;
         esac
     done < "$report"
+done
+exit 1
+"""
+_GRADLE_SELECTOR_REPORT_CHECK_SCRIPT = """\
+for project_dir in /output/gradle-test-results/*; do
+    [ -d "$project_dir" ] || continue
+    for task_dir in "$project_dir"/*; do
+        [ -d "$task_dir" ] || continue
+        for report in "$task_dir"/TEST-*.xml; do
+            [ -f "$report" ] || continue
+            while IFS= read -r line || [ -n "$line" ]; do
+                case "$line" in
+                    *'<testcase '*|*'<testcase>'*) exit 0 ;;
+                esac
+            done < "$report"
+        done
+    done
 done
 exit 1
 """
@@ -809,15 +831,7 @@ class DockerTestValidator:
                         container_name,
                         "sh",
                         "-c",
-                        (
-                            "for report in "
-                            + _GRADLE_SELECTOR_RESULT_DIR
-                            + "/*/TEST-*.xml; do "
-                            '[ -f "$report" ] || continue; '
-                            'while IFS= read -r line || [ -n "$line" ]; do '
-                            'case "$line" in *\'<testcase \'*|*\'<testcase>\'*) '
-                            "exit 0 ;; esac; done < "$report"; done; exit 1"
-                        ),
+                        _GRADLE_SELECTOR_REPORT_CHECK_SCRIPT,
                     ],
                     timeout=self.settings.setup_timeout_seconds,
                 )
