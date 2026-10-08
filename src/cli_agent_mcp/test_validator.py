@@ -27,45 +27,6 @@ _JAVA_SELECTOR = re.compile(r"^[A-Za-z0-9_.$*#\[\],-]+$")
 _MAX_SELECTOR_CHARS = 512
 _GRADLE_MIN_SELECTOR_VERSION = (8, 3)
 _GRADLE_VERSION_RE = re.compile(r"(?m)^Gradle\s+(\d+)\.(\d+)(?:\.(\d+))?")
-_MAVEN_SELECTOR_REPORT_DIR = "/output/surefire-reports"
-_GRADLE_SELECTOR_INIT_PATH = "/tmp/cli-agent-test-selector.gradle"
-_GRADLE_SELECTOR_MATCH_PATH = "/output/gradle-test-match"
-_GRADLE_SELECTOR_INIT_SCRIPT = """\
-allprojects {
-    tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->
-        task.afterTest { descriptor, result ->
-            if (
-                !task.filter.commandLineIncludePatterns.isEmpty()
-                && !task.dryRun.get()
-                && result.resultType
-                    != org.gradle.api.tasks.testing.TestResult.ResultType.SKIPPED
-            ) {
-                new File("/output/gradle-test-match").text = "matched\\n"
-            }
-        }
-        task.doFirst {
-            if (!task.filter.commandLineIncludePatterns.isEmpty()) {
-                task.filter.setFailOnNoMatchingTests(false)
-            }
-        }
-    }
-}
-"""
-_MAVEN_SELECTOR_REPORT_CHECK_SCRIPT = """\
-for report in /output/surefire-reports/TEST-*.xml; do
-    [ -f "$report" ] || continue
-    while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-            *'<testcase '*|*'<testcase>'*) exit 0 ;;
-        esac
-    done < "$report"
-done
-exit 1
-"""
-_GRADLE_SELECTOR_MATCH_CHECK_SCRIPT = """\
-[ -s /output/gradle-test-match ]
-"""
-
 
 class DockerTestValidator:
     """Run fixed Python or Java test commands in a hardened short-lived container."""
@@ -378,8 +339,6 @@ class DockerTestValidator:
         dependency_cache_key: str | None = None,
         python_wheels: Path | None = None,
         gradle_home: Path | None = None,
-        require_maven_test_match: bool = False,
-        require_gradle_test_match: bool = False,
     ) -> dict[str, Any]:
         project = self._resolve_project(project_path)
         snapshot = create_project_snapshot(
@@ -708,57 +667,6 @@ class DockerTestValidator:
                     )
                     return result_payload
 
-            if require_gradle_test_match:
-                version_result = self._docker(
-                    [
-                        "exec",
-                        "--user",
-                        "65532:65532",
-                        container_name,
-                        "gradle",
-                        "--version",
-                    ],
-                    timeout=self.settings.setup_timeout_seconds,
-                )
-                version_match = (
-                    _GRADLE_VERSION_RE.search(version_result.stdout)
-                    if version_result.returncode == 0
-                    else None
-                )
-                if version_match is None:
-                    result_payload = self._failure(
-                        framework,
-                        project_path,
-                        redactor,
-                        "Gradle-Version konnte nicht verlässlich bestimmt werden.",
-                        verified_policy=verified_policy,
-                    )
-                    result_payload["reason"] = "unsupported_gradle_version"
-                    result_payload["message_to_user"] = (
-                        "Gradle-Test-Selectoren benötigen ein "
-                        "Administrator-Image mit Gradle 8.3 oder neuer."
-                    )
-                    return result_payload
-                gradle_version = (
-                    int(version_match.group(1)),
-                    int(version_match.group(2)),
-                )
-                if gradle_version < _GRADLE_MIN_SELECTOR_VERSION:
-                    result_payload = self._failure(
-                        framework,
-                        project_path,
-                        redactor,
-                        "Die Gradle-Version unterstützt die benötigte "
-                        "Test-Selector-Ausführung nicht.",
-                        verified_policy=verified_policy,
-                    )
-                    result_payload["reason"] = "unsupported_gradle_version"
-                    result_payload["message_to_user"] = (
-                        "Gradle-Test-Selectoren benötigen ein "
-                        "Administrator-Image mit Gradle 8.3 oder neuer."
-                    )
-                    return result_payload
-
             if pre_test_command:
                 prepared = self._docker(
                     [
@@ -852,37 +760,8 @@ class DockerTestValidator:
                     if part
                 )
             )
-            selector_not_matched = False
-            if require_maven_test_match and tested.returncode == 0:
-                report_check = self._docker(
-                    [
-                        "exec",
-                        "--user",
-                        "65532:65532",
-                        container_name,
-                        "sh",
-                        "-c",
-                        _MAVEN_SELECTOR_REPORT_CHECK_SCRIPT,
-                    ],
-                    timeout=self.settings.setup_timeout_seconds,
-                )
-                selector_not_matched = report_check.returncode != 0
-            if require_gradle_test_match and tested.returncode == 0:
-                report_check = self._docker(
-                    [
-                        "exec",
-                        "--user",
-                        "65532:65532",
-                        container_name,
-                        "sh",
-                        "-c",
-                        _GRADLE_SELECTOR_MATCH_CHECK_SCRIPT,
-                    ],
-                    timeout=self.settings.setup_timeout_seconds,
-                )
-                selector_not_matched = report_check.returncode != 0
             result_payload = {
-                "success": tested.returncode == 0 and not selector_not_matched,
+                "success": tested.returncode == 0,
                 "framework": framework,
                 "project_path": project_path,
                 "exit_code": tested.returncode,
@@ -924,13 +803,6 @@ class DockerTestValidator:
                     "root_filesystem": "read-only",
                 },
             }
-            if selector_not_matched:
-                result_payload["reason"] = "test_selector_not_matched"
-                build_tool_name = "Maven" if framework == "maven" else "Gradle"
-                result_payload["message_to_user"] = (
-                    f"Der angeforderte {build_tool_name}-Test-Selector hat keinen "
-                    "tatsächlich ausgeführten Test gefunden."
-                )
             if tested.returncode != 0 and (
                 dependency_repository is not None
                 or gradle_home is not None
@@ -1092,14 +964,7 @@ class DockerTestValidator:
                 "-Dmaven.repo.local=/tmp/m2",
             ]
             if selector:
-                command.extend(
-                    [
-                        f"-Dtest={selector}",
-                        "-Dsurefire.failIfNoSpecifiedTests=false",
-                        "-DdisableXmlReport=false",
-                        f"-Dsurefire.reportsDirectory={_MAVEN_SELECTOR_REPORT_DIR}",
-                    ]
-                )
+                command.append(f"-Dtest={selector}")
             command.append("test")
             if self.settings.maven_cache_root is not None:
                 entry = cache_entry(self.settings.maven_cache_root, project)
@@ -1133,35 +998,10 @@ class DockerTestValidator:
                 "--gradle-user-home",
                 "/tmp/gradle",
             ]
-            if selector:
-                command.extend(
-                    [
-                        "--rerun-tasks",
-                        "--init-script",
-                        _GRADLE_SELECTOR_INIT_PATH,
-                    ]
-                )
             command.append("test")
             if selector:
                 gradle_selector = selector.replace("#", ".", 1)
-                command.extend(
-                    [
-                        "--no-test-dry-run",
-                        "--tests",
-                        gradle_selector,
-                    ]
-                )
-                pre_test_command = [
-                    "sh",
-                    "-c",
-                    (
-                        "cat > "
-                        + _GRADLE_SELECTOR_INIT_PATH
-                        + " <<'CLI_AGENT_GRADLE_SELECTOR'\n"
-                        + _GRADLE_SELECTOR_INIT_SCRIPT
-                        + "CLI_AGENT_GRADLE_SELECTOR\n"
-                    ),
-                ]
+                command.extend(["--tests", gradle_selector])
             gradle_home: Path | None = None
             if self.settings.gradle_cache_root is not None:
                 entry = gradle_cache_entry(self.settings.gradle_cache_root, project)
@@ -1195,8 +1035,6 @@ class DockerTestValidator:
             dependency_repository=dependency_repository,
             dependency_cache_key=dependency_cache_key,
             gradle_home=gradle_home,
-            require_maven_test_match=selected == "maven" and selector is not None,
-            require_gradle_test_match=selected == "gradle" and selector is not None,
         )
 
     def run_java_build(
