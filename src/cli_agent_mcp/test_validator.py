@@ -773,8 +773,9 @@ class DockerTestValidator:
                         (
                             "find "
                             + _MAVEN_SELECTOR_REPORT_DIR
-                            + " -type f -name 'TEST-*.xml' -size +0c "
-                            "-print -quit 2>/dev/null | grep -q ."
+                            + " -type f -name 'TEST-*.xml' -exec "
+                            "grep -l '<testcase[ >]' {} + 2>/dev/null "
+                            "| grep -q ."
                         ),
                     ],
                     timeout=self.settings.setup_timeout_seconds,
