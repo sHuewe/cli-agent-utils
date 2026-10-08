@@ -329,6 +329,11 @@ def _requirement_files(
             match = _INCLUDE_RE.match(line)
             if match:
                 include_value = match.group(1) or match.group(2)
+                if "${" in include_value:
+                    raise TestValidationError(
+                        "Requirements-Includes dürfen keine "
+                        "Umgebungsvariablen-Interpolation verwenden."
+                    )
                 included = _safe_relative_project_file(
                     project,
                     include_value,
