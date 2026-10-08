@@ -772,6 +772,19 @@ class DockerTestValidator:
                     result_payload["reason"] = "dependency_cache_may_be_stale"
                     result_payload["message_to_user"] = refresh_message
             return result_payload
+        except subprocess.TimeoutExpired:
+            result_payload = self._failure(
+                framework,
+                project_path,
+                redactor,
+                (
+                    "Docker-Sandbox-Setup oder -Übertragung lief nach "
+                    f"{self.settings.setup_timeout_seconds} Sekunden in ein Timeout."
+                ),
+                verified_policy=verified_policy,
+                timed_out=True,
+            )
+            return result_payload
         finally:
             removed: bool | None = None
             if created:
