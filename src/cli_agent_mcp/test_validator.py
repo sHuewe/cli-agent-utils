@@ -29,17 +29,20 @@ _MAVEN_SELECTOR_REPORT_DIR = "/output/surefire-reports"
 _GRADLE_SELECTOR_INIT_PATH = "/tmp/cli-agent-test-selector.gradle"
 _GRADLE_SELECTOR_RESULT_DIR = "/output/gradle-test-results"
 _GRADLE_SELECTOR_INIT_SCRIPT = """\
-allprojects {
-    tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->
-        task.filter.setFailOnNoMatchingTests(false)
-        task.reports.junitXml.outputLocation.set(
-            file(
-                "/output/gradle-test-results/"
-                + project.path.replace(':', '_')
-                + "/"
-                + task.name
+gradle.projectsEvaluated {
+    allprojects {
+        tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->
+            task.filter.setFailOnNoMatchingTests(false)
+            task.reports.junitXml.required.set(true)
+            task.reports.junitXml.outputLocation.set(
+                file(
+                    "/output/gradle-test-results/"
+                    + project.path.replace(':', '_')
+                    + "/"
+                    + task.name
+                )
             )
-        )
+        }
     }
 }
 """
