@@ -416,10 +416,10 @@ class OutputRedactor:
         text = _redact_private_keys(value)
         text = self._matcher.redact(text)
         text = _GENERIC_PATTERNS[0].sub(
-            lambda match: match.group(1) + _REDACTION_MARKER,
+            lambda match: match.group(1),
             text,
         )
         return _GENERIC_PATTERNS[1].sub(
-            lambda match: match.group(1) + _REDACTION_MARKER,
+            lambda match: match.group(1),
             text,
         )
