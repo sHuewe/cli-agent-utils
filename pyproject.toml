@@ -9,7 +9,10 @@ description = "Optional Docker-related MCP servers for cli-agent"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "javaproperties>=0.8,<1",
     "mcp>=1.9,<2",
+    "python-dotenv>=1,<2",
+    "PyYAML>=6,<7",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +23,8 @@ dev = [
 [project.scripts]
 cli-agent-compose-mcp = "cli_agent_mcp.compose_server:main"
 cli-agent-python-validator-mcp = "cli_agent_mcp.python_validator_server:main"
+cli-agent-test-validator-mcp = "cli_agent_mcp.test_validator_server:main"
+cli-agent-test-cache = "cli_agent_mcp.test_cache_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cli_agent_mcp"]
