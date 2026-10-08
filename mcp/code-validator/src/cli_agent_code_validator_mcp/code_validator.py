@@ -316,9 +316,9 @@ class DockerCodeValidator:
         if not any(pattern in value for pattern in patterns.get(framework, ())):
             return None
         command = {
-            "maven": "cli-agent-test-cache prepare-maven <projekt>",
-            "gradle": "cli-agent-test-cache prepare-gradle <projekt>",
-            "pytest": "cli-agent-test-cache prepare-python <projekt>",
+            "maven": "cli-agent-dependency-cache prepare-maven <projekt>",
+            "gradle": "cli-agent-dependency-cache prepare-gradle <projekt>",
+            "pytest": "cli-agent-dependency-cache prepare-python <projekt>",
         }[framework]
         return (
             "Der vorbereitete Dependency-Cache könnte für den aktuellen "
@@ -905,7 +905,7 @@ class DockerCodeValidator:
                     ),
                     "message_to_user": (
                         "Python-Dependencies sind noch nicht vorbereitet. Führe "
-                        "unter WSL 'cli-agent-test-cache prepare-python <projekt>' "
+                        "unter WSL 'cli-agent-dependency-cache prepare-python <projekt>' "
                         "aus und wiederhole den Test."
                     ),
                     "preparation_environment": "WSL required",
@@ -982,7 +982,7 @@ class DockerCodeValidator:
                         ),
                         "message_to_user": (
                             "Maven-Dependencies sind noch nicht vorbereitet. Führe "
-                            "außerhalb des Agents 'cli-agent-test-cache prepare-maven "
+                            "außerhalb des Agents 'cli-agent-dependency-cache prepare-maven "
                             "<projekt>' aus und wiederhole den Test."
                         ),
                     }
@@ -1019,7 +1019,7 @@ class DockerCodeValidator:
                         ),
                         "message_to_user": (
                             "Gradle-Dependencies sind noch nicht vorbereitet. Führe "
-                            "außerhalb des Agents 'cli-agent-test-cache prepare-gradle "
+                            "außerhalb des Agents 'cli-agent-dependency-cache prepare-gradle "
                             "<projekt>' aus und wiederhole den Test."
                         ),
                     }
@@ -1093,7 +1093,7 @@ class DockerCodeValidator:
                     ),
                     "message_to_user": (
                         "Maven-Dependencies sind noch nicht vorbereitet. Führe "
-                        "außerhalb des Agents 'cli-agent-test-cache prepare-maven "
+                        "außerhalb des Agents 'cli-agent-dependency-cache prepare-maven "
                         "<projekt>' aus und wiederhole den Build."
                     ),
                 }
@@ -1154,7 +1154,7 @@ class DockerCodeValidator:
                     ),
                     "message_to_user": (
                         "Gradle-Dependencies sind noch nicht vorbereitet. Führe "
-                        "außerhalb des Agents 'cli-agent-test-cache prepare-gradle "
+                        "außerhalb des Agents 'cli-agent-dependency-cache prepare-gradle "
                         "<projekt>' aus und wiederhole den Build."
                     ),
                 }

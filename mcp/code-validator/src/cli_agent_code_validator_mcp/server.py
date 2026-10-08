@@ -172,7 +172,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=default_python_cache_root(),
         help=(
-            "Shared root created by cli-agent-test-cache prepare-python "
+            "Shared root created by cli-agent-dependency-cache prepare-python "
             "(default: ~/.cli-agent/dependency-cache/python). "
             "Python cache preparation itself must run inside WSL."
         ),
@@ -182,7 +182,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=default_gradle_cache_root(),
         help=(
-            "Shared root created by cli-agent-test-cache prepare-gradle "
+            "Shared root created by cli-agent-dependency-cache prepare-gradle "
             "(default: ~/.cli-agent/dependency-cache/gradle)."
         ),
     )
@@ -191,7 +191,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=default_maven_cache_root(),
         help=(
-            "Shared root created by cli-agent-test-cache prepare-maven "
+            "Shared root created by cli-agent-dependency-cache prepare-maven "
             "(default: ~/.cli-agent/dependency-cache/maven). "
             "The validator selects a project dependency cache below this root "
             "by deterministic dependency key."

@@ -100,7 +100,7 @@ The validator therefore does not try to parse every possible package-manager inp
 
 The configured Python image must contain Python, pip and pytest. Project dependencies are provided by a separate prepared wheel cache.
 
-A Windows pipx installation exposes `cli-agent-test-cache.exe` for Windows-side commands, but it is not sufficient for Python preparation. Install `cli-agent-mcp` through pipx inside WSL as well and invoke the Linux `cli-agent-test-cache` there. Calling the Windows `.exe` from a WSL shell still runs Windows Python and is rejected.
+A Windows pipx installation exposes `cli-agent-dependency-cache.exe` for Windows-side commands, but it is not sufficient for Python preparation. Install `cli-agent-code-validator-mcp` through pipx inside WSL as well and invoke the Linux `cli-agent-dependency-cache` there. Calling the Windows `.exe` from a WSL shell still runs Windows Python and is rejected.
 
 Python cache preparation **must run inside WSL**. Cache placement depends on where the MCP itself runs.
 
@@ -120,14 +120,14 @@ For a cli-agent/MCP installation running natively inside WSL, use the default na
 
 ```bash
 cd /path/to/my-project
-cli-agent-test-cache prepare-python .
+cli-agent-dependency-cache prepare-python .
 ```
 
 For a Windows-hosted cli-agent/MCP where only preparation runs inside WSL, target the Windows user's cache:
 
 ```bash
 cd /mnt/c/dev/my-project
-cli-agent-test-cache prepare-python . --target windows
+cli-agent-dependency-cache prepare-python . --target windows
 ```
 
 The command checks that it is actually running under WSL and refuses preparation on native Windows. It also probes the interpreter selected by `--python-command` and requires that interpreter itself to report a Linux platform, so invoking a Windows Python executable from WSL is rejected. This avoids accidentally generating Windows-only wheels for the Linux Docker sandbox. The command also prints:
@@ -151,7 +151,7 @@ For example, if the Windows MCP uses `D:\\cli-agent-dependency-cache\\python` as
 
 ```bash
 cd /mnt/c/dev/my-project
-cli-agent-test-cache prepare-python . \
+cli-agent-dependency-cache prepare-python . \
   --target windows \
   --cache-root /mnt/d/cli-agent-dependency-cache/python
 ```
@@ -199,7 +199,7 @@ python -m pip install \
 
 The test process uses `PYTHONPATH=/tmp/python-deps:/work:/work/src`. No pip index configuration or credentials are copied into the sandbox.
 
-The Python cache identity is project-scoped and does not change when requirements files change. If the project has never been prepared, `run_python_tests` returns `reason = "dependencies_not_prepared"` and explicitly states that `cli-agent-test-cache prepare-python <project>` must be run under WSL. Running preparation always rebuilds and replaces only after a successful preparation the existing project cache. If a later offline install/test shows a recognized missing-package pattern, the tool returns `dependency_cache_may_be_stale` with a user-facing refresh hint.
+The Python cache identity is project-scoped and does not change when requirements files change. If the project has never been prepared, `run_python_tests` returns `reason = "dependencies_not_prepared"` and explicitly states that `cli-agent-dependency-cache prepare-python <project>` must be run under WSL. Running preparation always rebuilds and replaces only after a successful preparation the existing project cache. If a later offline install/test shows a recognized missing-package pattern, the tool returns `dependency_cache_may_be_stale` with a user-facing refresh hint.
 
 ### Maven
 
@@ -209,21 +209,21 @@ The Maven image must contain Maven. By default both the validator and the prepar
 ~/.cli-agent/dependency-cache/maven
 ```
 
-No cache path therefore has to be added to the admin policy for each project or user. If an organization wants another location, it can configure one shared root once with `--maven-cache-root`; the user then passes the same root to `cli-agent-test-cache prepare-maven --cache-root ...`.
+No cache path therefore has to be added to the admin policy for each project or user. If an organization wants another location, it can configure one shared root once with `--maven-cache-root`; the user then passes the same root to `cli-agent-dependency-cache prepare-maven --cache-root ...`.
 
 The cache root is never selected by the model. For each Maven project the validator calculates a stable project cache identity from the cache type plus the normalized absolute project root path. It deliberately does **not** parse POM contents, modules, parent POMs or other build inputs to decide whether dependencies are still current. Maven itself remains authoritative for that question during the offline build.
 
 Prepare the cache as the normal user. For the normal Windows-hosted MCP case:
 
 ```powershell
-cli-agent-test-cache prepare-maven C:\dev\my-project
+cli-agent-dependency-cache prepare-maven C:\dev\my-project
 ```
 
 If a project has OS-/architecture-dependent Maven profiles or dependencies and the Linux sandbox cannot use the Windows-prepared offline cache, rerun preparation from WSL while targeting the Windows cache. Preparation always replaces the existing project cache:
 
 ```bash
 cd /mnt/c/dev/my-project
-cli-agent-test-cache prepare-maven . --target windows
+cli-agent-dependency-cache prepare-maven . --target windows
 ```
 
 For a fully WSL-hosted cli-agent/MCP installation, run the same command in WSL without `--target windows`.
@@ -237,7 +237,7 @@ The default preparation root is:
 Use `--cache-root` if the administrator configured a different root:
 
 ```powershell
-cli-agent-test-cache prepare-maven C:\dev\my-project `
+cli-agent-dependency-cache prepare-maven C:\dev\my-project `
   --cache-root D:\cli-agent-dependency-cache\maven
 ```
 
@@ -245,7 +245,7 @@ If preparation for that Windows-hosted validator is instead run from WSL, keep t
 
 ```bash
 cd /mnt/c/dev/my-project
-cli-agent-test-cache prepare-maven . \
+cli-agent-dependency-cache prepare-maven . \
   --target windows \
   --cache-root /mnt/d/cli-agent-dependency-cache/maven
 ```
@@ -298,14 +298,14 @@ The Gradle image must contain Gradle. By default both validator and preparation 
 Prepare the cache as the normal user. For the normal Windows-hosted MCP case:
 
 ```powershell
-cli-agent-test-cache prepare-gradle C:\dev\my-project
+cli-agent-dependency-cache prepare-gradle C:\dev\my-project
 ```
 
 If platform-dependent Gradle build logic or dependencies make the Windows-prepared cache incomplete for the Linux sandbox, rerun preparation from WSL while targeting the Windows cache. Preparation always replaces the existing project cache:
 
 ```bash
 cd /mnt/c/dev/my-project
-cli-agent-test-cache prepare-gradle . --target windows
+cli-agent-dependency-cache prepare-gradle . --target windows
 ```
 
 For a fully WSL-hosted cli-agent/MCP installation, omit `--target windows`. If a Windows-hosted validator uses a non-default Gradle cache root and preparation runs from WSL, pass both `--target windows` and the WSL-mounted cache path via `--cache-root`.

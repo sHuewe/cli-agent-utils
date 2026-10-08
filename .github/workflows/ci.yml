@@ -37,5 +37,5 @@ jobs:
             /tmp/mcp-wheel-smoke/bin/cli-agent-compose-mcp --help
           else
             /tmp/mcp-wheel-smoke/bin/cli-agent-code-validator-mcp --help
-            /tmp/mcp-wheel-smoke/bin/cli-agent-test-cache --help
+            /tmp/mcp-wheel-smoke/bin/cli-agent-dependency-cache --help
           fi

@@ -152,7 +152,7 @@ def require_wsl() -> None:
         raise RuntimeError(
             "Python-Dependencies müssen unter WSL vorbereitet werden, damit "
             "Linux-kompatible Wheels für den Docker-Testcontainer entstehen. "
-            "Starte cli-agent-test-cache prepare-python innerhalb von WSL."
+            "Starte cli-agent-dependency-cache prepare-python innerhalb von WSL."
         )
 
 

@@ -20,7 +20,7 @@ dev = ["pytest>=9,<10"]
 
 [project.scripts]
 cli-agent-code-validator-mcp = "cli_agent_code_validator_mcp.server:main"
-cli-agent-test-cache = "cli_agent_code_validator_mcp.cache_cli:main"
+cli-agent-dependency-cache = "cli_agent_code_validator_mcp.cache_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cli_agent_code_validator_mcp"]

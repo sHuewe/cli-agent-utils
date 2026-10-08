@@ -6,7 +6,7 @@ Install just this distribution:
 pipx install ./mcp/code-validator
 ```
 
-This installs the `cli-agent-code-validator-mcp` MCP command and `cli-agent-test-cache` preparation CLI, not Compose or the removed legacy validator. For development, install `./mcp/code-validator[dev]`.
+This installs the `cli-agent-code-validator-mcp` MCP command and `cli-agent-dependency-cache` preparation CLI, not Compose or the removed legacy validator. For development, install `./mcp/code-validator[dev]`.
 
 The former `validate_python_project` application-start tool has been removed and is **not** replaced by the current Python test runner.
 
@@ -80,13 +80,13 @@ For Python, dependency preparation follows the same model but **must be executed
 Cache placement is explicit and consistent across Maven, Gradle and Python. `--target native` is the default and writes to the current environment's `~/.cli-agent/dependency-cache/<type>`. Use this when cli-agent and the MCP run in the same environment as preparation. For example, a fully WSL-hosted setup uses:
 
 ```bash
-cli-agent-test-cache prepare-python .
+cli-agent-dependency-cache prepare-python .
 ```
 
 If cli-agent/MCP run on Windows but preparation is deliberately executed inside WSL, target the Windows user's cache instead:
 
 ```bash
-cli-agent-test-cache prepare-python . --target windows
+cli-agent-dependency-cache prepare-python . --target windows
 ```
 
 Under WSL, `--target windows` resolves the Windows user profile and writes to the corresponding Windows `~/.cli-agent/dependency-cache/python` directory through the WSL mount. If the Windows-hosted validator uses a non-default Windows cache root, preparation from WSL must pass both `--target windows` (for the Windows project identity) and `--cache-root <wsl-mounted-path>` (for the administrator-configured cache location). The command still uses the WSL user's normal pip configuration, including configured private PyPI/JFrog indexes and credentials. The validator itself never receives pip/JFrog credentials. Preparation also writes a cache-local wheel manifest. The sandbox installs only those prepared wheel files. The v1 requirements contract rejects direct URL, VCS, editable and local-path dependencies before preparation.
@@ -102,7 +102,7 @@ The Python cache is project-scoped rather than dependency-content-scoped. The va
 For Maven, the validator and preparation CLI use the same per-user cache root by default: `~/.cli-agent/dependency-cache/maven`. The admin policy therefore does **not** need a project-specific or user-specific cache path. Each project gets one stable cache identity derived from the cache type plus the normalized absolute project root path; Maven/POM contents are deliberately not interpreted to decide cache freshness. The user prepares or refreshes that project cache in the same host environment as the MCP with the normal Maven/JFrog setup:
 
 ```powershell
-cli-agent-test-cache prepare-maven C:\dev\my-project
+cli-agent-dependency-cache prepare-maven C:\dev\my-project
 ```
 
 The command uses Maven's normal user/global configuration and credentials, including the user's standard `~/.m2/settings.xml`, the selected Maven installation's global `conf/settings.xml`, profiles, mirrors and repository configuration. Those inputs belong to the trusted preparation environment and are deliberately **not** replayed or interpreted by the sandbox validator. Dependencies are written into a separate repository below:
@@ -118,7 +118,7 @@ Before promotion, Maven resolver-only provenance/state files such as `_remote.re
 For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache/gradle` by default. Prepare the current build configuration once as the normal user in the same host environment as the MCP:
 
 ```powershell
-cli-agent-test-cache prepare-gradle C:\dev\my-project
+cli-agent-dependency-cache prepare-gradle C:\dev\my-project
 ```
 
 Preparation runs Gradle outside the MCP sandbox with the user's normal repository setup and prepares `assemble`, `testClasses`, and resolvable runtime classpaths (including `runtimeClasspath`, `testRuntimeClasspath`, and similarly named custom runtime classpaths). Gradle preparation is an explicit trusted host action: evaluating the project build can execute arbitrary Gradle project/plugin logic with the current user's permissions, network access and repository credentials. The helper init script only resolves runtime classpaths; it does not claim to suppress project-defined test or other task execution. A project Gradle wrapper is preferred during preparation when present; otherwise Gradle from PATH is used. Sandbox validation always uses the Gradle executable from the administrator-pinned image, so keeping that Gradle version compatible with the project's wrapper version is an administrator responsibility. A temporary isolated Gradle user home is used; `gradle.properties` and init scripts from the user's normal Gradle home are copied only for preparation. Before promotion, all user configuration and compiled/script/DSL cache state is discarded and only Gradle's downloaded module dependency cache (`caches/modules-2`) is retained. Gradle repository metadata inside that cache is checked as well: promotion is rejected if a `resource-at-url.bin` contains URL userinfo such as `https://user:token@host/`, because that would otherwise move repository credentials into the sandbox. Consequently, the offline sandboxed build must not depend on user-specific init scripts for build semantics. If an organization requires such rules during offline execution, provide them as project configuration or via a separately administered credential-free sandbox configuration rather than relying on the user's Gradle home. The resulting Gradle user home is streamed into `/tmp/gradle` and tests run with `--offline`.
@@ -128,8 +128,8 @@ Gradle cache freshness is deliberately **not** inferred from build scripts. The 
 Maven and Gradle preparation normally works directly on Windows for typical platform-independent Java builds. Some projects intentionally resolve different dependencies or activate different build logic depending on operating system or architecture. If a Windows-prepared cache fails later in the Linux sandbox for that reason, rerun preparation inside WSL while targeting the Windows-hosted MCP cache. Preparation always replaces the existing project cache:
 
 ```bash
-cli-agent-test-cache prepare-maven . --target windows
-cli-agent-test-cache prepare-gradle . --target windows
+cli-agent-dependency-cache prepare-maven . --target windows
+cli-agent-dependency-cache prepare-gradle . --target windows
 ```
 
 For a cli-agent/MCP installation that itself runs inside WSL, omit `--target windows`; the default `--target native` correctly uses the WSL user's own cache.

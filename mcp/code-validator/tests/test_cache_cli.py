@@ -958,3 +958,9 @@ def test_windows_target_project_identity_matches_windows_normalization(
     assert identity == windows_project_identity("C:\\Dev\\Project")
 
 
+
+def test_dependency_cache_cli_program_name() -> None:
+    parser = build_parser()
+    assert parser.prog == "cli-agent-dependency-cache"
+    for command in ("prepare-python", "prepare-maven", "prepare-gradle"):
+        assert parser.parse_args([command, "."]).command == command

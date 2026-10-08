@@ -9,7 +9,7 @@ This repository is a **monorepo, not a combined MCP distribution**. Each MCP ser
 | Project | Python distribution | Executables |
 | --- | --- | --- |
 | [Docker Compose MCP](mcp/compose/README.md) | `cli-agent-compose-mcp` | `cli-agent-compose-mcp` |
-| [Sandbox Code-Validator MCP](mcp/code-validator/README.md) | `cli-agent-code-validator-mcp` | `cli-agent-code-validator-mcp`, `cli-agent-test-cache` |
+| [Sandbox Code-Validator MCP](mcp/code-validator/README.md) | `cli-agent-code-validator-mcp` | `cli-agent-code-validator-mcp`, `cli-agent-dependency-cache` |
 | [Flows](flow/) | Not a Python package | TOML workflows and prompts |
 
 The legacy Python build/start validator and its `validate_python_project` tool have been **removed**. The Code-Validator supports Python tests and Java builds/tests but does not duplicate that legacy Python application-start functionality.
@@ -33,7 +33,7 @@ pipx install "git+https://github.com/sHuewe/cli-agent-utils.git@<reviewed-ref>#s
 
 Only the selected distribution and its declared dependencies are installed. The Git client may nevertheless **fetch the complete repository**. For strict enterprise artifact review, publish and approve each project's wheel separately. Software installation does not itself authorize running Docker or MCP tools.
 
-The Compose and Test Cache executable names are preserved; the former Test Validator executable is renamed to `cli-agent-code-validator-mcp` (the legacy `cli-agent-python-validator-mcp` remains removed). The Code-Validator's `cli-agent-test-cache` command also stays in its package; `prepare-python` must still run within WSL using Linux Python when applicable.
+The Compose executable is unchanged; the Test Validator executable was renamed to `cli-agent-code-validator-mcp` (the legacy `cli-agent-python-validator-mcp` remains removed). Its dependency-preparation command is now `cli-agent-dependency-cache` (previously `cli-agent-test-cache`); `prepare-python` must still run within WSL using Linux Python when applicable.
 
 ## Development
 
