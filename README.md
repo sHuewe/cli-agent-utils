@@ -9,10 +9,10 @@ This repository is a **monorepo, not a combined MCP distribution**. Each MCP ser
 | Project | Python distribution | Executables |
 | --- | --- | --- |
 | [Docker Compose MCP](mcp/compose/README.md) | `cli-agent-compose-mcp` | `cli-agent-compose-mcp` |
-| [Sandbox Test Validator MCP](mcp/test-validator/README.md) | `cli-agent-test-validator-mcp` | `cli-agent-test-validator-mcp`, `cli-agent-test-cache` |
+| [Sandbox Code-Validator MCP](mcp/code-validator/README.md) | `cli-agent-code-validator-mcp` | `cli-agent-code-validator-mcp`, `cli-agent-test-cache` |
 | [Flows](flow/) | Not a Python package | TOML workflows and prompts |
 
-The legacy Python build/start validator and its `validate_python_project` tool have been **removed**. The Test Validator supports Python tests and Java builds/tests but does not duplicate that legacy Python application-start functionality.
+The legacy Python build/start validator and its `validate_python_project` tool have been **removed**. The Code-Validator supports Python tests and Java builds/tests but does not duplicate that legacy Python application-start functionality.
 
 ## Install one server only
 
@@ -21,19 +21,19 @@ From a checkout, install only the approved server into an isolated environment:
 ```bash
 pipx install ./mcp/compose
 # or
-pipx install ./mcp/test-validator
+pipx install ./mcp/code-validator
 ```
 
 From GitHub, pin a reviewed commit or tag:
 
 ```bash
 pipx install "git+https://github.com/sHuewe/cli-agent-utils.git@<reviewed-ref>#subdirectory=mcp/compose"
-pipx install "git+https://github.com/sHuewe/cli-agent-utils.git@<reviewed-ref>#subdirectory=mcp/test-validator"
+pipx install "git+https://github.com/sHuewe/cli-agent-utils.git@<reviewed-ref>#subdirectory=mcp/code-validator"
 ```
 
 Only the selected distribution and its declared dependencies are installed. The Git client may nevertheless **fetch the complete repository**. For strict enterprise artifact review, publish and approve each project's wheel separately. Software installation does not itself authorize running Docker or MCP tools.
 
-The previously used commands are preserved (except the removed `cli-agent-python-validator-mcp`). The Test Validator's `cli-agent-test-cache` command also stays in its package; `prepare-python` must still run within WSL using Linux Python when applicable.
+The Compose and Test Cache executable names are preserved; the former Test Validator executable is renamed to `cli-agent-code-validator-mcp` (the legacy `cli-agent-python-validator-mcp` remains removed). The Code-Validator's `cli-agent-test-cache` command also stays in its package; `prepare-python` must still run within WSL using Linux Python when applicable.
 
 ## Development
 
@@ -52,8 +52,8 @@ python -m pytest mcp/compose/tests
 ```
 
 ```bash
-python -m pip install -e "./mcp/test-validator[dev]"
-python -m pytest mcp/test-validator/tests
+python -m pip install -e "./mcp/code-validator[dev]"
+python -m pytest mcp/code-validator/tests
 ```
 
 The GitHub Actions workflow tests each distribution in a **fresh, isolated** environment to catch missing or accidental cross-package dependencies.
@@ -62,4 +62,4 @@ The GitHub Actions workflow tests each distribution in a **fresh, isolated** env
 
 `flow/` remains a collection of self-contained cli-agent flow-runner configurations and prompts, including `flow/okf/`. It is not a Python package and is not installed with an MCP server.
 
-See [architecture, packaging and migration](docs/architecture.md), the [Compose README](mcp/compose/README.md), and the [Test Validator documentation](mcp/test-validator/README.md).
+See [architecture, packaging and migration](docs/architecture.md), the [Compose README](mcp/compose/README.md), and the [Code-Validator documentation](mcp/code-validator/README.md).

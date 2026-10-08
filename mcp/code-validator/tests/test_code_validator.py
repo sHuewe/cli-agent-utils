@@ -8,40 +8,40 @@ from pathlib import Path
 
 import pytest
 
-from cli_agent_test_validator_mcp.docker_backend import (
+from cli_agent_code_validator_mcp.docker_backend import (
     DockerBackend,
     DockerCommandResult,
     _open_verified_stream_file,
 )
-from cli_agent_test_validator_mcp.filesystem_safety import (
+from cli_agent_code_validator_mcp.filesystem_safety import (
     _is_windows_reparse_point,
     _is_windows_reparse_point as _docker_reparse_point,
 )
-from cli_agent_test_validator_mcp.gradle_cache import (
+from cli_agent_code_validator_mcp.gradle_cache import (
     gradle_cache_entry,
     gradle_dependency_key,
     write_gradle_ready_metadata,
 )
-from cli_agent_test_validator_mcp.maven_cache import cache_entry, maven_dependency_key, write_ready_metadata
-from cli_agent_test_validator_mcp.python_cache import (
+from cli_agent_code_validator_mcp.maven_cache import cache_entry, maven_dependency_key, write_ready_metadata
+from cli_agent_code_validator_mcp.python_cache import (
     python_cache_entry,
     python_dependency_plan,
     write_python_ready_metadata,
 )
-from cli_agent_test_validator_mcp.test_validator import DockerTestValidator
-from cli_agent_test_validator_mcp.test_validator_redaction import (
+from cli_agent_code_validator_mcp.code_validator import DockerCodeValidator
+from cli_agent_code_validator_mcp.code_validator_redaction import (
     OutputRedactor,
     SecretDiscoveryLimitError,
     discover_secret_values,
 )
-from cli_agent_test_validator_mcp.server import _workspace_from_core_environment
-from cli_agent_test_validator_mcp.test_validator_snapshot import (
+from cli_agent_code_validator_mcp.server import _workspace_from_core_environment
+from cli_agent_code_validator_mcp.code_validator_snapshot import (
     _open_verified_regular_file,
     create_project_snapshot,
 )
-from cli_agent_test_validator_mcp.test_validator_types import (
-    TestValidationError as ValidationError,
-    TestValidatorSettings as ValidatorSettings,
+from cli_agent_code_validator_mcp.code_validator_types import (
+    CodeValidationError as ValidationError,
+    CodeValidatorSettings as ValidatorSettings,
 )
 
 PINNED_PYTHON = "registry.internal/python-tests@sha256:" + "a" * 64
@@ -241,7 +241,7 @@ def test_python_requirements_respect_validator_file_size_limit(
         gradle_image=PINNED_GRADLE,
         max_file_bytes=64,
     )
-    validator = DockerTestValidator(
+    validator = DockerCodeValidator(
         tmp_path,
         configured,
         backend=FakeBackend(),
@@ -275,7 +275,7 @@ def test_python_tests_use_fixed_no_shell_command_and_redact_output(
             "token=super-secret-value\n"
         )
     )
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+    validator = DockerCodeValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_python_tests(".", "test_demo.py::test_ok")
 
@@ -328,7 +328,7 @@ def test_create_timeout_still_attempts_cleanup(tmp_path: Path) -> None:
             return DockerCommandResult(0, "ok", "")
 
     backend = CreateTimeoutBackend()
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+    validator = DockerCodeValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_python_tests(".")
 
@@ -353,7 +353,7 @@ def test_docker_availability_timeout_is_marked_timed_out(
                 raise subprocess.TimeoutExpired(args, timeout)
             return DockerCommandResult(0, "ok", "")
 
-    validator = DockerTestValidator(
+    validator = DockerCodeValidator(
         tmp_path,
         settings(),
         backend=AvailabilityTimeoutBackend(),
@@ -384,7 +384,7 @@ def test_snapshot_transfer_timeout_returns_structured_failure(
                 raise subprocess.TimeoutExpired(args, timeout)
             return DockerCommandResult(0, "ok", "")
 
-    validator = DockerTestValidator(
+    validator = DockerCodeValidator(
         tmp_path,
         settings(),
         backend=SnapshotTimeoutBackend(),
@@ -403,7 +403,7 @@ def test_java_maven_selector_is_translated_without_shell(
 ) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
     backend = FakeBackend(exec_output="BUILD SUCCESS\n")
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+    validator = DockerCodeValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_java_tests(
         ".",
@@ -432,7 +432,7 @@ def test_maven_selector_uses_native_buildtool_success_semantics(
 ) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
     backend = FakeBackend(exec_output="BUILD SUCCESS\n")
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+    validator = DockerCodeValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_java_tests(
         ".",
@@ -446,7 +446,7 @@ def test_maven_selector_uses_native_buildtool_success_semantics(
 def test_java_auto_detection_rejects_ambiguous_project(tmp_path: Path) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
-    validator = DockerTestValidator(tmp_path, settings(), backend=FakeBackend())
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
 
     with pytest.raises(ValidationError, match="mehrdeutig"):
         validator.run_java_tests(".")
@@ -473,7 +473,7 @@ def test_workspace_environment_requires_read_or_write(
         _workspace_from_core_environment()
 
 
-def test_validator_settings_require_pinned_images() -> None:
+def code_validator_settings_require_pinned_images() -> None:
     with pytest.raises(ValueError, match="sha256"):
         ValidatorSettings(
             python_image="python:latest",
@@ -483,14 +483,14 @@ def test_validator_settings_require_pinned_images() -> None:
 
 
 def test_python_selector_cannot_be_used_as_pytest_option(tmp_path: Path) -> None:
-    validator = DockerTestValidator(tmp_path, settings(), backend=FakeBackend())
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
 
     with pytest.raises(ValidationError, match="pytest-Optionen"):
         validator.run_python_tests(".", "--collect-only")
 
 
 def test_python_selector_cannot_use_pytest_argument_file(tmp_path: Path) -> None:
-    validator = DockerTestValidator(tmp_path, settings(), backend=FakeBackend())
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
 
     with pytest.raises(ValidationError, match="Argument-Dateien"):
         validator.run_python_tests(".", "@opts.txt")
@@ -501,7 +501,7 @@ def test_gradle_selector_uses_native_buildtool_success_semantics(
 ) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
     backend = FakeBackend(exec_output="BUILD SUCCESS\n")
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+    validator = DockerCodeValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_java_tests(
         ".",
@@ -518,7 +518,7 @@ def test_gradle_selector_command_is_fixed_and_non_shell(
 ) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
     backend = FakeBackend()
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+    validator = DockerCodeValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_java_tests(
         ".",
@@ -560,7 +560,7 @@ def test_sandbox_verification_rejects_image_declared_volume(tmp_path: Path) -> N
                 return DockerCommandResult(0, json.dumps(payload), "")
             return DockerCommandResult(0, "ok", "")
 
-    validator = DockerTestValidator(
+    validator = DockerCodeValidator(
         tmp_path,
         settings(),
         backend=VolumeBackend(),
@@ -612,7 +612,7 @@ def test_maven_uses_prepared_cache_selected_by_dependency_key(tmp_path: Path) ->
         gradle_image=PINNED_GRADLE,
         maven_cache_root=cache_root,
     )
-    validator = DockerTestValidator(tmp_path, configured, backend=backend)
+    validator = DockerCodeValidator(tmp_path, configured, backend=backend)
 
     result = validator.run_java_tests(".", build_system="maven")
 
@@ -635,7 +635,7 @@ def test_maven_reports_missing_prepared_dependency_cache(tmp_path: Path) -> None
         gradle_image=PINNED_GRADLE,
         maven_cache_root=cache_root,
     )
-    validator = DockerTestValidator(tmp_path, configured, backend=FakeBackend())
+    validator = DockerCodeValidator(tmp_path, configured, backend=FakeBackend())
 
     result = validator.run_java_tests(".", build_system="maven")
 
@@ -657,7 +657,7 @@ def test_python_reports_missing_wsl_prepared_dependency_cache(
         gradle_image=PINNED_GRADLE,
         python_cache_root=tmp_path / "python-cache",
     )
-    validator = DockerTestValidator(tmp_path, configured, backend=FakeBackend())
+    validator = DockerCodeValidator(tmp_path, configured, backend=FakeBackend())
 
     result = validator.run_python_tests(".")
 
@@ -689,7 +689,7 @@ def test_python_uses_wsl_prepared_wheels_offline(tmp_path: Path) -> None:
         gradle_image=PINNED_GRADLE,
         python_cache_root=cache_root,
     )
-    validator = DockerTestValidator(tmp_path, configured, backend=backend)
+    validator = DockerCodeValidator(tmp_path, configured, backend=backend)
 
     result = validator.run_python_tests(".")
 
@@ -739,7 +739,7 @@ def test_python_cache_transfer_timeout_is_marked_timed_out(
             self.calls.append((["stream-tar", str(source), *args], None))
             raise subprocess.TimeoutExpired(args, timeout)
 
-    validator = DockerTestValidator(
+    validator = DockerCodeValidator(
         tmp_path,
         ValidatorSettings(
             python_image=PINNED_PYTHON,
@@ -766,7 +766,7 @@ def test_gradle_reports_missing_prepared_dependency_cache(tmp_path: Path) -> Non
         gradle_image=PINNED_GRADLE,
         gradle_cache_root=tmp_path / "gradle-cache",
     )
-    validator = DockerTestValidator(tmp_path, configured, backend=FakeBackend())
+    validator = DockerCodeValidator(tmp_path, configured, backend=FakeBackend())
 
     result = validator.run_java_tests(".", build_system="gradle")
 
@@ -790,7 +790,7 @@ def test_gradle_uses_prepared_cache_offline(tmp_path: Path) -> None:
         gradle_image=PINNED_GRADLE,
         gradle_cache_root=cache_root,
     )
-    validator = DockerTestValidator(tmp_path, configured, backend=backend)
+    validator = DockerCodeValidator(tmp_path, configured, backend=backend)
 
     result = validator.run_java_tests(".", build_system="gradle")
 
@@ -818,7 +818,7 @@ def test_gradle_uses_prepared_cache_offline(tmp_path: Path) -> None:
 def test_maven_build_packages_without_running_tests(tmp_path: Path) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
     backend = FakeBackend()
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+    validator = DockerCodeValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_maven_build(".")
 
@@ -843,7 +843,7 @@ def test_maven_build_packages_without_running_tests(tmp_path: Path) -> None:
 def test_gradle_build_requests_fixed_assemble_task(tmp_path: Path) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
     backend = FakeBackend()
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+    validator = DockerCodeValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_gradle_build(".")
 
@@ -874,7 +874,7 @@ def test_maven_build_requires_prepared_cache_when_configured(tmp_path: Path) -> 
         gradle_image=PINNED_GRADLE,
         maven_cache_root=tmp_path / "maven-cache",
     )
-    validator = DockerTestValidator(tmp_path, configured, backend=FakeBackend())
+    validator = DockerCodeValidator(tmp_path, configured, backend=FakeBackend())
 
     result = validator.run_maven_build(".")
 
@@ -891,7 +891,7 @@ def test_gradle_build_requires_prepared_cache_when_configured(tmp_path: Path) ->
         gradle_image=PINNED_GRADLE,
         gradle_cache_root=tmp_path / "gradle-cache",
     )
-    validator = DockerTestValidator(tmp_path, configured, backend=FakeBackend())
+    validator = DockerCodeValidator(tmp_path, configured, backend=FakeBackend())
 
     result = validator.run_gradle_build(".")
 
@@ -903,7 +903,7 @@ def test_gradle_build_requires_prepared_cache_when_configured(tmp_path: Path) ->
 def test_java_build_auto_detects_maven(tmp_path: Path) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
     backend = FakeBackend()
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+    validator = DockerCodeValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_java_build(".")
 
@@ -915,7 +915,7 @@ def test_java_build_auto_detects_maven(tmp_path: Path) -> None:
 def test_java_build_auto_detects_gradle(tmp_path: Path) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
     backend = FakeBackend()
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+    validator = DockerCodeValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_java_build(".")
 
@@ -927,7 +927,7 @@ def test_java_build_auto_detects_gradle(tmp_path: Path) -> None:
 def test_java_build_rejects_ambiguous_project(tmp_path: Path) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
-    validator = DockerTestValidator(tmp_path, settings(), backend=FakeBackend())
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
 
     with pytest.raises(ValidationError, match="mehrdeutig"):
         validator.run_java_build(".")
@@ -1002,7 +1002,7 @@ def test_python_empty_manifest_skips_pip_install(tmp_path: Path) -> None:
         gradle_image=PINNED_GRADLE,
         python_cache_root=cache_root,
     )
-    validator = DockerTestValidator(tmp_path, configured, backend=backend)
+    validator = DockerCodeValidator(tmp_path, configured, backend=backend)
 
     result = validator.run_python_tests(".")
 
@@ -1031,7 +1031,7 @@ def test_snapshot_preserves_fixture_suffixes(tmp_path: Path) -> None:
 
 def test_java_selector_cannot_be_build_tool_option(tmp_path: Path) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
-    validator = DockerTestValidator(tmp_path, settings(), backend=FakeBackend())
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
 
     with pytest.raises(ValidationError, match="Build-Tool-Optionen"):
         validator.run_java_tests(
@@ -1246,7 +1246,7 @@ def test_gradle_offline_dependency_failure_requests_cache_refresh(
                 return DockerCommandResult(1, "", "")
             return DockerCommandResult(0, "ok", "")
 
-    validator = DockerTestValidator(
+    validator = DockerCodeValidator(
         tmp_path,
         ValidatorSettings(
             python_image=PINNED_PYTHON,

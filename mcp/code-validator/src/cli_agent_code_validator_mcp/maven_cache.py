@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .cache_identity import project_cache_key
-from .test_validator_types import TestValidationError
+from .code_validator_types import CodeValidationError
 
 _CACHE_SCHEMA = "cli-agent-maven-cache-v5"
 _MAVEN_TRANSIENT_FILES = {"_remote.repositories", "resolver-status.properties"}
@@ -69,12 +69,12 @@ def maven_dependency_key(
 ) -> str:
     root = project.expanduser().resolve()
     if not root.is_dir():
-        raise TestValidationError(f"Maven-Projekt existiert nicht: {root}")
+        raise CodeValidationError(f"Maven-Projekt existiert nicht: {root}")
     root_pom = root / "pom.xml"
     if root_pom.is_symlink():
-        raise TestValidationError("Die Root-pom.xml darf kein Symlink sein.")
+        raise CodeValidationError("Die Root-pom.xml darf kein Symlink sein.")
     if not root_pom.is_file():
-        raise TestValidationError("Maven-Projekt benötigt eine pom.xml.")
+        raise CodeValidationError("Maven-Projekt benötigt eine pom.xml.")
     return project_cache_key(
         "maven",
         root,
@@ -98,7 +98,7 @@ def cache_entry(
 def validate_repository_tree(repository: Path) -> int:
     root = repository.resolve()
     if repository.is_symlink() or not root.is_dir():
-        raise TestValidationError("Der vorbereitete Maven-Cache ist kein Verzeichnis.")
+        raise CodeValidationError("Der vorbereitete Maven-Cache ist kein Verzeichnis.")
     total_bytes = 0
 
     def walk(directory: Path) -> None:
@@ -106,7 +106,7 @@ def validate_repository_tree(repository: Path) -> int:
         try:
             entries = os.scandir(directory)
         except OSError as exc:
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Der vorbereitete Maven-Cache konnte nicht gelesen werden."
             ) from exc
         with entries:
@@ -115,11 +115,11 @@ def validate_repository_tree(repository: Path) -> int:
                 try:
                     mode = entry.stat(follow_symlinks=False).st_mode
                 except OSError as exc:
-                    raise TestValidationError(
+                    raise CodeValidationError(
                         "Ein Maven-Cache-Eintrag konnte nicht geprüft werden."
                     ) from exc
                 if stat.S_ISLNK(mode):
-                    raise TestValidationError(
+                    raise CodeValidationError(
                         "Symlinks sind im vorbereiteten Maven-Cache nicht erlaubt."
                     )
                 if stat.S_ISDIR(mode):
@@ -127,7 +127,7 @@ def validate_repository_tree(repository: Path) -> int:
                 elif stat.S_ISREG(mode):
                     total_bytes += entry.stat(follow_symlinks=False).st_size
                 else:
-                    raise TestValidationError(
+                    raise CodeValidationError(
                         "Der Maven-Cache darf nur reguläre Dateien und "
                         "Verzeichnisse enthalten."
                     )
@@ -140,7 +140,7 @@ def sanitize_repository_for_offline_use(repository: Path) -> None:
     """Keep the offline artifact repository, but drop resolver-only provenance/state."""
     root = repository.resolve()
     if repository.is_symlink() or not root.is_dir():
-        raise TestValidationError(
+        raise CodeValidationError(
             "Der vorbereitete Maven-Cache ist kein Verzeichnis."
         )
 
@@ -148,7 +148,7 @@ def sanitize_repository_for_offline_use(repository: Path) -> None:
         try:
             entries = os.scandir(directory)
         except OSError as exc:
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Der vorbereitete Maven-Cache konnte nicht gelesen werden."
             ) from exc
         with entries:
@@ -157,11 +157,11 @@ def sanitize_repository_for_offline_use(repository: Path) -> None:
                 try:
                     mode = entry.stat(follow_symlinks=False).st_mode
                 except OSError as exc:
-                    raise TestValidationError(
+                    raise CodeValidationError(
                         "Ein Maven-Cache-Eintrag konnte nicht geprüft werden."
                     ) from exc
                 if stat.S_ISLNK(mode):
-                    raise TestValidationError(
+                    raise CodeValidationError(
                         "Symlinks sind im vorbereiteten Maven-Cache nicht erlaubt."
                     )
                 if stat.S_ISDIR(mode):
@@ -174,12 +174,12 @@ def sanitize_repository_for_offline_use(repository: Path) -> None:
                         try:
                             path.unlink()
                         except OSError as exc:
-                            raise TestValidationError(
+                            raise CodeValidationError(
                                 "Maven-Repository-Metadaten konnten nicht "
                                 "bereinigt werden."
                             ) from exc
                 else:
-                    raise TestValidationError(
+                    raise CodeValidationError(
                         "Der Maven-Cache darf nur reguläre Dateien und "
                         "Verzeichnisse enthalten."
                     )

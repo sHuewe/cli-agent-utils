@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "cli-agent-test-validator-mcp"
+name = "cli-agent-code-validator-mcp"
 version = "1.0.0"
 description = "Hardened offline Python and Java test validation for cli-agent"
 readme = "README.md"
@@ -19,11 +19,11 @@ dependencies = [
 dev = ["pytest>=9,<10"]
 
 [project.scripts]
-cli-agent-test-validator-mcp = "cli_agent_test_validator_mcp.server:main"
-cli-agent-test-cache = "cli_agent_test_validator_mcp.cache_cli:main"
+cli-agent-code-validator-mcp = "cli_agent_code_validator_mcp.server:main"
+cli-agent-test-cache = "cli_agent_code_validator_mcp.cache_cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/cli_agent_test_validator_mcp"]
+packages = ["src/cli_agent_code_validator_mcp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

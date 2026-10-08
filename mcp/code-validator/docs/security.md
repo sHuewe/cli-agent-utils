@@ -1,6 +1,6 @@
-# Sandbox Test Validator MCP
+# Code-Validator MCP
 
-The Sandbox Test Validator runs Python and Java test suites in a short-lived Docker container while keeping the real `cli-agent` workspace outside that container.
+The Code-Validator runs Python and Java test suites in a short-lived Docker container while keeping the real `cli-agent` workspace outside that container.
 
 ## Tools
 
@@ -362,9 +362,9 @@ Example machine-wide `admin_config.toml`:
 
 ```toml
 [[mcp.trusted_servers]]
-name = "test-validator"
+name = "code-validator"
 transport = "stdio"
-command = "C:/absolute/path/to/cli-agent-test-validator-mcp.exe"
+command = "C:/absolute/path/to/cli-agent-code-validator-mcp.exe"
 required_workspace_access = "read"
 trust_instructions = false
 args = [
@@ -378,7 +378,7 @@ Project/user config:
 
 ```toml
 [[mcp_servers]]
-name = "test-validator"
+name = "code-validator"
 ```
 
 Run with:

@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-        project: ["mcp/compose", "mcp/test-validator"]
+        project: ["mcp/compose", "mcp/code-validator"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,6 +36,6 @@ jobs:
           if [ "${{ matrix.project }}" = "mcp/compose" ]; then
             /tmp/mcp-wheel-smoke/bin/cli-agent-compose-mcp --help
           else
-            /tmp/mcp-wheel-smoke/bin/cli-agent-test-validator-mcp --help
+            /tmp/mcp-wheel-smoke/bin/cli-agent-code-validator-mcp --help
             /tmp/mcp-wheel-smoke/bin/cli-agent-test-cache --help
           fi

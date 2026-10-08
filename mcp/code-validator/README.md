@@ -1,18 +1,18 @@
-# Sandbox Test Validator MCP
+# Code-Validator MCP
 
 Install just this distribution:
 
 ```bash
-pipx install ./mcp/test-validator
+pipx install ./mcp/code-validator
 ```
 
-This installs the `cli-agent-test-validator-mcp` MCP command and `cli-agent-test-cache` preparation CLI, not Compose or the removed legacy validator. For development, install `./mcp/test-validator[dev]`.
+This installs the `cli-agent-code-validator-mcp` MCP command and `cli-agent-test-cache` preparation CLI, not Compose or the removed legacy validator. For development, install `./mcp/code-validator[dev]`.
 
 The former `validate_python_project` application-start tool has been removed and is **not** replaced by the current Python test runner.
 
-## Sandbox Test Validator MCP
+## Code-Validator MCP
 
-The test validator is the recommended validator for automated code checks. It exposes three model-visible tools:
+The code validator is the recommended validator for automated code checks. It exposes three model-visible tools:
 
 ```text
 run_python_tests
@@ -113,7 +113,7 @@ The command uses Maven's normal user/global configuration and credentials, inclu
 
 Preparation may also be affected by project Maven configuration such as `.mvn/maven.config`. That is acceptable: preparation is not the sandbox boundary, and no guarantee is made that its effective build model matches the later fixed offline invocation.
 
-Before promotion, Maven resolver-only provenance/state files such as `_remote.repositories`, `resolver-status.properties` and `*.lastUpdated` are removed from the prepared repository. This is intentional: the sandbox does not receive the user's mirror/repository settings, and the prepared cache is treated as an explicit offline artifact snapshot rather than as a normal Maven download cache. Artifacts therefore remain usable even when preparation used a company mirror such as JFrog. The test validator never receives Maven/JFrog credentials. It calculates the same project identity, streams only that prepared repository into container tmpfs, and executes Maven offline. Cache preparation runs through the Maven `package` lifecycle with `-DskipTests`, so build/package plugins needed by `run_maven_build` are prepared as well. Changes to POMs, parent POMs, modules or other Maven inputs do **not** create a new cache key. If the offline build reports unresolved/missing dependencies, the tool returns a user-facing hint to run `prepare-maven` again. Every preparation builds a fresh temporary cache and replaces only after a successful preparation the previous cache for that project.
+Before promotion, Maven resolver-only provenance/state files such as `_remote.repositories`, `resolver-status.properties` and `*.lastUpdated` are removed from the prepared repository. This is intentional: the sandbox does not receive the user's mirror/repository settings, and the prepared cache is treated as an explicit offline artifact snapshot rather than as a normal Maven download cache. Artifacts therefore remain usable even when preparation used a company mirror such as JFrog. The code validator never receives Maven/JFrog credentials. It calculates the same project identity, streams only that prepared repository into container tmpfs, and executes Maven offline. Cache preparation runs through the Maven `package` lifecycle with `-DskipTests`, so build/package plugins needed by `run_maven_build` are prepared as well. Changes to POMs, parent POMs, modules or other Maven inputs do **not** create a new cache key. If the offline build reports unresolved/missing dependencies, the tool returns a user-facing hint to run `prepare-maven` again. Every preparation builds a fresh temporary cache and replaces only after a successful preparation the previous cache for that project.
 
 For Gradle, the validator and preparation CLI use `~/.cli-agent/dependency-cache/gradle` by default. Prepare the current build configuration once as the normal user in the same host environment as the MCP:
 
@@ -141,16 +141,16 @@ The images must already exist in the Docker daemon because the validator uses `-
 With current `cli-agent`, external stdio launch configuration belongs in the machine-wide `admin_config.toml`. First determine the absolute executable path, for example on Windows:
 
 ```powershell
-(Get-Command cli-agent-test-validator-mcp).Source
+(Get-Command cli-agent-code-validator-mcp).Source
 ```
 
 Then configure the trusted server:
 
 ```toml
 [[mcp.trusted_servers]]
-name = "test-validator"
+name = "code-validator"
 transport = "stdio"
-command = "C:/absolute/path/to/cli-agent-test-validator-mcp.exe"
+command = "C:/absolute/path/to/cli-agent-code-validator-mcp.exe"
 required_workspace_access = "read"
 trust_instructions = false
 args = [
@@ -180,7 +180,7 @@ The project/user config references only the administrator-approved server name:
 
 ```toml
 [[mcp_servers]]
-name = "test-validator"
+name = "code-validator"
 ```
 
 The server will not start without explicit workspace permission. For a normal CLI run:
