@@ -27,12 +27,14 @@ _JAVA_SELECTOR = re.compile(r"^[A-Za-z0-9_.$*#\[\],-]+$")
 _MAX_SELECTOR_CHARS = 512
 _MAVEN_SELECTOR_REPORT_DIR = "/output/surefire-reports"
 _GRADLE_SELECTOR_INIT_PATH = "/tmp/cli-agent-test-selector.gradle"
+_GRADLE_SELECTOR_RESULT_DIR = "/output/gradle-test-results"
 _GRADLE_SELECTOR_INIT_SCRIPT = """\
 allprojects {
     tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->
-        task.doFirst {
-            task.filter.setFailOnNoMatchingTests(true)
-        }
+        task.filter.setFailOnNoMatchingTests(false)
+        task.reports.junitXml.outputLocation.set(
+            file("/output/gradle-test-results/" + project.path.replace(':', '_'))
+        )
     }
 }
 """
@@ -361,6 +363,7 @@ class DockerTestValidator:
         python_wheels: Path | None = None,
         gradle_home: Path | None = None,
         require_maven_test_match: bool = False,
+        require_gradle_test_match: bool = False,
     ) -> dict[str, Any]:
         project = self._resolve_project(project_path)
         snapshot = create_project_snapshot(
@@ -797,6 +800,28 @@ class DockerTestValidator:
                     timeout=self.settings.setup_timeout_seconds,
                 )
                 selector_not_matched = report_check.returncode != 0
+            if require_gradle_test_match and tested.returncode == 0:
+                report_check = self._docker(
+                    [
+                        "exec",
+                        "--user",
+                        "65532:65532",
+                        container_name,
+                        "sh",
+                        "-c",
+                        (
+                            "for report in "
+                            + _GRADLE_SELECTOR_RESULT_DIR
+                            + "/*/TEST-*.xml; do "
+                            '[ -f "$report" ] || continue; '
+                            'while IFS= read -r line || [ -n "$line" ]; do '
+                            'case "$line" in *\'<testcase \'*|*\'<testcase>\'*) '
+                            "exit 0 ;; esac; done < "$report"; done; exit 1"
+                        ),
+                    ],
+                    timeout=self.settings.setup_timeout_seconds,
+                )
+                selector_not_matched = report_check.returncode != 0
             result_payload = {
                 "success": tested.returncode == 0 and not selector_not_matched,
                 "framework": framework,
@@ -1099,6 +1124,7 @@ class DockerTestValidator:
             dependency_cache_key=dependency_cache_key,
             gradle_home=gradle_home,
             require_maven_test_match=selected == "maven" and selector is not None,
+            require_gradle_test_match=selected == "gradle" and selector is not None,
         )
 
     def run_java_build(
