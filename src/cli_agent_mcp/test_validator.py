@@ -27,21 +27,15 @@ _JAVA_SELECTOR = re.compile(r"^[A-Za-z0-9_.$*#\[\],-]+$")
 _MAX_SELECTOR_CHARS = 512
 _MAVEN_SELECTOR_REPORT_DIR = "/output/surefire-reports"
 _GRADLE_SELECTOR_INIT_PATH = "/tmp/cli-agent-test-selector.gradle"
-_GRADLE_SELECTOR_RESULT_DIR = "/output/gradle-test-results"
+_GRADLE_SELECTOR_MATCH_PATH = "/output/gradle-test-match"
 _GRADLE_SELECTOR_INIT_SCRIPT = """\
 allprojects {
     tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->
+        task.afterTest { descriptor, result ->
+            new File("/output/gradle-test-match").text = "matched\\n"
+        }
         task.doFirst {
             task.filter.setFailOnNoMatchingTests(false)
-            task.reports.junitXml.required.set(true)
-            task.reports.junitXml.outputLocation.set(
-                file(
-                    "/output/gradle-test-results/"
-                    + project.path.replace(':', '_')
-                    + "/"
-                    + task.name
-                )
-            )
         }
     }
 }
@@ -57,22 +51,8 @@ for report in /output/surefire-reports/TEST-*.xml; do
 done
 exit 1
 """
-_GRADLE_SELECTOR_REPORT_CHECK_SCRIPT = """\
-for project_dir in /output/gradle-test-results/*; do
-    [ -d "$project_dir" ] || continue
-    for task_dir in "$project_dir"/*; do
-        [ -d "$task_dir" ] || continue
-        for report in "$task_dir"/TEST-*.xml; do
-            [ -f "$report" ] || continue
-            while IFS= read -r line || [ -n "$line" ]; do
-                case "$line" in
-                    *'<testcase '*|*'<testcase>'*) exit 0 ;;
-                esac
-            done < "$report"
-        done
-    done
-done
-exit 1
+_GRADLE_SELECTOR_MATCH_CHECK_SCRIPT = """\
+[ -s /output/gradle-test-match ]
 """
 
 
@@ -834,7 +814,7 @@ class DockerTestValidator:
                         container_name,
                         "sh",
                         "-c",
-                        _GRADLE_SELECTOR_REPORT_CHECK_SCRIPT,
+                        _GRADLE_SELECTOR_MATCH_CHECK_SCRIPT,
                     ],
                     timeout=self.settings.setup_timeout_seconds,
                 )
