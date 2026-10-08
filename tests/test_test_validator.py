@@ -629,6 +629,63 @@ def test_gradle_selector_disables_dry_run_and_ignores_skipped_results(
     assert "/output/gradle-test-match" in script
 
 
+def test_gradle_selector_requires_gradle_8_3_or_newer(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+
+    class OldGradleBackend(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            self.calls.append((args, input_bytes))
+            if args[0] == "inspect":
+                return DockerCommandResult(0, inspect_payload(), "")
+            if args[0] == "exec" and args[-2:] == ["gradle", "--version"]:
+                return DockerCommandResult(0, "Gradle 8.2\n", "")
+            return DockerCommandResult(0, self.exec_output, "")
+
+    validator = DockerTestValidator(
+        tmp_path,
+        settings(),
+        backend=OldGradleBackend(),
+    )
+
+    result = validator.run_java_tests(
+        ".",
+        "com.example.ExampleTest#works",
+        build_system="gradle",
+    )
+
+    assert result["success"] is False
+    assert result["reason"] == "unsupported_gradle_version"
+    assert "8.3" in result["message_to_user"]
+
+
+def test_gradle_selector_marker_is_limited_to_cli_filtered_tasks(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    backend = FakeBackend()
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    validator.run_java_tests(
+        ".",
+        "com.example.ExampleTest#works",
+        build_system="gradle",
+    )
+
+    init_script_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec"
+        and "cli-agent-test-selector.gradle" in " ".join(args)
+        and "cat >" in " ".join(args)
+    )
+    script = " ".join(init_script_call)
+    assert "commandLineIncludePatterns" in script
+    assert "!task.filter.commandLineIncludePatterns.isEmpty()" in script
+
+
 def test_gradle_selector_message_names_gradle(tmp_path: Path) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
 
