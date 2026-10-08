@@ -1,7 +1,7 @@
 version = 1
 # exclude_paths = []  # inherited from the parent flow
 inputs = ["question", "question_id", "manual_path", "okf_root"]
-result = "steps.verify.output"
+result = "steps.post_split_verify.output"
 
 [retry]
 max_attempts = 3
@@ -71,3 +71,17 @@ flow = "flow/okf/flows/split-concept.toml"
 concept_path = "${steps.apply.output.target_path}"
 okf_root = "${input.okf_root}"
 
+[[steps]]
+id = "post_split_verify"
+prompt_file = "flow/okf/prompts/questions_post_split_verify.md"
+output = "flow/okf/flow_okf_from_manual/state/questions/post-split-verify-${input.question_id}.json"
+overwrite_output = true
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+okf_root = "${input.okf_root}"
+question = "${input.question}"
+change = "${steps.apply.output}"
+prior_verification = "${steps.verify.output}"
+split_verification = "${steps.split_changed_concept.output}"
