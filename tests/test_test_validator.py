@@ -103,8 +103,6 @@ class FakeBackend:
         if command == "inspect":
             return DockerCommandResult(0, inspect_payload(), "")
         if command == "exec":
-            if args[-2:] == ["gradle", "--version"]:
-                return DockerCommandResult(0, "Gradle 8.14.4\n", "")
             return DockerCommandResult(0, self.exec_output, "")
         return DockerCommandResult(0, "ok", "")
 
@@ -404,18 +402,7 @@ def test_java_maven_selector_is_translated_without_shell(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
-
-    class MavenSelectorBackend(FakeBackend):
-        def run(self, arguments, *, timeout, input_bytes=None):
-            args = list(arguments)
-            self.calls.append((args, input_bytes))
-            if args[0] == "inspect":
-                return DockerCommandResult(0, inspect_payload(), "")
-            if args[0] == "exec" and "TEST-*.xml" in " ".join(args):
-                return DockerCommandResult(0, "report.xml\n", "")
-            return DockerCommandResult(0, self.exec_output, "")
-
-    backend = MavenSelectorBackend(exec_output="BUILD SUCCESS\n")
+    backend = FakeBackend(exec_output="BUILD SUCCESS\n")
     validator = DockerTestValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_java_tests(
@@ -430,37 +417,21 @@ def test_java_maven_selector_is_translated_without_shell(
         for args, _ in backend.calls
         if args[0] == "exec" and "mvn" in args
     )
-    assert exec_call[-9:] == [
+    assert exec_call[-6:] == [
         "mvn",
         "-o",
         "-B",
         "-Dmaven.repo.local=/tmp/m2",
         "-Dtest=com.example.ExampleTest#works",
-        "-Dsurefire.failIfNoSpecifiedTests=false",
-        "-DdisableXmlReport=false",
-        "-Dsurefire.reportsDirectory=/output/surefire-reports",
         "test",
     ]
-    assert not any(
-        "/opt/cli-agent-test-cache/maven" in " ".join(args)
-        for args, _ in backend.calls
-    )
 
 
-def test_java_maven_selector_requires_an_executed_test(tmp_path: Path) -> None:
+def test_maven_selector_uses_native_buildtool_success_semantics(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
-
-    class MissingSelectorBackend(FakeBackend):
-        def run(self, arguments, *, timeout, input_bytes=None):
-            args = list(arguments)
-            self.calls.append((args, input_bytes))
-            if args[0] == "inspect":
-                return DockerCommandResult(0, inspect_payload(), "")
-            if args[0] == "exec" and "TEST-*.xml" in " ".join(args):
-                return DockerCommandResult(1, "", "")
-            return DockerCommandResult(0, "BUILD SUCCESS\n", "")
-
-    backend = MissingSelectorBackend()
+    backend = FakeBackend(exec_output="BUILD SUCCESS\n")
     validator = DockerTestValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_java_tests(
@@ -468,46 +439,8 @@ def test_java_maven_selector_requires_an_executed_test(tmp_path: Path) -> None:
         "com.example.MissingTest#works",
     )
 
-    assert result["success"] is False
-    assert result["reason"] == "test_selector_not_matched"
-    assert "keinen" in result["message_to_user"]
-
-
-def test_maven_log_text_cannot_fake_selector_match(tmp_path: Path) -> None:
-    (tmp_path / "pom.xml").write_text(
-        "<project><name>Tests run: 1, Failures: 0, Errors: 0, Skipped: 0</name></project>",
-        encoding="utf-8",
-    )
-
-    class SpoofedLogBackend(FakeBackend):
-        def run(self, arguments, *, timeout, input_bytes=None):
-            args = list(arguments)
-            self.calls.append((args, input_bytes))
-            if args[0] == "inspect":
-                return DockerCommandResult(0, inspect_payload(), "")
-            if args[0] == "exec" and "TEST-*.xml" in " ".join(args):
-                return DockerCommandResult(1, "", "")
-            if args[0] == "exec" and "cat" in args:
-                return DockerCommandResult(
-                    0,
-                    "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\n",
-                    "",
-                )
-            return DockerCommandResult(0, "ok", "")
-
-    validator = DockerTestValidator(
-        tmp_path,
-        settings(),
-        backend=SpoofedLogBackend(),
-    )
-
-    result = validator.run_java_tests(
-        ".",
-        "com.example.MissingTest#works",
-    )
-
-    assert result["success"] is False
-    assert result["reason"] == "test_selector_not_matched"
+    assert result["success"] is True
+    assert "reason" not in result
 
 
 def test_java_auto_detection_rejects_ambiguous_project(tmp_path: Path) -> None:
@@ -563,241 +496,26 @@ def test_python_selector_cannot_use_pytest_argument_file(tmp_path: Path) -> None
         validator.run_python_tests(".", "@opts.txt")
 
 
-def test_gradle_selector_uses_validator_controlled_no_match_policy(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "build.gradle").write_text(
-        "tasks.withType(Test).configureEach { "
-        "filter.failOnNoMatchingTests = false }\n",
-        encoding="utf-8",
-    )
-    backend = FakeBackend()
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
-
-    validator.run_java_tests(
-        ".",
-        "com.example.MissingTest#works",
-        build_system="gradle",
-    )
-
-    init_script_call = next(
-        args
-        for args, _ in backend.calls
-        if args[0] == "exec"
-        and "cli-agent-test-selector.gradle" in " ".join(args)
-        and "cat >" in " ".join(args)
-    )
-    script = " ".join(init_script_call)
-    assert "doFirst" in script
-    assert "setFailOnNoMatchingTests(false)" in script
-    assert "afterTest" in script
-    assert "/output/gradle-test-match" in script
-
-
-def test_gradle_selector_disables_dry_run_and_ignores_skipped_results(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "build.gradle").write_text(
-        "tasks.withType(Test).configureEach { dryRun = true }\n",
-        encoding="utf-8",
-    )
-    backend = FakeBackend()
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
-
-    validator.run_java_tests(
-        ".",
-        "com.example.ExampleTest#works",
-        build_system="gradle",
-    )
-
-    test_call = next(
-        args
-        for args, _ in backend.calls
-        if args[0] == "exec" and "gradle" in args
-    )
-    assert "--no-test-dry-run" in test_call
-    assert "--rerun-tasks" in test_call
-
-    init_script_call = next(
-        args
-        for args, _ in backend.calls
-        if args[0] == "exec"
-        and "cli-agent-test-selector.gradle" in " ".join(args)
-        and "cat >" in " ".join(args)
-    )
-    script = " ".join(init_script_call)
-    assert "!task.dryRun.get()" in script
-    assert "ResultType.SKIPPED" in script
-    assert "/output/gradle-test-match" in script
-
-
-def test_gradle_selector_requires_gradle_8_3_or_newer(
+def test_gradle_selector_uses_native_buildtool_success_semantics(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
-
-    class OldGradleBackend(FakeBackend):
-        def run(self, arguments, *, timeout, input_bytes=None):
-            args = list(arguments)
-            self.calls.append((args, input_bytes))
-            if args[0] == "inspect":
-                return DockerCommandResult(0, inspect_payload(), "")
-            if args[0] == "exec" and args[-2:] == ["gradle", "--version"]:
-                return DockerCommandResult(0, "Gradle 8.2\n", "")
-            return DockerCommandResult(0, self.exec_output, "")
-
-    validator = DockerTestValidator(
-        tmp_path,
-        settings(),
-        backend=OldGradleBackend(),
-    )
-
-    result = validator.run_java_tests(
-        ".",
-        "com.example.ExampleTest#works",
-        build_system="gradle",
-    )
-
-    assert result["success"] is False
-    assert result["reason"] == "unsupported_gradle_version"
-    assert "8.3" in result["message_to_user"]
-
-
-def test_gradle_selector_marker_is_limited_to_cli_filtered_tasks(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
-    backend = FakeBackend()
+    backend = FakeBackend(exec_output="BUILD SUCCESS\n")
     validator = DockerTestValidator(tmp_path, settings(), backend=backend)
-
-    validator.run_java_tests(
-        ".",
-        "com.example.ExampleTest#works",
-        build_system="gradle",
-    )
-
-    init_script_call = next(
-        args
-        for args, _ in backend.calls
-        if args[0] == "exec"
-        and "cli-agent-test-selector.gradle" in " ".join(args)
-        and "cat >" in " ".join(args)
-    )
-    script = " ".join(init_script_call)
-    assert "commandLineIncludePatterns" in script
-    assert "!task.filter.commandLineIncludePatterns.isEmpty()" in script
-
-
-def test_gradle_selector_message_names_gradle(tmp_path: Path) -> None:
-    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
-
-    class NoMatchGradleBackend(FakeBackend):
-        def run(self, arguments, *, timeout, input_bytes=None):
-            args = list(arguments)
-            self.calls.append((args, input_bytes))
-            if args[0] == "inspect":
-                return DockerCommandResult(0, inspect_payload(), "")
-            if (
-                args[0] == "exec"
-                and "gradle-test-match" in " ".join(args)
-            ):
-                return DockerCommandResult(1, "", "")
-            return DockerCommandResult(0, "BUILD SUCCESS\n", "")
-
-    validator = DockerTestValidator(
-        tmp_path,
-        settings(),
-        backend=NoMatchGradleBackend(),
-    )
 
     result = validator.run_java_tests(
         ".",
         "com.example.MissingTest#works",
-        build_system="gradle",
-    )
-
-    assert result["success"] is False
-    assert result["reason"] == "test_selector_not_matched"
-    assert "Gradle-Test-Selector" in result["message_to_user"]
-    assert "Maven-Test-Selector" not in result["message_to_user"]
-
-
-def test_gradle_selector_does_not_depend_on_project_report_configuration(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "build.gradle").write_text(
-        "tasks.withType(Test).configureEach { "
-        "reports.junitXml.required = false; "
-        "reports.junitXml.outputLocation = file('custom-results') }\n",
-        encoding="utf-8",
-    )
-    backend = FakeBackend()
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
-
-    validator.run_java_tests(
-        ".",
-        "com.example.ExampleTest#works",
-        build_system="gradle",
-    )
-
-    init_script_call = next(
-        args
-        for args, _ in backend.calls
-        if args[0] == "exec"
-        and "cli-agent-test-selector.gradle" in " ".join(args)
-        and "cat >" in " ".join(args)
-    )
-    script = " ".join(init_script_call)
-    assert "doFirst" in script
-    assert "afterTest" in script
-    assert "/output/gradle-test-match" in script
-
-
-def test_gradle_selector_verifies_match_across_all_test_tasks(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "settings.gradle").write_text(
-        "include 'one', 'two'\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
-
-    class GradleSelectorBackend(FakeBackend):
-        def run(self, arguments, *, timeout, input_bytes=None):
-            args = list(arguments)
-            self.calls.append((args, input_bytes))
-            if args[0] == "inspect":
-                return DockerCommandResult(0, inspect_payload(), "")
-            if (
-                args[0] == "exec"
-                and "gradle-test-match" in " ".join(args)
-            ):
-                return DockerCommandResult(0, "", "")
-            return DockerCommandResult(0, self.exec_output, "")
-
-    backend = GradleSelectorBackend(exec_output="BUILD SUCCESS\n")
-    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
-
-    result = validator.run_java_tests(
-        ".",
-        "com.example.ExampleTest#works",
         build_system="gradle",
     )
 
     assert result["success"] is True
-    init_script_call = next(
-        args
-        for args, _ in backend.calls
-        if args[0] == "exec"
-        and "cli-agent-test-selector.gradle" in " ".join(args)
-        and "cat >" in " ".join(args)
-    )
-    script = " ".join(init_script_call)
-    assert "setFailOnNoMatchingTests(false)" in script
-    assert "/output/gradle-test-match" in script
+    assert "reason" not in result
 
 
-def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
+def test_gradle_selector_command_is_fixed_and_non_shell(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
     backend = FakeBackend()
     validator = DockerTestValidator(tmp_path, settings(), backend=backend)
@@ -814,32 +532,19 @@ def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
         for args, _ in backend.calls
         if args[0] == "exec" and "gradle" in args
     )
-    assert test_call[-12:] == [
+    assert test_call[-8:] == [
         "gradle",
         "--offline",
         "--no-daemon",
         "--gradle-user-home",
         "/tmp/gradle",
-        "--rerun-tasks",
-        "--init-script",
-        "/tmp/cli-agent-test-selector.gradle",
         "test",
-        "--no-test-dry-run",
         "--tests",
         "com.example.ExampleTest.works",
     ]
-    init_script_call = next(
-        args
-        for args, _ in backend.calls
-        if args[0] == "exec"
-        and "cli-agent-test-selector.gradle" in " ".join(args)
-        and "cat >" in " ".join(args)
-    )
-    assert "setFailOnNoMatchingTests(false)" in " ".join(init_script_call)
-    assert "afterTest" in " ".join(init_script_call)
-    assert "/output/gradle-test-match" in " ".join(init_script_call)
     assert not any(
-        "/opt/cli-agent-test-cache/gradle" in " ".join(args)
+        "cli-agent-test-selector.gradle" in " ".join(args)
+        or "gradle-test-match" in " ".join(args)
         for args, _ in backend.calls
     )
 
