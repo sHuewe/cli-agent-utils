@@ -67,18 +67,25 @@ def _contains_sensitive_key_hint_bytes(content: bytes) -> bool:
     return False
 
 
-def _iter_scalar_values(value: object) -> Iterator[str]:
+def _consume_node_budget(budget: list[int], amount: int = 1) -> None:
+    budget[0] -= amount
+    if budget[0] < 0:
+        raise SecretDiscoveryLimitError(
+            "Konfigurationsstruktur ist zu groß für sichere Secret-Erkennung."
+        )
+
+
+def _iter_scalar_values(
+    value: object,
+    *,
+    budget: list[int],
+) -> Iterator[str]:
     stack: list[object] = [value]
     seen: set[int] = set()
-    visited = 0
 
     while stack:
         current = stack.pop()
-        visited += 1
-        if visited > _MAX_STRUCTURED_NODES:
-            raise SecretDiscoveryLimitError(
-                "Konfigurationsstruktur ist zu groß für sichere Secret-Erkennung."
-            )
+        _consume_node_budget(budget)
 
         if current is None:
             continue
@@ -88,6 +95,7 @@ def _iter_scalar_values(value: object) -> Iterator[str]:
             if identity in seen:
                 continue
             seen.add(identity)
+            _consume_node_budget(budget, len(current))
             stack.extend(current.values())
             continue
 
@@ -96,6 +104,7 @@ def _iter_scalar_values(value: object) -> Iterator[str]:
             if identity in seen:
                 continue
             seen.add(identity)
+            _consume_node_budget(budget, len(current))
             stack.extend(current)
             continue
 
@@ -109,27 +118,31 @@ def _iter_scalar_values(value: object) -> Iterator[str]:
         yield str(current)
 
 
-def _iter_mapping_secret_values(value: object) -> Iterator[str]:
+def _iter_mapping_secret_values(
+    value: object,
+    *,
+    budget: list[int] | None = None,
+) -> Iterator[str]:
+    shared_budget = budget if budget is not None else [_MAX_STRUCTURED_NODES]
     stack: list[object] = [value]
     seen: set[int] = set()
-    visited = 0
 
     while stack:
         current = stack.pop()
-        visited += 1
-        if visited > _MAX_STRUCTURED_NODES:
-            raise SecretDiscoveryLimitError(
-                "Konfigurationsstruktur ist zu groß für sichere Secret-Erkennung."
-            )
+        _consume_node_budget(shared_budget)
 
         if isinstance(current, Mapping):
             identity = id(current)
             if identity in seen:
                 continue
             seen.add(identity)
+            _consume_node_budget(shared_budget, len(current))
             for key, item in current.items():
                 if _is_sensitive_key(key):
-                    yield from _iter_scalar_values(item)
+                    yield from _iter_scalar_values(
+                        item,
+                        budget=shared_budget,
+                    )
                 if isinstance(item, (Mapping, list, tuple, set)):
                     stack.append(item)
         elif isinstance(current, (list, tuple, set)):
@@ -137,13 +150,18 @@ def _iter_mapping_secret_values(value: object) -> Iterator[str]:
             if identity in seen:
                 continue
             seen.add(identity)
+            _consume_node_budget(shared_budget, len(current))
             stack.extend(current)
 
 
-def _iter_yaml_secret_values(text: str) -> Iterator[str]:
-    for document in yaml.safe_load_all(text):
+def _iter_yaml_secret_values(content: bytes) -> Iterator[str]:
+    budget = [_MAX_STRUCTURED_NODES]
+    for document in yaml.safe_load_all(content):
         if document is not None:
-            yield from _iter_mapping_secret_values(document)
+            yield from _iter_mapping_secret_values(
+                document,
+                budget=budget,
+            )
 
 
 def _parse_dotenv_secret_values(text: str) -> tuple[str, ...]:
@@ -165,7 +183,12 @@ def _parse_dotenv_secret_values(text: str) -> tuple[str, ...]:
                     "Eine sensitive .env-Zeile verwendet Variableninterpolation; "
                     "sichere Secret-Erkennung ist nicht vollständig möglich."
                 )
-            values.extend(_iter_scalar_values(binding.value))
+            values.extend(
+                _iter_scalar_values(
+                    binding.value,
+                    budget=[_MAX_STRUCTURED_NODES],
+                )
+            )
     return tuple(values)
 
 
