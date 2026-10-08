@@ -534,6 +534,28 @@ def test_python_plan_include_error_does_not_echo_operand_credentials(
     assert "https://user:" not in message
 
 
+def test_python_plan_does_not_treat_fragment_hash_as_comment(
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from cli_agent_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "base.txt#x").write_text(
+        "demo-package==1.0\n",
+        encoding="utf-8",
+    )
+    (project / "requirements.txt").write_text(
+        "-r base.txt#x --extra-index-url "
+        "https://user:token@example.invalid/simple\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Exception):
+        python_dependency_plan(project)
+
+
 def test_python_plan_rejects_trailing_tokens_after_include(
     tmp_path: Path,
 ) -> None:
