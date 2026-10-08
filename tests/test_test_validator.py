@@ -561,6 +561,35 @@ def test_python_selector_cannot_use_pytest_argument_file(tmp_path: Path) -> None
         validator.run_python_tests(".", "@opts.txt")
 
 
+def test_gradle_selector_uses_validator_controlled_no_match_policy(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "build.gradle").write_text(
+        "tasks.withType(Test).configureEach { "
+        "filter.failOnNoMatchingTests = false }\n",
+        encoding="utf-8",
+    )
+    backend = FakeBackend()
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    validator.run_java_tests(
+        ".",
+        "com.example.MissingTest#works",
+        build_system="gradle",
+    )
+
+    init_script_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec"
+        and "cli-agent-test-selector.gradle" in " ".join(args)
+        and "cat >" in " ".join(args)
+    )
+    script = " ".join(init_script_call)
+    assert "doFirst" in script
+    assert "setFailOnNoMatchingTests(true)" in script
+
+
 def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
     backend = FakeBackend()
@@ -578,16 +607,26 @@ def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
         for args, _ in backend.calls
         if args[0] == "exec" and "gradle" in args
     )
-    assert test_call[-8:] == [
+    assert test_call[-10:] == [
         "gradle",
         "--offline",
         "--no-daemon",
         "--gradle-user-home",
         "/tmp/gradle",
+        "--init-script",
+        "/tmp/cli-agent-test-selector.gradle",
         "test",
         "--tests",
         "com.example.ExampleTest.works",
     ]
+    init_script_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec"
+        and "cli-agent-test-selector.gradle" in " ".join(args)
+        and "cat >" in " ".join(args)
+    )
+    assert "setFailOnNoMatchingTests(true)" in " ".join(init_script_call)
     assert not any(
         "/opt/cli-agent-test-cache/gradle" in " ".join(args)
         for args, _ in backend.calls
