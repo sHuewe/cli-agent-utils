@@ -358,6 +358,7 @@ class DockerTestValidator:
             redactor = OutputRedactor(suppress_output=True)
         container_name = f"cli-agent-test-validator-{uuid.uuid4().hex[:12]}"
         created = False
+        create_may_have_succeeded = False
         verified_policy: dict[str, Any] | None = None
         result_payload: dict[str, Any] | None = None
         try:
@@ -386,6 +387,7 @@ class DockerTestValidator:
             try:
                 created_result = self._create_container(container_name, image)
             except subprocess.TimeoutExpired:
+                create_may_have_succeeded = True
                 result_payload = self._failure(
                     framework,
                     project_path,
@@ -486,7 +488,17 @@ class DockerTestValidator:
                         ],
                         timeout=self.settings.setup_timeout_seconds,
                     )
-                except (FileNotFoundError, OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                except subprocess.TimeoutExpired:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        "Python-Wheel-Cache-Übertragung lief in ein Timeout.",
+                        verified_policy=verified_policy,
+                        timed_out=True,
+                    )
+                    return result_payload
+                except (FileNotFoundError, OSError, ValueError) as exc:
                     result_payload = self._failure(
                         framework,
                         project_path,
@@ -545,7 +557,17 @@ class DockerTestValidator:
                         ],
                         timeout=self.settings.setup_timeout_seconds,
                     )
-                except (FileNotFoundError, OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                except subprocess.TimeoutExpired:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        "Gradle-Dependency-Cache-Übertragung lief in ein Timeout.",
+                        verified_policy=verified_policy,
+                        timed_out=True,
+                    )
+                    return result_payload
+                except (FileNotFoundError, OSError, ValueError) as exc:
                     result_payload = self._failure(
                         framework,
                         project_path,
@@ -604,7 +626,17 @@ class DockerTestValidator:
                         ],
                         timeout=self.settings.setup_timeout_seconds,
                     )
-                except (FileNotFoundError, OSError, ValueError, subprocess.TimeoutExpired) as exc:
+                except subprocess.TimeoutExpired:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        "Maven-Dependency-Cache-Übertragung lief in ein Timeout.",
+                        verified_policy=verified_policy,
+                        timed_out=True,
+                    )
+                    return result_payload
+                except (FileNotFoundError, OSError, ValueError) as exc:
                     result_payload = self._failure(
                         framework,
                         project_path,
@@ -787,7 +819,7 @@ class DockerTestValidator:
             return result_payload
         finally:
             removed: bool | None = None
-            if created:
+            if created or create_may_have_succeeded:
                 try:
                     cleanup = self._docker(
                         ["rm", "--force", container_name],
