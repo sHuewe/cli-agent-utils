@@ -13,6 +13,8 @@ The test tools are intended only for tasks that concern test cases themselves, f
 The MCP exposes exactly:
 
 - `run_python_tests(project_path=".", test_selector=None)`
+
+Python selectors must refer to tests inside the project. Selectors beginning with `-` or `@` are rejected so they cannot be interpreted by pytest as command-line options or argument files.
 - `run_java_tests(project_path=".", test_selector=None, build_system="auto")`
 
 Java method selectors use the common `com.example.ExampleTest#method` form at the MCP boundary. Maven receives that form directly; Gradle receives the equivalent `com.example.ExampleTest.method` pattern required by `--tests`. For Maven reactor builds, modules without a matching selected test are tolerated, but the validator writes Surefire XML reports into an isolated `/output/surefire-reports` directory and verifies that at least one generated report contains a `<testcase>` entry. Arbitrary Maven log text is not used as proof of execution; otherwise the validator reports `test_selector_not_matched`.
