@@ -586,7 +586,40 @@ def test_gradle_selector_uses_validator_controlled_no_match_policy(
         and "cat >" in " ".join(args)
     )
     script = " ".join(init_script_call)
+    assert "projectsEvaluated" in script
     assert "setFailOnNoMatchingTests(false)" in script
+    assert "junitXml.required.set(true)" in script
+    assert "/output/gradle-test-results/" in script
+
+
+def test_gradle_selector_reapplies_report_policy_after_project_configuration(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "build.gradle").write_text(
+        "tasks.withType(Test).configureEach { "
+        "reports.junitXml.required = false; "
+        "reports.junitXml.outputLocation = file('custom-results') }\n",
+        encoding="utf-8",
+    )
+    backend = FakeBackend()
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    validator.run_java_tests(
+        ".",
+        "com.example.ExampleTest#works",
+        build_system="gradle",
+    )
+
+    init_script_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec"
+        and "cli-agent-test-selector.gradle" in " ".join(args)
+        and "cat >" in " ".join(args)
+    )
+    script = " ".join(init_script_call)
+    assert "gradle.projectsEvaluated" in script
+    assert "junitXml.required.set(true)" in script
     assert "/output/gradle-test-results/" in script
 
 
@@ -671,7 +704,9 @@ def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
         and "cli-agent-test-selector.gradle" in " ".join(args)
         and "cat >" in " ".join(args)
     )
+    assert "projectsEvaluated" in " ".join(init_script_call)
     assert "setFailOnNoMatchingTests(false)" in " ".join(init_script_call)
+    assert "junitXml.required.set(true)" in " ".join(init_script_call)
     assert "/output/gradle-test-results/" in " ".join(init_script_call)
     assert not any(
         "/opt/cli-agent-test-cache/gradle" in " ".join(args)
