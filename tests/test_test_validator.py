@@ -592,6 +592,43 @@ def test_gradle_selector_uses_validator_controlled_no_match_policy(
     assert "/output/gradle-test-match" in script
 
 
+def test_gradle_selector_disables_dry_run_and_ignores_skipped_results(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "build.gradle").write_text(
+        "tasks.withType(Test).configureEach { dryRun = true }\n",
+        encoding="utf-8",
+    )
+    backend = FakeBackend()
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    validator.run_java_tests(
+        ".",
+        "com.example.ExampleTest#works",
+        build_system="gradle",
+    )
+
+    test_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec" and "gradle" in args
+    )
+    assert "--no-test-dry-run" in test_call
+    assert "--rerun-tasks" in test_call
+
+    init_script_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec"
+        and "cli-agent-test-selector.gradle" in " ".join(args)
+        and "cat >" in " ".join(args)
+    )
+    script = " ".join(init_script_call)
+    assert "!task.dryRun.get()" in script
+    assert "ResultType.SKIPPED" in script
+    assert "/output/gradle-test-match" in script
+
+
 def test_gradle_selector_message_names_gradle(tmp_path: Path) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
 
@@ -626,7 +663,7 @@ def test_gradle_selector_message_names_gradle(tmp_path: Path) -> None:
     assert "Maven-Test-Selector" not in result["message_to_user"]
 
 
-def test_gradle_selector_reapplies_report_policy_after_project_configuration(
+def test_gradle_selector_does_not_depend_on_project_report_configuration(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "build.gradle").write_text(
@@ -698,7 +735,7 @@ def test_gradle_selector_verifies_match_across_all_test_tasks(
     )
     script = " ".join(init_script_call)
     assert "setFailOnNoMatchingTests(false)" in script
-    assert "/output/gradle-test-results/" in script
+    assert "/output/gradle-test-match" in script
 
 
 def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
@@ -718,12 +755,14 @@ def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
         for args, _ in backend.calls
         if args[0] == "exec" and "gradle" in args
     )
-    assert test_call[-10:] == [
+    assert test_call[-12:] == [
         "gradle",
         "--offline",
         "--no-daemon",
         "--gradle-user-home",
         "/tmp/gradle",
+        "--no-test-dry-run",
+        "--rerun-tasks",
         "--init-script",
         "/tmp/cli-agent-test-selector.gradle",
         "test",
@@ -737,7 +776,6 @@ def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
         and "cli-agent-test-selector.gradle" in " ".join(args)
         and "cat >" in " ".join(args)
     )
-    assert "projectsEvaluated" in " ".join(init_script_call)
     assert "setFailOnNoMatchingTests(false)" in " ".join(init_script_call)
     assert "afterTest" in " ".join(init_script_call)
     assert "/output/gradle-test-match" in " ".join(init_script_call)
