@@ -32,7 +32,13 @@ _GRADLE_SELECTOR_INIT_SCRIPT = """\
 allprojects {
     tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->
         task.afterTest { descriptor, result ->
-            new File("/output/gradle-test-match").text = "matched\\n"
+            if (
+                !task.dryRun.get()
+                && result.resultType
+                    != org.gradle.api.tasks.testing.TestResult.ResultType.SKIPPED
+            ) {
+                new File("/output/gradle-test-match").text = "matched\\n"
+            }
         }
         task.doFirst {
             task.filter.setFailOnNoMatchingTests(false)
@@ -1072,7 +1078,14 @@ class DockerTestValidator:
                 "/tmp/gradle",
             ]
             if selector:
-                command.extend(["--init-script", _GRADLE_SELECTOR_INIT_PATH])
+                command.extend(
+                    [
+                        "--no-test-dry-run",
+                        "--rerun-tasks",
+                        "--init-script",
+                        _GRADLE_SELECTOR_INIT_PATH,
+                    ]
+                )
             command.append("test")
             if selector:
                 gradle_selector = selector.replace("#", ".", 1)
