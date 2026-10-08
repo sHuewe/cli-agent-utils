@@ -11,7 +11,10 @@ Applied change:
 
 Rules:
 - Do not inspect original source code or manuals and do not modify files.
-- If the assessment did not request a split, return `not_changed` and preserve any `needs_attention` warning.
+- If `assessment.action` is `needs_attention`, return `status: needs_attention` with an error finding that preserves the assessment reason/warnings; this is not a successful no-op.
+- If `assessment.action` is `keep` or `skip`, return `not_changed` unless the apply step itself reported `needs_attention`.
+- If `change.status` is `needs_attention`, or a requested split was not successfully applied, return `needs_attention` and report the problem rather than presenting it as `not_changed`.
+- If any verification finding has `severity: error`, return `status: needs_attention`.
 - For a split, read the overview, every `change.new_paths` concept, and the direct folder `index.md`.
 - Verify:
   - the original path still exists as a concise overview;
