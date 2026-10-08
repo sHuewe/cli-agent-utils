@@ -25,6 +25,10 @@ from .test_validator_types import TestValidationError, TestValidatorSettings
 
 _JAVA_SELECTOR = re.compile(r"^[A-Za-z0-9_.$*#\[\],-]+$")
 _MAX_SELECTOR_CHARS = 512
+_MAVEN_TEST_SUMMARY = re.compile(
+    r"Tests run:\s*(\d+)\s*,\s*Failures:\s*\d+\s*,\s*Errors:\s*\d+"
+    r"\s*,\s*Skipped:\s*(\d+)"
+)
 
 
 class DockerTestValidator:
@@ -337,6 +341,7 @@ class DockerTestValidator:
         dependency_cache_key: str | None = None,
         python_wheels: Path | None = None,
         gradle_home: Path | None = None,
+        require_maven_test_match: bool = False,
     ) -> dict[str, Any]:
         project = self._resolve_project(project_path)
         snapshot = create_project_snapshot(
@@ -758,8 +763,16 @@ class DockerTestValidator:
                     if part
                 )
             )
+            selector_not_matched = (
+                require_maven_test_match
+                and tested.returncode == 0
+                and not any(
+                    int(tests_run) > int(skipped)
+                    for tests_run, skipped in _MAVEN_TEST_SUMMARY.findall(output)
+                )
+            )
             result_payload = {
-                "success": tested.returncode == 0,
+                "success": tested.returncode == 0 and not selector_not_matched,
                 "framework": framework,
                 "project_path": project_path,
                 "exit_code": tested.returncode,
@@ -801,6 +814,12 @@ class DockerTestValidator:
                     "root_filesystem": "read-only",
                 },
             }
+            if selector_not_matched:
+                result_payload["reason"] = "test_selector_not_matched"
+                result_payload["message_to_user"] = (
+                    "Der angeforderte Maven-Test-Selector hat keinen "
+                    "tatsächlich ausgeführten Test gefunden."
+                )
             if tested.returncode != 0 and (
                 dependency_repository is not None
                 or gradle_home is not None
@@ -966,6 +985,7 @@ class DockerTestValidator:
                     [
                         f"-Dtest={selector}",
                         "-Dsurefire.failIfNoSpecifiedTests=false",
+                        "-Dsurefire.printSummary=true",
                     ]
                 )
             command.append("test")
@@ -1039,6 +1059,7 @@ class DockerTestValidator:
             dependency_repository=dependency_repository,
             dependency_cache_key=dependency_cache_key,
             gradle_home=gradle_home,
+            require_maven_test_match=selected == "maven" and selector is not None,
         )
 
     def run_java_build(
