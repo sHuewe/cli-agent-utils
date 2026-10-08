@@ -337,6 +337,35 @@ def test_create_timeout_still_attempts_cleanup(tmp_path: Path) -> None:
     assert any(args[0] == "rm" for args, _ in backend.calls)
 
 
+def test_docker_availability_timeout_is_marked_timed_out(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "# no external dependencies\n",
+        encoding="utf-8",
+    )
+
+    class AvailabilityTimeoutBackend(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            self.calls.append((args, input_bytes))
+            if args[0] == "version":
+                raise subprocess.TimeoutExpired(args, timeout)
+            return DockerCommandResult(0, "ok", "")
+
+    validator = DockerTestValidator(
+        tmp_path,
+        settings(),
+        backend=AvailabilityTimeoutBackend(),
+    )
+
+    result = validator.run_python_tests(".")
+
+    assert result["success"] is False
+    assert result["timed_out"] is True
+    assert "Timeout" in result["output"]
+
+
 def test_snapshot_transfer_timeout_returns_structured_failure(
     tmp_path: Path,
 ) -> None:
@@ -1648,6 +1677,24 @@ def test_output_redactor_preserves_text_around_inline_pem_markers() -> None:
     assert "key-material" not in result
     assert result.startswith("prefix ")
     assert result.endswith(" suffix\n")
+
+
+def test_output_redactor_redacts_multiple_inline_private_keys_on_one_line() -> None:
+    redactor = OutputRedactor()
+    output = (
+        "prefix -----BEGIN PRIVATE KEY-----first-----END PRIVATE KEY----- "
+        "middle -----BEGIN RSA PRIVATE KEY-----second"
+        "-----END RSA PRIVATE KEY----- suffix"
+    )
+
+    result = redactor.redact(output)
+
+    assert "first" not in result
+    assert "second" not in result
+    assert "BEGIN PRIVATE KEY" not in result
+    assert "BEGIN RSA PRIVATE KEY" not in result
+    assert result.startswith("prefix ")
+    assert result.endswith(" suffix")
 
 
 def test_output_redactor_redacts_private_key_after_standalone_delimiter() -> None:
