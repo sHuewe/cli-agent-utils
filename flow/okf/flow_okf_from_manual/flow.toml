@@ -208,6 +208,7 @@ response_format = "json"
 [steps.vars]
 structure = "${steps.design_structure.output}"
 navigation = "${steps.create_root_index.output}"
+okf_root = "${steps.design_structure.output.okf_root}"
 folder_verifications = "${steps.post_split_verify_folders.output.iterations}"
 split_verifications = "${steps.split_concepts.output.iterations}"
 
