@@ -324,21 +324,15 @@ When a cache exists, its prepared Gradle user home is validated and streamed int
 
 ```text
 gradle --offline --no-daemon --gradle-user-home /tmp/gradle test
+```
 
 With a selector, the validator additionally forces real execution and installs its selector listener:
 
 ```text
 gradle --offline --no-daemon --gradle-user-home /tmp/gradle \
-  --no-test-dry-run --rerun-tasks \
+  --rerun-tasks \
   --init-script /tmp/cli-agent-test-selector.gradle \
-  test --tests <selector>
-```
-```
-
-or:
-
-```text
-gradle --offline --no-daemon --gradle-user-home /tmp/gradle test --tests <selector>
+  test --no-test-dry-run --tests <selector>
 ```
 
 The separate Gradle build tool uses the same prepared cache but runs only:
