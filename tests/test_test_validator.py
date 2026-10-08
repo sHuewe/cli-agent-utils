@@ -409,7 +409,7 @@ def test_java_maven_selector_is_translated_without_shell(
             self.calls.append((args, input_bytes))
             if args[0] == "inspect":
                 return DockerCommandResult(0, inspect_payload(), "")
-            if args[0] == "exec" and "grep -l '<testcase[ >]'" in " ".join(args):
+            if args[0] == "exec" and "TEST-*.xml" in " ".join(args):
                 return DockerCommandResult(0, "report.xml\n", "")
             return DockerCommandResult(0, self.exec_output, "")
 
@@ -454,7 +454,7 @@ def test_java_maven_selector_requires_an_executed_test(tmp_path: Path) -> None:
             self.calls.append((args, input_bytes))
             if args[0] == "inspect":
                 return DockerCommandResult(0, inspect_payload(), "")
-            if args[0] == "exec" and "grep -l '<testcase[ >]'" in " ".join(args):
+            if args[0] == "exec" and "TEST-*.xml" in " ".join(args):
                 return DockerCommandResult(1, "", "")
             return DockerCommandResult(0, "BUILD SUCCESS\n", "")
 
@@ -483,7 +483,7 @@ def test_maven_log_text_cannot_fake_selector_match(tmp_path: Path) -> None:
             self.calls.append((args, input_bytes))
             if args[0] == "inspect":
                 return DockerCommandResult(0, inspect_payload(), "")
-            if args[0] == "exec" and "grep -l '<testcase[ >]'" in " ".join(args):
+            if args[0] == "exec" and "TEST-*.xml" in " ".join(args):
                 return DockerCommandResult(1, "", "")
             if args[0] == "exec" and "cat" in args:
                 return DockerCommandResult(
