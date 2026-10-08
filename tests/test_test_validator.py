@@ -313,6 +313,29 @@ def test_python_tests_use_fixed_no_shell_command_and_redact_output(
     assert snapshot_transfer[0][-3:] == ["tar", "-xf", "-"]
 
 
+def test_create_timeout_still_attempts_cleanup(tmp_path: Path) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "# no external dependencies\n",
+        encoding="utf-8",
+    )
+
+    class CreateTimeoutBackend(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            self.calls.append((args, input_bytes))
+            if args[0] == "create":
+                raise subprocess.TimeoutExpired(args, timeout)
+            return DockerCommandResult(0, "ok", "")
+
+    backend = CreateTimeoutBackend()
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    result = validator.run_python_tests(".")
+
+    assert result["success"] is False
+    assert any(args[0] == "rm" for args, _ in backend.calls)
+
+
 def test_snapshot_transfer_timeout_returns_structured_failure(
     tmp_path: Path,
 ) -> None:
@@ -623,6 +646,48 @@ def test_python_uses_wsl_prepared_wheels_offline(tmp_path: Path) -> None:
     assert "--target" in install
     assert "/tmp/python-deps" in install
     assert "-r" not in install
+
+
+def test_python_cache_transfer_timeout_is_marked_timed_out(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "demo-package==1.0\n",
+        encoding="utf-8",
+    )
+    cache_root = tmp_path / "python-cache"
+    entry = python_cache_entry(cache_root, tmp_path)
+    entry.wheels.mkdir(parents=True)
+    (entry.wheels / "demo_package-1.0-py3-none-any.whl").write_bytes(b"wheel")
+    write_python_ready_metadata(
+        entry.directory,
+        entry.key,
+        python_dependency_plan(tmp_path),
+    )
+
+    class CacheTimeoutBackend(FakeBackend):
+        def stream_tar_directory(self, source, arguments, *, timeout):
+            args = list(arguments)
+            self.calls.append((["stream-tar", str(source), *args], None))
+            raise subprocess.TimeoutExpired(args, timeout)
+
+    validator = DockerTestValidator(
+        tmp_path,
+        ValidatorSettings(
+            python_image=PINNED_PYTHON,
+            maven_image=PINNED_MAVEN,
+            gradle_image=PINNED_GRADLE,
+            python_cache_root=cache_root,
+        ),
+        backend=CacheTimeoutBackend(),
+    )
+
+    result = validator.run_python_tests(".")
+
+    assert result["success"] is False
+    assert result["timed_out"] is True
+    assert "Timeout" in result["output"]
+    assert result["container_removed"] is True
 
 
 def test_gradle_reports_missing_prepared_dependency_cache(tmp_path: Path) -> None:
