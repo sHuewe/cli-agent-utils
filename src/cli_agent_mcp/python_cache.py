@@ -15,6 +15,7 @@ from .test_validator_types import TestValidationError
 
 _CACHE_SCHEMA = "cli-agent-python-cache-v5"
 _REQUIREMENTS_FILE = "requirements.txt"
+_DEFAULT_MAX_REQUIREMENT_FILE_BYTES = 16 * 1024 * 1024
 _INCLUDE_RE = re.compile(
     r"^\s*(?:(?:-r|-c)\s*=?\s*([^#\s]+)|"
     r"(?:--requirement|--constraint)(?:\s+|=)\s*([^#\s]+))"
@@ -262,7 +263,11 @@ def _validate_frozen_requirement_line(relative: str, line: str) -> None:
         )
 
 
-def _requirement_files(project: Path) -> tuple[Path, ...]:
+def _requirement_files(
+    project: Path,
+    *,
+    max_file_bytes: int = _DEFAULT_MAX_REQUIREMENT_FILE_BYTES,
+) -> tuple[Path, ...]:
     root = project / _REQUIREMENTS_FILE
     if root.is_symlink():
         raise TestValidationError("requirements.txt darf kein Symlink sein.")
@@ -286,7 +291,17 @@ def _requirement_files(project: Path) -> tuple[Path, ...]:
             return
         result[relative] = path
         try:
-            text = path.read_text(encoding="utf-8", errors="replace")
+            size = path.stat(follow_symlinks=False).st_size
+            if size > max_file_bytes:
+                raise TestValidationError(
+                    f"Requirements-Datei überschreitet das Größenlimit: {relative}"
+                )
+            with path.open("r", encoding="utf-8", errors="replace") as handle:
+                text = handle.read(max_file_bytes + 1)
+            if len(text.encode("utf-8", errors="replace")) > max_file_bytes:
+                raise TestValidationError(
+                    f"Requirements-Datei überschreitet das Größenlimit: {relative}"
+                )
         except OSError as exc:
             raise TestValidationError(
                 f"Requirements-Datei konnte nicht gelesen werden: {relative}"
@@ -311,11 +326,17 @@ def _requirement_files(project: Path) -> tuple[Path, ...]:
     return tuple(result[name] for name in sorted(result))
 
 
-def python_dependency_plan(project: Path) -> PythonDependencyPlan:
+def python_dependency_plan(
+    project: Path,
+    *,
+    max_file_bytes: int = _DEFAULT_MAX_REQUIREMENT_FILE_BYTES,
+) -> PythonDependencyPlan:
     root = project.expanduser().resolve()
     if not root.is_dir():
         raise TestValidationError(f"Python-Projekt existiert nicht: {root}")
-    _requirement_files(root)
+    if max_file_bytes <= 0:
+        raise ValueError("max_file_bytes muss positiv sein.")
+    _requirement_files(root, max_file_bytes=max_file_bytes)
     return PythonDependencyPlan()
 
 
@@ -323,9 +344,10 @@ def python_dependency_key(
     project: Path,
     *,
     project_identity: str | None = None,
+    max_file_bytes: int = _DEFAULT_MAX_REQUIREMENT_FILE_BYTES,
 ) -> str:
     root = project.expanduser().resolve()
-    python_dependency_plan(root)
+    python_dependency_plan(root, max_file_bytes=max_file_bytes)
     return project_cache_key(
         "python",
         root,
@@ -338,11 +360,16 @@ def python_cache_entry(
     project: Path,
     *,
     project_identity: str | None = None,
+    max_file_bytes: int = _DEFAULT_MAX_REQUIREMENT_FILE_BYTES,
 ) -> PythonCacheEntry:
     root = cache_root.expanduser().resolve()
     return PythonCacheEntry(
         root=root,
-        key=python_dependency_key(project, project_identity=project_identity),
+        key=python_dependency_key(
+            project,
+            project_identity=project_identity,
+            max_file_bytes=max_file_bytes,
+        ),
     )
 
 
