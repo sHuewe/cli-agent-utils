@@ -586,10 +586,45 @@ def test_gradle_selector_uses_validator_controlled_no_match_policy(
         and "cat >" in " ".join(args)
     )
     script = " ".join(init_script_call)
-    assert "projectsEvaluated" in script
+    assert "doFirst" in script
     assert "setFailOnNoMatchingTests(false)" in script
     assert "junitXml.required.set(true)" in script
     assert "/output/gradle-test-results/" in script
+
+
+def test_gradle_selector_message_names_gradle(tmp_path: Path) -> None:
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+
+    class NoMatchGradleBackend(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            self.calls.append((args, input_bytes))
+            if args[0] == "inspect":
+                return DockerCommandResult(0, inspect_payload(), "")
+            if (
+                args[0] == "exec"
+                and "gradle-test-results" in " ".join(args)
+                and "TEST-*.xml" in " ".join(args)
+            ):
+                return DockerCommandResult(1, "", "")
+            return DockerCommandResult(0, "BUILD SUCCESS\n", "")
+
+    validator = DockerTestValidator(
+        tmp_path,
+        settings(),
+        backend=NoMatchGradleBackend(),
+    )
+
+    result = validator.run_java_tests(
+        ".",
+        "com.example.MissingTest#works",
+        build_system="gradle",
+    )
+
+    assert result["success"] is False
+    assert result["reason"] == "test_selector_not_matched"
+    assert "Gradle-Test-Selector" in result["message_to_user"]
+    assert "Maven-Test-Selector" not in result["message_to_user"]
 
 
 def test_gradle_selector_reapplies_report_policy_after_project_configuration(
@@ -618,7 +653,7 @@ def test_gradle_selector_reapplies_report_policy_after_project_configuration(
         and "cat >" in " ".join(args)
     )
     script = " ".join(init_script_call)
-    assert "gradle.projectsEvaluated" in script
+    assert "doFirst" in script
     assert "junitXml.required.set(true)" in script
     assert "/output/gradle-test-results/" in script
 
