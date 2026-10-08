@@ -18,7 +18,7 @@ _REQUIREMENTS_FILE = "requirements.txt"
 _DEFAULT_MAX_REQUIREMENT_FILE_BYTES = 16 * 1024 * 1024
 _INCLUDE_RE = re.compile(
     r"^\s*(?:(?:-r|-c)\s*=?\s*([^#\s]+)|"
-    r"(?:--requirement|--constraint)(?:\s+|=)\s*([^#\s]+))"
+    r"(?:--requirement|--constraint)(?:\s+|=)\s*([^#\s]+))\s*$"
 )
 _FROZEN_REQUIREMENT_RE = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9.!+_-]*$"
@@ -249,10 +249,15 @@ def _validate_frozen_requirement_line(relative: str, line: str) -> None:
     if _INCLUDE_RE.match(candidate):
         return
     if candidate.startswith("-"):
+        option_name = candidate
+        if candidate.startswith("--"):
+            option_name = candidate.split(None, 1)[0].split("=", 1)[0]
+        elif len(candidate) >= 2:
+            option_name = candidate[:2]
         raise TestValidationError(
             "requirements.txt unterstützt im Test-Validator nur gepinnte "
             "Pakete sowie -r/--requirement und -c/--constraint. "
-            f"Nicht unterstützte Option in {relative}."
+            f"Nicht unterstützte Option in {relative}: {option_name!r}"
         )
     if _FROZEN_REQUIREMENT_RE.fullmatch(candidate) is None:
         raise TestValidationError(
