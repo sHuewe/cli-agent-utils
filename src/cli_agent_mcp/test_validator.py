@@ -26,6 +26,16 @@ from .test_validator_types import TestValidationError, TestValidatorSettings
 _JAVA_SELECTOR = re.compile(r"^[A-Za-z0-9_.$*#\[\],-]+$")
 _MAX_SELECTOR_CHARS = 512
 _MAVEN_SELECTOR_REPORT_DIR = "/output/surefire-reports"
+_GRADLE_SELECTOR_INIT_PATH = "/tmp/cli-agent-test-selector.gradle"
+_GRADLE_SELECTOR_INIT_SCRIPT = """\
+allprojects {
+    tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->
+        task.doFirst {
+            task.filter.setFailOnNoMatchingTests(true)
+        }
+    }
+}
+"""
 _MAVEN_SELECTOR_REPORT_CHECK_SCRIPT = """\
 for report in /output/surefire-reports/TEST-*.xml; do
     [ -f "$report" ] || continue
@@ -1037,11 +1047,24 @@ class DockerTestValidator:
                 "--no-daemon",
                 "--gradle-user-home",
                 "/tmp/gradle",
-                "test",
             ]
+            if selector:
+                command.extend(["--init-script", _GRADLE_SELECTOR_INIT_PATH])
+            command.append("test")
             if selector:
                 gradle_selector = selector.replace("#", ".", 1)
                 command.extend(["--tests", gradle_selector])
+                pre_test_command = [
+                    "sh",
+                    "-c",
+                    (
+                        "cat > "
+                        + _GRADLE_SELECTOR_INIT_PATH
+                        + " <<'CLI_AGENT_GRADLE_SELECTOR'\n"
+                        + _GRADLE_SELECTOR_INIT_SCRIPT
+                        + "CLI_AGENT_GRADLE_SELECTOR\n"
+                    ),
+                ]
             gradle_home: Path | None = None
             if self.settings.gradle_cache_root is not None:
                 entry = gradle_cache_entry(self.settings.gradle_cache_root, project)
@@ -1064,7 +1087,6 @@ class DockerTestValidator:
                         ),
                     }
                 gradle_home = entry.gradle_home
-                pre_test_command = None
             image = self.settings.gradle_image
             framework = "gradle"
         return self._run_tests(
