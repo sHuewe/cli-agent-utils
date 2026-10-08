@@ -40,9 +40,9 @@ from .python_cache import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="cli-agent-test-cache",
+        prog="cli-agent-dependency-cache",
         description=(
-            "Prepare dependency caches for the offline cli-agent test validator. "
+            "Prepare dependency caches for the offline cli-agent code validator. "
             "This command runs as the current user and may use normal Maven, "
             "Gradle or pip/PyPI/JFrog configuration. Python preparation requires WSL."
         ),

@@ -15,32 +15,32 @@ from .python_cache import (
     python_dependency_plan,
     validate_python_cache_tree,
 )
-from .test_validator_redaction import (
+from .code_validator_redaction import (
     OutputRedactor,
     SecretDiscoveryLimitError,
     discover_secret_values,
 )
-from .test_validator_snapshot import create_project_snapshot
-from .test_validator_types import TestValidationError, TestValidatorSettings
+from .code_validator_snapshot import create_project_snapshot
+from .code_validator_types import CodeValidationError, CodeValidatorSettings
 
 _JAVA_SELECTOR = re.compile(r"^[A-Za-z0-9_.$*#\[\],-]+$")
 _MAX_SELECTOR_CHARS = 512
 _GRADLE_MIN_SELECTOR_VERSION = (8, 3)
 _GRADLE_VERSION_RE = re.compile(r"(?m)^Gradle\s+(\d+)\.(\d+)(?:\.(\d+))?")
 
-class DockerTestValidator:
+class DockerCodeValidator:
     """Run fixed Python or Java test commands in a hardened short-lived container."""
 
     def __init__(
         self,
         workspace: Path,
-        settings: TestValidatorSettings,
+        settings: CodeValidatorSettings,
         *,
         backend: DockerBackend | None = None,
     ) -> None:
         self.workspace = workspace.expanduser().resolve()
         if not self.workspace.is_dir():
-            raise TestValidationError(
+            raise CodeValidationError(
                 f"Projekt-Workspace existiert nicht: {self.workspace}"
             )
         self.settings = settings
@@ -48,26 +48,26 @@ class DockerTestValidator:
 
     def _resolve_project(self, project_path: str) -> Path:
         if not isinstance(project_path, str) or not project_path.strip():
-            raise TestValidationError("Der Projektpfad darf nicht leer sein.")
+            raise CodeValidationError("Der Projektpfad darf nicht leer sein.")
         candidate = Path(project_path)
         windows = PureWindowsPath(project_path)
         if candidate.is_absolute() or windows.is_absolute() or windows.drive:
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Der Projektpfad muss relativ zum Workspace sein."
             )
         if ".." in PurePath(project_path).parts or ".." in windows.parts:
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Der Projektpfad darf '..' nicht enthalten."
             )
         resolved = (self.workspace / candidate).resolve()
         try:
             resolved.relative_to(self.workspace)
         except ValueError as exc:
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Der Projektpfad verweist außerhalb des Workspaces."
             ) from exc
         if not resolved.is_dir():
-            raise TestValidationError(
+            raise CodeValidationError(
                 f"Projekt existiert nicht: {project_path!r}"
             )
         return resolved
@@ -77,26 +77,26 @@ class DockerTestValidator:
         if selector is None:
             return None
         if not isinstance(selector, str):
-            raise TestValidationError("Der Test-Selector muss ein String sein.")
+            raise CodeValidationError("Der Test-Selector muss ein String sein.")
         value = selector.strip()
         if not value:
-            raise TestValidationError("Der Test-Selector darf nicht leer sein.")
+            raise CodeValidationError("Der Test-Selector darf nicht leer sein.")
         if len(value) > _MAX_SELECTOR_CHARS:
-            raise TestValidationError("Der Test-Selector ist zu lang.")
+            raise CodeValidationError("Der Test-Selector ist zu lang.")
         if any(ord(char) < 32 or ord(char) == 127 for char in value):
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Der Test-Selector darf keine Steuerzeichen enthalten."
             )
         if java:
             if value.startswith("-"):
-                raise TestValidationError(
+                raise CodeValidationError(
                     "Java-Test-Selectoren dürfen keine Build-Tool-Optionen sein."
                 )
             if not _JAVA_SELECTOR.fullmatch(value):
-                raise TestValidationError("Ungültiger Java-Test-Selector.")
+                raise CodeValidationError("Ungültiger Java-Test-Selector.")
             return value
         if value.startswith(("-", "@")):
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Python-Test-Selectoren dürfen keine pytest-Optionen oder "
                 "Argument-Dateien sein."
             )
@@ -110,7 +110,7 @@ class DockerTestValidator:
             or ".." in path_candidate.parts
             or ".." in windows_path.parts
         ):
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Python-Test-Selector muss innerhalb des Projekts liegen."
             )
         return value
@@ -127,18 +127,18 @@ class DockerTestValidator:
         )
         if requested == "maven":
             if not has_maven:
-                raise TestValidationError(
+                raise CodeValidationError(
                     "build_system='maven' benötigt eine pom.xml."
                 )
             return "maven"
         if requested == "gradle":
             if not has_gradle:
-                raise TestValidationError(
+                raise CodeValidationError(
                     "build_system='gradle' benötigt build.gradle oder build.gradle.kts."
                 )
             return "gradle"
         if has_maven and has_gradle:
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Java-Buildsystem ist mehrdeutig; setze build_system auf "
                 "'maven' oder 'gradle'."
             )
@@ -146,7 +146,7 @@ class DockerTestValidator:
             return "maven"
         if has_gradle:
             return "gradle"
-        raise TestValidationError(
+        raise CodeValidationError(
             "Kein unterstütztes Java-Buildsystem gefunden "
             "(pom.xml/build.gradle/build.gradle.kts)."
         )
@@ -223,15 +223,15 @@ class DockerTestValidator:
             timeout=self.settings.setup_timeout_seconds,
         )
         if result.returncode != 0:
-            raise TestValidationError("Docker-Sandbox konnte nicht geprüft werden.")
+            raise CodeValidationError("Docker-Sandbox konnte nicht geprüft werden.")
         try:
             payload = json.loads(result.stdout)
         except json.JSONDecodeError as exc:
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Docker-Sandbox lieferte ungültige Inspect-Daten."
             ) from exc
         if not isinstance(payload, list) or len(payload) != 1:
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Docker-Sandbox lieferte unerwartete Inspect-Daten."
             )
         config = payload[0].get("Config") or {}
@@ -273,7 +273,7 @@ class DockerTestValidator:
             failed = ", ".join(
                 name for name, success in checks.items() if not success
             )
-            raise TestValidationError(
+            raise CodeValidationError(
                 f"Docker-Sandbox entspricht nicht der erwarteten Policy: {failed}"
             )
         return checks
@@ -316,9 +316,9 @@ class DockerTestValidator:
         if not any(pattern in value for pattern in patterns.get(framework, ())):
             return None
         command = {
-            "maven": "cli-agent-test-cache prepare-maven <projekt>",
-            "gradle": "cli-agent-test-cache prepare-gradle <projekt>",
-            "pytest": "cli-agent-test-cache prepare-python <projekt>",
+            "maven": "cli-agent-dependency-cache prepare-maven <projekt>",
+            "gradle": "cli-agent-dependency-cache prepare-gradle <projekt>",
+            "pytest": "cli-agent-dependency-cache prepare-python <projekt>",
         }[framework]
         return (
             "Der vorbereitete Dependency-Cache könnte für den aktuellen "
@@ -358,7 +358,7 @@ class DockerTestValidator:
             # sandbox, but output is fail-closed if bounded secret discovery
             # cannot safely enumerate all candidate values.
             redactor = OutputRedactor(suppress_output=True)
-        container_name = f"cli-agent-test-validator-{uuid.uuid4().hex[:12]}"
+        container_name = f"cli-agent-code-validator-{uuid.uuid4().hex[:12]}"
         created = False
         create_may_have_succeeded = False
         verified_policy: dict[str, Any] | None = None
@@ -905,7 +905,7 @@ class DockerTestValidator:
                     ),
                     "message_to_user": (
                         "Python-Dependencies sind noch nicht vorbereitet. Führe "
-                        "unter WSL 'cli-agent-test-cache prepare-python <projekt>' "
+                        "unter WSL 'cli-agent-dependency-cache prepare-python <projekt>' "
                         "aus und wiederhole den Test."
                     ),
                     "preparation_environment": "WSL required",
@@ -947,7 +947,7 @@ class DockerTestValidator:
     ) -> dict[str, Any]:
         project = self._resolve_project(project_path)
         if build_system not in {"auto", "maven", "gradle"}:
-            raise TestValidationError(
+            raise CodeValidationError(
                 "build_system muss 'auto', 'maven' oder 'gradle' sein."
             )
         selected = self._detect_java_build_system(project, build_system)
@@ -982,7 +982,7 @@ class DockerTestValidator:
                         ),
                         "message_to_user": (
                             "Maven-Dependencies sind noch nicht vorbereitet. Führe "
-                            "außerhalb des Agents 'cli-agent-test-cache prepare-maven "
+                            "außerhalb des Agents 'cli-agent-dependency-cache prepare-maven "
                             "<projekt>' aus und wiederhole den Test."
                         ),
                     }
@@ -1019,7 +1019,7 @@ class DockerTestValidator:
                         ),
                         "message_to_user": (
                             "Gradle-Dependencies sind noch nicht vorbereitet. Führe "
-                            "außerhalb des Agents 'cli-agent-test-cache prepare-gradle "
+                            "außerhalb des Agents 'cli-agent-dependency-cache prepare-gradle "
                             "<projekt>' aus und wiederhole den Test."
                         ),
                     }
@@ -1046,7 +1046,7 @@ class DockerTestValidator:
 
         project = self._resolve_project(project_path)
         if build_system not in {"auto", "maven", "gradle"}:
-            raise TestValidationError(
+            raise CodeValidationError(
                 "build_system muss 'auto', 'maven' oder 'gradle' sein."
             )
         selected = self._detect_java_build_system(project, build_system)
@@ -1061,7 +1061,7 @@ class DockerTestValidator:
         """Build/package a Maven project offline without executing tests."""
         project = self._resolve_project(project_path)
         if not (project / "pom.xml").is_file():
-            raise TestValidationError(
+            raise CodeValidationError(
                 "run_maven_build benötigt eine pom.xml."
             )
 
@@ -1093,7 +1093,7 @@ class DockerTestValidator:
                     ),
                     "message_to_user": (
                         "Maven-Dependencies sind noch nicht vorbereitet. Führe "
-                        "außerhalb des Agents 'cli-agent-test-cache prepare-maven "
+                        "außerhalb des Agents 'cli-agent-dependency-cache prepare-maven "
                         "<projekt>' aus und wiederhole den Build."
                     ),
                 }
@@ -1122,7 +1122,7 @@ class DockerTestValidator:
             (project / "build.gradle").is_file()
             or (project / "build.gradle.kts").is_file()
         ):
-            raise TestValidationError(
+            raise CodeValidationError(
                 "run_gradle_build benötigt build.gradle oder build.gradle.kts."
             )
 
@@ -1154,7 +1154,7 @@ class DockerTestValidator:
                     ),
                     "message_to_user": (
                         "Gradle-Dependencies sind noch nicht vorbereitet. Führe "
-                        "außerhalb des Agents 'cli-agent-test-cache prepare-gradle "
+                        "außerhalb des Agents 'cli-agent-dependency-cache prepare-gradle "
                         "<projekt>' aus und wiederhole den Build."
                     ),
                 }

@@ -11,8 +11,8 @@ from .docker_backend import DockerBackend
 from .gradle_cache import default_gradle_cache_root
 from .maven_cache import default_maven_cache_root
 from .python_cache import default_python_cache_root
-from .test_validator import DockerTestValidator
-from .test_validator_types import TestValidationError, TestValidatorSettings
+from .code_validator import DockerCodeValidator
+from .code_validator_types import CodeValidationError, CodeValidatorSettings
 
 WORKSPACE_ACCESS_ENV = "CLI_AGENT_WORKSPACE_ACCESS"
 WORKSPACE_DIRECTORY_ENV = "CLI_AGENT_WORKSPACE_DIRECTORY"
@@ -21,21 +21,21 @@ WORKSPACE_DIRECTORY_ENV = "CLI_AGENT_WORKSPACE_DIRECTORY"
 def _workspace_from_core_environment() -> Path:
     access = os.environ.get(WORKSPACE_ACCESS_ENV, "none")
     if access not in {"read", "write"}:
-        raise TestValidationError(
-            "Der Test-Validator benötigt vom cli-agent mindestens Workspace-Read-Zugriff."
+        raise CodeValidationError(
+            "Der Code-Validator benötigt vom cli-agent mindestens Workspace-Read-Zugriff."
         )
     workspace = os.environ.get(WORKSPACE_DIRECTORY_ENV)
     if not workspace:
-        raise TestValidationError(
+        raise CodeValidationError(
             "CLI_AGENT_WORKSPACE_DIRECTORY fehlt. Starte den MCP über einen "
             "aktuellen cli-agent Core mit --with-os-read oder --with-os-write."
         )
     return Path(workspace)
 
 
-def create_server(validator: DockerTestValidator) -> FastMCP:
+def create_server(validator: DockerCodeValidator) -> FastMCP:
     mcp = FastMCP(
-        "Sandbox Test Validator",
+        "Sandbox Code-Validator",
         instructions=(
             "For Java programming work, use run_java_build as the primary "
             "validation step after making code changes. Always try the build "
@@ -172,7 +172,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=default_python_cache_root(),
         help=(
-            "Shared root created by cli-agent-test-cache prepare-python "
+            "Shared root created by cli-agent-dependency-cache prepare-python "
             "(default: ~/.cli-agent/dependency-cache/python). "
             "Python cache preparation itself must run inside WSL."
         ),
@@ -182,7 +182,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=default_gradle_cache_root(),
         help=(
-            "Shared root created by cli-agent-test-cache prepare-gradle "
+            "Shared root created by cli-agent-dependency-cache prepare-gradle "
             "(default: ~/.cli-agent/dependency-cache/gradle)."
         ),
     )
@@ -191,7 +191,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=default_maven_cache_root(),
         help=(
-            "Shared root created by cli-agent-test-cache prepare-maven "
+            "Shared root created by cli-agent-dependency-cache prepare-maven "
             "(default: ~/.cli-agent/dependency-cache/maven). "
             "The validator selects a project dependency cache below this root "
             "by deterministic dependency key."
@@ -205,7 +205,7 @@ def main() -> None:
     if args.wsl_distribution and not args.wsl:
         raise ValueError("--wsl-distribution benötigt --wsl.")
     workspace = _workspace_from_core_environment()
-    settings = TestValidatorSettings(
+    settings = CodeValidatorSettings(
         python_image=args.python_image,
         maven_image=args.maven_image,
         gradle_image=args.gradle_image,
@@ -229,7 +229,7 @@ def main() -> None:
         wsl_distribution=args.wsl_distribution,
     )
     create_server(
-        DockerTestValidator(workspace, settings, backend=backend)
+        DockerCodeValidator(workspace, settings, backend=backend)
     ).run(transport="stdio")
 
 

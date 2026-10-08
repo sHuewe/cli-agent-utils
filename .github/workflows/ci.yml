@@ -1,0 +1,41 @@
+name: MCP package tests
+
+on:
+  push:
+    branches: ["main", "refactor/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  isolated-package:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+        project: ["mcp/compose", "mcp/code-validator"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install only this distribution
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "./${{ matrix.project }}[dev]"
+      - name: Unit tests
+        run: python -m pytest "${{ matrix.project }}/tests" -q
+      - name: Build distribution
+        run: |
+          python -m pip install build
+          python -m build --wheel --outdir dist/ "${{ matrix.project }}"
+      - name: Smoke test isolated installed wheel
+        run: |
+          python -m venv /tmp/mcp-wheel-smoke
+          /tmp/mcp-wheel-smoke/bin/python -m pip install dist/*.whl
+          if [ "${{ matrix.project }}" = "mcp/compose" ]; then
+            /tmp/mcp-wheel-smoke/bin/cli-agent-compose-mcp --help
+          else
+            /tmp/mcp-wheel-smoke/bin/cli-agent-code-validator-mcp --help
+            /tmp/mcp-wheel-smoke/bin/cli-agent-dependency-cache --help
+          fi

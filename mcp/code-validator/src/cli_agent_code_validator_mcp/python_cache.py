@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from .cache_identity import project_cache_key
-from .test_validator_types import TestValidationError
+from .code_validator_types import CodeValidationError
 
 _CACHE_SCHEMA = "cli-agent-python-cache-v5"
 _REQUIREMENTS_FILE = "requirements.txt"
@@ -63,7 +63,7 @@ class PythonCacheEntry:
             self.install_manifest_file.is_symlink()
             or not self.install_manifest_file.is_file()
         ):
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Der Python-Cache enthält kein gültiges Offline-Installationsmanifest."
             )
         try:
@@ -71,11 +71,11 @@ class PythonCacheEntry:
                 self.install_manifest_file.read_text(encoding="utf-8")
             )
         except (OSError, json.JSONDecodeError) as exc:
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Das Python-Offline-Installationsmanifest konnte nicht gelesen werden."
             ) from exc
         if not isinstance(value, list):
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Das Python-Offline-Installationsmanifest ist ungültig."
             )
         names: list[str] = []
@@ -86,13 +86,13 @@ class PythonCacheEntry:
                 or Path(item).name != item
                 or not item.endswith(".whl")
             ):
-                raise TestValidationError(
+                raise CodeValidationError(
                     "Das Python-Offline-Installationsmanifest enthält einen "
                     "ungültigen Wheel-Namen."
                 )
             wheel = self.wheels / item
             if wheel.is_symlink() or not wheel.is_file():
-                raise TestValidationError(
+                raise CodeValidationError(
                     f"Vorbereitetes Wheel fehlt oder ist unsicher: {item}"
                 )
             names.append(item)
@@ -152,7 +152,7 @@ def require_wsl() -> None:
         raise RuntimeError(
             "Python-Dependencies müssen unter WSL vorbereitet werden, damit "
             "Linux-kompatible Wheels für den Docker-Testcontainer entstehen. "
-            "Starte cli-agent-test-cache prepare-python innerhalb von WSL."
+            "Starte cli-agent-dependency-cache prepare-python innerhalb von WSL."
         )
 
 
@@ -220,22 +220,22 @@ def _safe_relative_project_file(
     raw = value.replace("\\", "/")
     pure = PurePosixPath(raw)
     if pure.is_absolute() or ".." in pure.parts:
-        raise TestValidationError(
+        raise CodeValidationError(
             "Requirements-Include muss innerhalb des Projekts liegen."
         )
     candidate = (relative_to / Path(*pure.parts)).resolve()
     try:
         candidate.relative_to(project)
     except ValueError as exc:
-        raise TestValidationError(
+        raise CodeValidationError(
             "Requirements-Include verweist außerhalb des Projekts."
         ) from exc
     if candidate.is_symlink():
-        raise TestValidationError(
+        raise CodeValidationError(
             "Requirements-Include darf kein Symlink sein."
         )
     if not candidate.is_file():
-        raise TestValidationError(
+        raise CodeValidationError(
             "Requirements-Include verweist auf keine vorhandene Datei."
         )
     return candidate
@@ -265,14 +265,14 @@ def _validate_frozen_requirement_line(relative: str, line: str) -> None:
             option_name = candidate.split(None, 1)[0].split("=", 1)[0]
         elif len(candidate) >= 2:
             option_name = candidate[:2]
-        raise TestValidationError(
-            "requirements.txt unterstützt im Test-Validator nur gepinnte "
+        raise CodeValidationError(
+            "requirements.txt unterstützt im Code-Validator nur gepinnte "
             "Pakete sowie -r/--requirement und -c/--constraint. "
             f"Nicht unterstützte Option in {relative}: {option_name!r}"
         )
     if _FROZEN_REQUIREMENT_RE.fullmatch(candidate) is None:
-        raise TestValidationError(
-            "requirements.txt muss für den Test-Validator ausschließlich "
+        raise CodeValidationError(
+            "requirements.txt muss für den Code-Validator ausschließlich "
             "eingefrorene Index-Abhängigkeiten im Format package==version "
             "enthalten. Pfade, URLs, VCS-Referenzen und Marker werden nicht "
             f"unterstützt ({relative})."
@@ -286,9 +286,9 @@ def _requirement_files(
 ) -> tuple[Path, ...]:
     root = project / _REQUIREMENTS_FILE
     if root.is_symlink():
-        raise TestValidationError("requirements.txt darf kein Symlink sein.")
+        raise CodeValidationError("requirements.txt darf kein Symlink sein.")
     if not root.is_file():
-        raise TestValidationError(
+        raise CodeValidationError(
             "Python-Test-Validierung benötigt eine requirements.txt im "
             "Projektroot. Erzeuge sie in der aktivierten Projektumgebung z. B. "
             "mit 'python -m pip freeze --exclude-editable > requirements.txt'."
@@ -298,7 +298,7 @@ def _requirement_files(
 
     def add(path: Path) -> None:
         if path.is_symlink():
-            raise TestValidationError(
+            raise CodeValidationError(
                 "Requirements-Datei darf kein Symlink sein: "
                 f"{path.relative_to(project)}"
             )
@@ -309,17 +309,17 @@ def _requirement_files(
         try:
             size = path.stat(follow_symlinks=False).st_size
             if size > max_file_bytes:
-                raise TestValidationError(
+                raise CodeValidationError(
                     f"Requirements-Datei überschreitet das Größenlimit: {relative}"
                 )
             with path.open("r", encoding="utf-8", errors="replace") as handle:
                 text = handle.read(max_file_bytes + 1)
             if len(text.encode("utf-8", errors="replace")) > max_file_bytes:
-                raise TestValidationError(
+                raise CodeValidationError(
                     f"Requirements-Datei überschreitet das Größenlimit: {relative}"
                 )
         except OSError as exc:
-            raise TestValidationError(
+            raise CodeValidationError(
                 f"Requirements-Datei konnte nicht gelesen werden: {relative}"
             ) from exc
         for raw_line in text.splitlines():
@@ -330,7 +330,7 @@ def _requirement_files(
             if match:
                 include_value = match.group(1) or match.group(2)
                 if "${" in include_value:
-                    raise TestValidationError(
+                    raise CodeValidationError(
                         "Requirements-Includes dürfen keine "
                         "Umgebungsvariablen-Interpolation verwenden."
                     )
@@ -354,7 +354,7 @@ def python_dependency_plan(
 ) -> PythonDependencyPlan:
     root = project.expanduser().resolve()
     if not root.is_dir():
-        raise TestValidationError(f"Python-Projekt existiert nicht: {root}")
+        raise CodeValidationError(f"Python-Projekt existiert nicht: {root}")
     if max_file_bytes <= 0:
         raise ValueError("max_file_bytes muss positiv sein.")
     _requirement_files(root, max_file_bytes=max_file_bytes)
@@ -397,7 +397,7 @@ def python_cache_entry(
 def validate_python_cache_tree(directory: Path) -> int:
     root = directory.resolve()
     if directory.is_symlink() or not root.is_dir():
-        raise TestValidationError(
+        raise CodeValidationError(
             "Der vorbereitete Python-Cache ist kein Verzeichnis."
         )
     total_bytes = 0
@@ -409,7 +409,7 @@ def validate_python_cache_tree(directory: Path) -> int:
                 path = Path(entry.path)
                 mode = entry.stat(follow_symlinks=False).st_mode
                 if stat.S_ISLNK(mode):
-                    raise TestValidationError(
+                    raise CodeValidationError(
                         "Symlinks sind im vorbereiteten Python-Cache nicht erlaubt."
                     )
                 if stat.S_ISDIR(mode):
@@ -417,7 +417,7 @@ def validate_python_cache_tree(directory: Path) -> int:
                 elif stat.S_ISREG(mode):
                     total_bytes += entry.stat(follow_symlinks=False).st_size
                 else:
-                    raise TestValidationError(
+                    raise CodeValidationError(
                         "Der Python-Cache darf nur reguläre Dateien und "
                         "Verzeichnisse enthalten."
                     )

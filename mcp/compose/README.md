@@ -1,5 +1,12 @@
 # Docker Compose MCP
 
+Standalone install:
+
+```bash
+pipx install ./mcp/compose
+```
+
+
 The Compose MCP is intentionally outside the `cli-agent` core because Docker daemon access is a privileged host boundary and is unnecessary for most agent use cases.
 
 The server is scoped to the directory supplied with `--project-directory`. It accepts only one of the standard Compose filenames in that directory and rejects a Compose file that resolves outside it. Docker commands use fixed argv lists without a shell. Service names are validated against `docker compose config --services` before log or mutation commands are executed.

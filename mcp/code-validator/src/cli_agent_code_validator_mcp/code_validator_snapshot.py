@@ -12,7 +12,7 @@ from .filesystem_safety import (
     _is_windows_reparse_point,
     verified_directory_scandir,
 )
-from .test_validator_types import TestValidationError
+from .code_validator_types import CodeValidationError
 
 _IGNORED_DIRECTORY_NAMES = {
     ".git",
@@ -64,7 +64,7 @@ def _open_verified_regular_file(
     try:
         before = os.stat(path, follow_symlinks=False)
     except OSError as exc:
-        raise TestValidationError(
+        raise CodeValidationError(
             f"Projektdatei konnte nicht erneut geprüft werden: {path}"
         ) from exc
     if (
@@ -73,14 +73,14 @@ def _open_verified_regular_file(
         or not stat.S_ISREG(before.st_mode)
         or not _same_file(expected, before)
     ):
-        raise TestValidationError(
+        raise CodeValidationError(
             f"Projektdatei wurde während der Snapshot-Erstellung verändert: {path}"
         )
 
     try:
         fd = os.open(path, flags)
     except OSError as exc:
-        raise TestValidationError(
+        raise CodeValidationError(
             f"Projektdatei konnte nicht sicher geöffnet werden: {path}"
         ) from exc
     try:
@@ -91,7 +91,7 @@ def _open_verified_regular_file(
             or not _same_file(expected, opened)
             or opened.st_size != expected.st_size
         ):
-            raise TestValidationError(
+            raise CodeValidationError(
                 f"Projektdatei wurde während der Snapshot-Erstellung verändert: {path}"
             )
         return os.fdopen(fd, "rb", closefd=True), opened
@@ -121,7 +121,7 @@ def _safe_tree_entries(
     try:
         root_stat = os.stat(root, follow_symlinks=False)
     except OSError as exc:
-        raise TestValidationError(
+        raise CodeValidationError(
             f"Projektverzeichnis konnte nicht geprüft werden: {root}"
         ) from exc
     if (
@@ -129,7 +129,7 @@ def _safe_tree_entries(
         or _is_windows_reparse_point(root_stat)
         or not stat.S_ISDIR(root_stat.st_mode)
     ):
-        raise TestValidationError(
+        raise CodeValidationError(
             f"Projektroot ist kein sicheres Verzeichnis: {root}"
         )
 
@@ -139,7 +139,7 @@ def _safe_tree_entries(
             with verified_directory_scandir(
                 directory,
                 expected,
-                error_type=TestValidationError,
+                error_type=CodeValidationError,
                 changed_message=(
                     "Projektverzeichnis wurde während der "
                     "Snapshot-Erstellung verändert"
@@ -148,7 +148,7 @@ def _safe_tree_entries(
                 for entry in scanned:
                     entry_count += 1
                     if entry_count > max_snapshot_entries:
-                        raise TestValidationError(
+                        raise CodeValidationError(
                             "Projekt überschreitet das Snapshot-Eintragslimit."
                         )
                     path = directory / entry.name
@@ -156,17 +156,17 @@ def _safe_tree_entries(
                         entry_stat = entry.stat(follow_symlinks=False)
                         mode = entry_stat.st_mode
                     except OSError as exc:
-                        raise TestValidationError(
+                        raise CodeValidationError(
                             f"Projektpfad konnte nicht geprüft werden: {path}"
                         ) from exc
                     if _is_windows_reparse_point(entry_stat):
-                        raise TestValidationError(
+                        raise CodeValidationError(
                             "Windows-Reparse-Points/Junctions sind im "
                             "Test-Snapshot nicht erlaubt: "
                             f"{path.relative_to(root)}"
                         )
                     if stat.S_ISLNK(mode):
-                        raise TestValidationError(
+                        raise CodeValidationError(
                             "Symlinks sind im Test-Snapshot nicht erlaubt: "
                             f"{path.relative_to(root)}"
                         )
@@ -179,26 +179,26 @@ def _safe_tree_entries(
                         walk(path, entry_stat)
                         continue
                     if not stat.S_ISREG(mode):
-                        raise TestValidationError(
+                        raise CodeValidationError(
                             "Nur reguläre Dateien und Verzeichnisse sind erlaubt: "
                             f"{path.relative_to(root)}"
                         )
                     size = entry_stat.st_size
                     if size > max_file_bytes:
-                        raise TestValidationError(
+                        raise CodeValidationError(
                             "Datei überschreitet das Größenlimit: "
                             f"{path.relative_to(root)}"
                         )
                     total_bytes += size
                     if total_bytes > max_project_bytes:
-                        raise TestValidationError(
+                        raise CodeValidationError(
                             "Projekt überschreitet das Größenlimit."
                         )
                     entries_for_archive.append((path, entry_stat))
-        except TestValidationError:
+        except CodeValidationError:
             raise
         except OSError as exc:
-            raise TestValidationError(
+            raise CodeValidationError(
                 f"Projektverzeichnis konnte nicht sicher gelesen werden: {directory}"
             ) from exc
 

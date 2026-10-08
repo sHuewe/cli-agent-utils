@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-class TestValidationError(RuntimeError):
-    """A test-validator request or sandbox setup is invalid."""
+class CodeValidationError(RuntimeError):
+    """A code-validator request or sandbox setup is invalid."""
 
 
 _IMAGE_DIGEST = re.compile(r"^.+@sha256:[0-9a-f]{64}$", re.IGNORECASE)
@@ -17,7 +17,7 @@ def is_pinned_image(image: str) -> bool:
 
 
 @dataclass(frozen=True)
-class TestValidatorSettings:
+class CodeValidatorSettings:
     python_image: str
     maven_image: str
     gradle_image: str
