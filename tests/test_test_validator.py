@@ -333,6 +333,7 @@ def test_create_timeout_still_attempts_cleanup(tmp_path: Path) -> None:
     result = validator.run_python_tests(".")
 
     assert result["success"] is False
+    assert result["timed_out"] is True
     assert any(args[0] == "rm" for args, _ in backend.calls)
 
 
@@ -1615,6 +1616,38 @@ def test_output_redactor_handles_many_unmatched_private_key_markers() -> None:
     result = redactor.redact(output)
 
     assert result == "⟦x⟧"
+
+
+def test_output_redactor_redacts_prefixed_private_key_markers() -> None:
+    redactor = OutputRedactor()
+    output = (
+        "INFO -----BEGIN PRIVATE KEY-----\n"
+        "INFO key-material\n"
+        "INFO -----END PRIVATE KEY-----\n"
+        "INFO after\n"
+    )
+
+    result = redactor.redact(output)
+
+    assert "key-material" not in result
+    assert "BEGIN PRIVATE KEY" not in result
+    assert "END PRIVATE KEY" not in result
+    assert "INFO after" in result
+
+
+def test_output_redactor_preserves_text_around_inline_pem_markers() -> None:
+    redactor = OutputRedactor()
+    output = (
+        "prefix -----BEGIN PRIVATE KEY-----\n"
+        "key-material\n"
+        "prefix -----END PRIVATE KEY----- suffix\n"
+    )
+
+    result = redactor.redact(output)
+
+    assert "key-material" not in result
+    assert result.startswith("prefix ")
+    assert result.endswith(" suffix\n")
 
 
 def test_output_redactor_redacts_private_key_after_standalone_delimiter() -> None:
