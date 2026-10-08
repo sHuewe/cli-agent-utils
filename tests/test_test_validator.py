@@ -588,8 +588,8 @@ def test_gradle_selector_uses_validator_controlled_no_match_policy(
     script = " ".join(init_script_call)
     assert "doFirst" in script
     assert "setFailOnNoMatchingTests(false)" in script
-    assert "junitXml.required.set(true)" in script
-    assert "/output/gradle-test-results/" in script
+    assert "afterTest" in script
+    assert "/output/gradle-test-match" in script
 
 
 def test_gradle_selector_message_names_gradle(tmp_path: Path) -> None:
@@ -603,8 +603,7 @@ def test_gradle_selector_message_names_gradle(tmp_path: Path) -> None:
                 return DockerCommandResult(0, inspect_payload(), "")
             if (
                 args[0] == "exec"
-                and "gradle-test-results" in " ".join(args)
-                and "TEST-*.xml" in " ".join(args)
+                and "gradle-test-match" in " ".join(args)
             ):
                 return DockerCommandResult(1, "", "")
             return DockerCommandResult(0, "BUILD SUCCESS\n", "")
@@ -654,8 +653,8 @@ def test_gradle_selector_reapplies_report_policy_after_project_configuration(
     )
     script = " ".join(init_script_call)
     assert "doFirst" in script
-    assert "junitXml.required.set(true)" in script
-    assert "/output/gradle-test-results/" in script
+    assert "afterTest" in script
+    assert "/output/gradle-test-match" in script
 
 
 def test_gradle_selector_verifies_match_across_all_test_tasks(
@@ -675,8 +674,7 @@ def test_gradle_selector_verifies_match_across_all_test_tasks(
                 return DockerCommandResult(0, inspect_payload(), "")
             if (
                 args[0] == "exec"
-                and "gradle-test-results" in " ".join(args)
-                and "TEST-*.xml" in " ".join(args)
+                and "gradle-test-match" in " ".join(args)
             ):
                 return DockerCommandResult(0, "", "")
             return DockerCommandResult(0, self.exec_output, "")
@@ -741,8 +739,8 @@ def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
     )
     assert "projectsEvaluated" in " ".join(init_script_call)
     assert "setFailOnNoMatchingTests(false)" in " ".join(init_script_call)
-    assert "junitXml.required.set(true)" in " ".join(init_script_call)
-    assert "/output/gradle-test-results/" in " ".join(init_script_call)
+    assert "afterTest" in " ".join(init_script_call)
+    assert "/output/gradle-test-match" in " ".join(init_script_call)
     assert not any(
         "/opt/cli-agent-test-cache/gradle" in " ".join(args)
         for args, _ in backend.calls
