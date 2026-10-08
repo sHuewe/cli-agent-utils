@@ -17,7 +17,7 @@ The MCP exposes exactly:
 Python selectors must refer to tests inside the project. Selectors beginning with `-` or `@` are rejected so they cannot be interpreted by pytest as command-line options or argument files.
 - `run_java_tests(project_path=".", test_selector=None, build_system="auto")`
 
-Java method selectors use the common `com.example.ExampleTest#method` form at the MCP boundary. Maven receives that form directly; Gradle receives the equivalent `com.example.ExampleTest.method` pattern required by `--tests`. For Maven reactor builds, modules without a matching selected test are tolerated, but the validator writes Surefire XML reports into an isolated `/output/surefire-reports` directory and verifies that at least one generated report contains a `<testcase>` entry. Arbitrary Maven log text is not used as proof of execution; otherwise the validator reports `test_selector_not_matched`. For Gradle selector runs, the validator requires Gradle 8.3 or newer because the dry-run test option is only available from that version onward. It forces `--no-test-dry-run` and `--rerun-tasks`, supplies its own temporary init script, and keeps individual command-line-filtered `Test` tasks tolerant of a local no-match (`failOnNoMatchingTests=false`). The listener is scoped to tasks whose `commandLineIncludePatterns` are non-empty, so unrelated dependent `Test` tasks cannot satisfy the selector check. An `afterTest` listener writes a small marker under `/output` only when such a selector-filtered task is not in dry-run mode and the result is not `SKIPPED`. After a successful Gradle invocation, selector success additionally requires that marker. This avoids depending on mutable JUnit-report properties and preserves valid multi-project selectors while rejecting dry-run, skipped-only, cached/up-to-date, unrelated-dependent-task and globally unmatched selector runs. This match check is a correctness guard for ordinary Gradle configuration, not a security attestation against deliberately malicious project build logic running inside the same sandbox.
+Java method selectors use the common `com.example.ExampleTest#method` form at the MCP boundary. Maven receives that form directly; Gradle receives the equivalent `com.example.ExampleTest.method` pattern required by `--tests`. Across Python, Maven, and Gradle, the validator deliberately follows the native test-runner/build-tool result contract: `success=true` means the fixed pytest/Maven/Gradle command completed successfully according to that project's own test configuration. The validator does not independently prove that tests exist, that a selector matched at least one test, that a test body actually ran, or that the project has not configured its test runner to ignore failures. Those semantics remain the responsibility of pytest/Maven/Gradle and the project configuration.
 - `run_java_build(project_path=".", build_system="auto")`
 
 There is no arbitrary command, shell, Docker or package-install tool in the MCP contract. The Java build tool also does not accept arbitrary Maven goals, Gradle tasks or additional command-line arguments.
@@ -98,7 +98,7 @@ The validator therefore does not try to parse every possible package-manager inp
 
 ### Python
 
-The configured Python image must contain Python, pip and pytest. Project dependencies are provided by a separate prepared wheel cache. The configured Gradle image may be older for build-only validation, but Gradle test selectors require Gradle 8.3 or newer; the validator checks this before executing a selector run and returns `unsupported_gradle_version` otherwise.
+The configured Python image must contain Python, pip and pytest. Project dependencies are provided by a separate prepared wheel cache.
 
 A Windows pipx installation exposes `cli-agent-test-cache.exe` for Windows-side commands, but it is not sufficient for Python preparation. Install `cli-agent-mcp` through pipx inside WSL as well and invoke the Linux `cli-agent-test-cache` there. Calling the Windows `.exe` from a WSL shell still runs Windows Python and is rejected.
 
@@ -274,7 +274,7 @@ mvn -o -B -Dmaven.repo.local=/tmp/m2 test
 or, with a selector:
 
 ```text
-mvn -o -B -Dmaven.repo.local=/tmp/m2 -Dtest=<selector> -Dsurefire.failIfNoSpecifiedTests=false test
+mvn -o -B -Dmaven.repo.local=/tmp/m2 -Dtest=<selector> test
 ```
 
 The Surefire flag keeps a reactor build from failing in modules that do not contain the selected test; modules with a matching test still execute it.
@@ -326,13 +326,10 @@ When a cache exists, its prepared Gradle user home is validated and streamed int
 gradle --offline --no-daemon --gradle-user-home /tmp/gradle test
 ```
 
-With a selector, the validator additionally forces real execution and installs its selector listener:
+With a selector:
 
 ```text
-gradle --offline --no-daemon --gradle-user-home /tmp/gradle \
-  --rerun-tasks \
-  --init-script /tmp/cli-agent-test-selector.gradle \
-  test --no-test-dry-run --tests <selector>
+gradle --offline --no-daemon --gradle-user-home /tmp/gradle test --tests <selector>
 ```
 
 The separate Gradle build tool uses the same prepared cache but runs only:
