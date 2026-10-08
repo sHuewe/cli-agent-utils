@@ -824,9 +824,16 @@ class DockerTestValidator:
         python_wheels: Path | None = None
         dependency_cache_key: str | None = None
         pre_test_command: list[str] | None = None
-        plan = python_dependency_plan(project)
+        plan = python_dependency_plan(
+            project,
+            max_file_bytes=self.settings.max_file_bytes,
+        )
         if plan.has_dependencies and self.settings.python_cache_root is not None:
-            entry = python_cache_entry(self.settings.python_cache_root, project)
+            entry = python_cache_entry(
+                self.settings.python_cache_root,
+                project,
+                max_file_bytes=self.settings.max_file_bytes,
+            )
             dependency_cache_key = entry.key
             if not entry.is_ready():
                 return {
