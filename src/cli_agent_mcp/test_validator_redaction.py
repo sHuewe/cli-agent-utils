@@ -27,6 +27,7 @@ _GENERIC_PATTERNS = (
 )
 _PRIVATE_KEY_BEGIN = "-----BEGIN "
 _PRIVATE_KEY_END_PREFIX = "-----END "
+_REDACTION_MARKER = "⟦x⟧"
 _TEXT_CONFIG_SUFFIXES = {".env", ".properties", ".yaml", ".yml", ".json", ".toml"}
 _MAX_DISCOVERED_SECRET_VALUES = 4096
 _MAX_DISCOVERED_SECRET_CHARS = 1024 * 1024
@@ -342,7 +343,7 @@ class _ExactSecretMatcher:
         cursor = 0
         for start, end in intervals:
             chunks.append(value[cursor:start])
-            chunks.append("<redacted>")
+            chunks.append(_REDACTION_MARKER)
             cursor = end
         chunks.append(value[cursor:])
         return "".join(chunks)
@@ -376,7 +377,7 @@ def _redact_private_keys(value: str) -> str:
 
         if line.strip() == f"{_PRIVATE_KEY_END_PREFIX}{active_label}-----":
             newline = "\n" if line.endswith(("\n", "\r")) else ""
-            result.append("<redacted-private-key>" + newline)
+            result.append(_REDACTION_MARKER + newline)
             pending = []
             active_label = None
             continue
@@ -385,7 +386,7 @@ def _redact_private_keys(value: str) -> str:
 
     if pending:
         newline = "\n" if pending[-1].endswith(("\n", "\r")) else ""
-        result.append("<redacted-private-key>" + newline)
+        result.append(_REDACTION_MARKER + newline)
     return "".join(result)
 
 
@@ -414,5 +415,11 @@ class OutputRedactor:
 
         text = _redact_private_keys(value)
         text = self._matcher.redact(text)
-        text = _GENERIC_PATTERNS[0].sub(r"\1<redacted>", text)
-        return _GENERIC_PATTERNS[1].sub(r"\1<redacted>", text)
+        text = _GENERIC_PATTERNS[0].sub(
+            lambda match: match.group(1) + _REDACTION_MARKER,
+            text,
+        )
+        return _GENERIC_PATTERNS[1].sub(
+            lambda match: match.group(1) + _REDACTION_MARKER,
+            text,
+        )
