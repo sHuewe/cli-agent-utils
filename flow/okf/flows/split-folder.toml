@@ -1,0 +1,30 @@
+version = 1
+# exclude_paths = []  # inherited from the parent flow
+inputs = ["folder", "okf_root"]
+result = "steps.split.output"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+[[steps]]
+id = "discover"
+prompt_file = "flow/okf/prompts/discover_concepts_for_split.md"
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+folder = "${input.folder}"
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "split"
+flow = "flow/okf/flows/split-concept.toml"
+foreach = "steps.discover.output.concepts"
+iteration_id = "${item.id}"
+
+[steps.input]
+concept_path = "${item.path}"
+okf_root = "${input.okf_root}"

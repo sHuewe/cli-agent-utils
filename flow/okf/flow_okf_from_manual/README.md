@@ -73,3 +73,14 @@ Run it with:
 cli-agent-flow validate flow/okf/flow_okf_from_manual/flow_questions.toml --workspace <workspace-root>
 cli-agent-flow run flow/okf/flow_okf_from_manual/flow_questions.toml --workspace <workspace-root>
 ```
+
+## Post-generation concept granularity pass
+
+After the existing final verification, the flow now performs an additional split evaluation. The phase is appended after the previous steps so existing JSON checkpoints remain reusable and a completed older run can simply continue into this new phase.
+
+Each semantic folder is processed independently. Its direct concepts are listed, and every concept is evaluated in its own nested flow. Roughly 30-80 Markdown lines is only a soft orientation; semantic retrieval independence determines whether a split is useful.
+
+A useful split keeps the original concept path as a concise overview and creates 2-6 focused sibling concepts in the same semantic folder. No manual is re-read during splitting and no new factual knowledge may be introduced; only already documented content and manual references are reorganized. Folder navigation is updated locally and verified again.
+
+The question follow-up flow applies the same split evaluation to the concept touched by each question after the existing question assessment/evidence/apply/verify sequence. Existing question steps are unchanged.
+
