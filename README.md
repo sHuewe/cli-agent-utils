@@ -97,7 +97,7 @@ Three immutable image references are configured administratively. Each image mus
 
 - a Python image containing Python, `pip` and `pytest`; project dependencies are supplied from a separately prepared Linux wheel cache,
 - a Maven image containing Maven; project dependencies can be supplied from a separately prepared per-dependency cache,
-- a Gradle image containing Gradle; project dependencies can be supplied from a separately prepared per-dependency Gradle user home. Gradle 8.3 or newer is required for selector runs because the validator uses the task-specific test dry-run controls introduced in Gradle 8.3.
+- a Gradle image containing Gradle; project dependencies can be supplied from a separately prepared per-dependency Gradle user home.
 
 Every reference must include a complete SHA-256 digest:
 
@@ -273,9 +273,11 @@ run_java_tests(project_path=".", build_system="gradle")
 The fixed test commands are:
 
 ```text
-mvn -o -B -Dmaven.repo.local=/tmp/m2 [-Dtest=<selector> -Dsurefire.failIfNoSpecifiedTests=false] test
-gradle --offline --no-daemon --gradle-user-home /tmp/gradle [--rerun-tasks --init-script /tmp/cli-agent-test-selector.gradle] test [--no-test-dry-run --tests <selector>]
+mvn -o -B -Dmaven.repo.local=/tmp/m2 [-Dtest=<selector>] test
+gradle --offline --no-daemon --gradle-user-home /tmp/gradle test [--tests <selector>]
 ```
+
+Native test-runner semantics apply consistently to Python, Maven, and Gradle: a successful tool result means the fixed pytest/Maven/Gradle command exited successfully according to the project's own configuration. The validator does not separately require tests to exist, require a selector to match, or override project settings that intentionally ignore test failures.
 
 Java also has one unified build-only tool:
 
