@@ -204,7 +204,7 @@ def test_output_redactor_removes_known_and_generic_secrets() -> None:
     assert "super-secret-value" not in text
     assert "abcdef" not in text
     assert "hunter2" not in text
-    assert "<redacted>" in text
+    assert "⟦x⟧" in text
 
 
 def test_python_requirements_respect_validator_file_size_limit(
@@ -1420,6 +1420,15 @@ def test_output_redactor_suppresses_output_when_discovery_is_incomplete() -> Non
     assert "unterdrückt" in result
 
 
+def test_redaction_marker_cannot_reproduce_discovered_secret() -> None:
+    redactor = OutputRedactor(["redacted"])
+
+    result = redactor.redact("redacted")
+
+    assert "redacted" not in result
+    assert result == "⟦x⟧"
+
+
 def test_output_redactor_handles_many_exact_values_in_single_pass() -> None:
     secrets = [f"secret-{index:04d}" for index in range(1000)]
     redactor = OutputRedactor(secrets)
@@ -1428,7 +1437,7 @@ def test_output_redactor_handles_many_exact_values_in_single_pass() -> None:
     result = redactor.redact(output)
 
     assert not any(secret in result for secret in secrets[::100])
-    assert "<redacted>" in result
+    assert "⟦x⟧" in result
 
 
 def test_output_redactor_redacts_pem_private_key_block() -> None:
@@ -1444,7 +1453,7 @@ def test_output_redactor_redacts_pem_private_key_block() -> None:
     result = redactor.redact(output)
 
     assert "sensitive-key-material" not in result
-    assert "<redacted-private-key>" in result
+    assert "⟦x⟧" in result
     assert "before" in result
     assert "after" in result
 
@@ -1460,7 +1469,7 @@ def test_exact_secret_cannot_corrupt_pem_boundaries() -> None:
     result = redactor.redact(output)
 
     assert "key-material" not in result
-    assert "<redacted-private-key>" in result
+    assert "⟦x⟧" in result
 
 
 def test_output_redactor_redacts_unterminated_private_key_to_eof() -> None:
@@ -1474,7 +1483,7 @@ def test_output_redactor_redacts_unterminated_private_key_to_eof() -> None:
     result = redactor.redact(output)
 
     assert "partial-key-material" not in result
-    assert "<redacted-private-key>" in result
+    assert "⟦x⟧" in result
     assert result.startswith("before\n")
 
 
@@ -1487,8 +1496,7 @@ def test_output_redactor_handles_many_unmatched_private_key_markers() -> None:
 
     result = redactor.redact(output)
 
-    assert result.endswith("no matching end marker")
-    assert result.count("-----BEGIN PRIVATE KEY-----") == 5000
+    assert result == "⟦x⟧"
 
 
 def test_output_redactor_redacts_private_key_after_standalone_delimiter() -> None:
@@ -1504,4 +1512,4 @@ def test_output_redactor_redacts_private_key_after_standalone_delimiter() -> Non
 
     assert "SECRET" not in result
     assert result.startswith("-----\n")
-    assert "<redacted-private-key>" in result
+    assert "⟦x⟧" in result
