@@ -381,16 +381,11 @@ def _redact_private_keys(value: str) -> str:
             active_label = None
             continue
 
-        if label is not None:
-            result.extend(pending)
-            active_label = label
-            pending = [line]
-            continue
-
         pending.append(line)
 
     if pending:
-        result.extend(pending)
+        newline = "\n" if pending[-1].endswith(("\n", "\r")) else ""
+        result.append("<redacted-private-key>" + newline)
     return "".join(result)
 
 
