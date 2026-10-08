@@ -103,6 +103,8 @@ class FakeBackend:
         if command == "inspect":
             return DockerCommandResult(0, inspect_payload(), "")
         if command == "exec":
+            if args[-2:] == ["gradle", "--version"]:
+                return DockerCommandResult(0, "Gradle 8.14.4\n", "")
             return DockerCommandResult(0, self.exec_output, "")
         return DockerCommandResult(0, "ok", "")
 
