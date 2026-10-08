@@ -417,7 +417,7 @@ class OutputRedactor:
         if self._suppress_output:
             return _SUPPRESSED_OUTPUT
 
-        text = self._matcher.redact(value)
+        text = _redact_private_keys(value)
+        text = self._matcher.redact(text)
         text = _GENERIC_PATTERNS[0].sub(r"\1<redacted>", text)
-        text = _GENERIC_PATTERNS[1].sub(r"\1<redacted>", text)
-        return _redact_private_keys(text)
+        return _GENERIC_PATTERNS[1].sub(r"\1<redacted>", text)
