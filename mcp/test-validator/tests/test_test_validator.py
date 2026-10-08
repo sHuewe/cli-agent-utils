@@ -8,38 +8,38 @@ from pathlib import Path
 
 import pytest
 
-from cli_agent_mcp.docker_backend import (
+from cli_agent_test_validator_mcp.docker_backend import (
     DockerBackend,
     DockerCommandResult,
     _open_verified_stream_file,
 )
-from cli_agent_mcp.filesystem_safety import (
+from cli_agent_test_validator_mcp.filesystem_safety import (
     _is_windows_reparse_point,
     _is_windows_reparse_point as _docker_reparse_point,
 )
-from cli_agent_mcp.gradle_cache import (
+from cli_agent_test_validator_mcp.gradle_cache import (
     gradle_cache_entry,
     gradle_dependency_key,
     write_gradle_ready_metadata,
 )
-from cli_agent_mcp.maven_cache import cache_entry, maven_dependency_key, write_ready_metadata
-from cli_agent_mcp.python_cache import (
+from cli_agent_test_validator_mcp.maven_cache import cache_entry, maven_dependency_key, write_ready_metadata
+from cli_agent_test_validator_mcp.python_cache import (
     python_cache_entry,
     python_dependency_plan,
     write_python_ready_metadata,
 )
-from cli_agent_mcp.test_validator import DockerTestValidator
-from cli_agent_mcp.test_validator_redaction import (
+from cli_agent_test_validator_mcp.test_validator import DockerTestValidator
+from cli_agent_test_validator_mcp.test_validator_redaction import (
     OutputRedactor,
     SecretDiscoveryLimitError,
     discover_secret_values,
 )
-from cli_agent_mcp.test_validator_server import _workspace_from_core_environment
-from cli_agent_mcp.test_validator_snapshot import (
+from cli_agent_test_validator_mcp.server import _workspace_from_core_environment
+from cli_agent_test_validator_mcp.test_validator_snapshot import (
     _open_verified_regular_file,
     create_project_snapshot,
 )
-from cli_agent_mcp.test_validator_types import (
+from cli_agent_test_validator_mcp.test_validator_types import (
     TestValidationError as ValidationError,
     TestValidatorSettings as ValidatorSettings,
 )
