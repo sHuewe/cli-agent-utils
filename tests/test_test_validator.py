@@ -402,9 +402,18 @@ def test_java_maven_selector_is_translated_without_shell(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
-    backend = FakeBackend(
-        exec_output="Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\n"
-    )
+
+    class MavenSelectorBackend(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            self.calls.append((args, input_bytes))
+            if args[0] == "inspect":
+                return DockerCommandResult(0, inspect_payload(), "")
+            if args[0] == "exec" and "grep -l '<testcase[ >]'" in " ".join(args):
+                return DockerCommandResult(0, "report.xml\n", "")
+            return DockerCommandResult(0, self.exec_output, "")
+
+    backend = MavenSelectorBackend(exec_output="BUILD SUCCESS\n")
     validator = DockerTestValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_java_tests(
@@ -419,14 +428,15 @@ def test_java_maven_selector_is_translated_without_shell(
         for args, _ in backend.calls
         if args[0] == "exec" and "mvn" in args
     )
-    assert exec_call[-8:] == [
+    assert exec_call[-9:] == [
         "mvn",
         "-o",
         "-B",
         "-Dmaven.repo.local=/tmp/m2",
         "-Dtest=com.example.ExampleTest#works",
         "-Dsurefire.failIfNoSpecifiedTests=false",
-        "-Dsurefire.printSummary=true",
+        "-DdisableXmlReport=false",
+        "-Dsurefire.reportsDirectory=/output/surefire-reports",
         "test",
     ]
     assert not any(
@@ -437,7 +447,18 @@ def test_java_maven_selector_is_translated_without_shell(
 
 def test_java_maven_selector_requires_an_executed_test(tmp_path: Path) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
-    backend = FakeBackend(exec_output="BUILD SUCCESS\n")
+
+    class MissingSelectorBackend(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            self.calls.append((args, input_bytes))
+            if args[0] == "inspect":
+                return DockerCommandResult(0, inspect_payload(), "")
+            if args[0] == "exec" and "grep -l '<testcase[ >]'" in " ".join(args):
+                return DockerCommandResult(1, "", "")
+            return DockerCommandResult(0, "BUILD SUCCESS\n", "")
+
+    backend = MissingSelectorBackend()
     validator = DockerTestValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_java_tests(
@@ -448,6 +469,43 @@ def test_java_maven_selector_requires_an_executed_test(tmp_path: Path) -> None:
     assert result["success"] is False
     assert result["reason"] == "test_selector_not_matched"
     assert "keinen" in result["message_to_user"]
+
+
+def test_maven_log_text_cannot_fake_selector_match(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text(
+        "<project><name>Tests run: 1, Failures: 0, Errors: 0, Skipped: 0</name></project>",
+        encoding="utf-8",
+    )
+
+    class SpoofedLogBackend(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            self.calls.append((args, input_bytes))
+            if args[0] == "inspect":
+                return DockerCommandResult(0, inspect_payload(), "")
+            if args[0] == "exec" and "grep -l '<testcase[ >]'" in " ".join(args):
+                return DockerCommandResult(1, "", "")
+            if args[0] == "exec" and "cat" in args:
+                return DockerCommandResult(
+                    0,
+                    "Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\n",
+                    "",
+                )
+            return DockerCommandResult(0, "ok", "")
+
+    validator = DockerTestValidator(
+        tmp_path,
+        settings(),
+        backend=SpoofedLogBackend(),
+    )
+
+    result = validator.run_java_tests(
+        ".",
+        "com.example.MissingTest#works",
+    )
+
+    assert result["success"] is False
+    assert result["reason"] == "test_selector_not_matched"
 
 
 def test_java_auto_detection_rejects_ambiguous_project(tmp_path: Path) -> None:
