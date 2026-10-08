@@ -586,8 +586,53 @@ def test_gradle_selector_uses_validator_controlled_no_match_policy(
         and "cat >" in " ".join(args)
     )
     script = " ".join(init_script_call)
-    assert "doFirst" in script
-    assert "setFailOnNoMatchingTests(true)" in script
+    assert "setFailOnNoMatchingTests(false)" in script
+    assert "/output/gradle-test-results/" in script
+
+
+def test_gradle_selector_verifies_match_across_all_test_tasks(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "settings.gradle").write_text(
+        "include 'one', 'two'\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+
+    class GradleSelectorBackend(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            self.calls.append((args, input_bytes))
+            if args[0] == "inspect":
+                return DockerCommandResult(0, inspect_payload(), "")
+            if (
+                args[0] == "exec"
+                and "gradle-test-results" in " ".join(args)
+                and "TEST-*.xml" in " ".join(args)
+            ):
+                return DockerCommandResult(0, "", "")
+            return DockerCommandResult(0, self.exec_output, "")
+
+    backend = GradleSelectorBackend(exec_output="BUILD SUCCESS\n")
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    result = validator.run_java_tests(
+        ".",
+        "com.example.ExampleTest#works",
+        build_system="gradle",
+    )
+
+    assert result["success"] is True
+    init_script_call = next(
+        args
+        for args, _ in backend.calls
+        if args[0] == "exec"
+        and "cli-agent-test-selector.gradle" in " ".join(args)
+        and "cat >" in " ".join(args)
+    )
+    script = " ".join(init_script_call)
+    assert "setFailOnNoMatchingTests(false)" in script
+    assert "/output/gradle-test-results/" in script
 
 
 def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
@@ -626,7 +671,8 @@ def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
         and "cli-agent-test-selector.gradle" in " ".join(args)
         and "cat >" in " ".join(args)
     )
-    assert "setFailOnNoMatchingTests(true)" in " ".join(init_script_call)
+    assert "setFailOnNoMatchingTests(false)" in " ".join(init_script_call)
+    assert "/output/gradle-test-results/" in " ".join(init_script_call)
     assert not any(
         "/opt/cli-agent-test-cache/gradle" in " ".join(args)
         for args, _ in backend.calls
