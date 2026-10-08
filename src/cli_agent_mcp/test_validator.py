@@ -95,9 +95,10 @@ class DockerTestValidator:
             if not _JAVA_SELECTOR.fullmatch(value):
                 raise TestValidationError("Ungültiger Java-Test-Selector.")
             return value
-        if value.startswith("-"):
+        if value.startswith(("-", "@")):
             raise TestValidationError(
-                "Python-Test-Selectoren dürfen keine pytest-Optionen sein."
+                "Python-Test-Selectoren dürfen keine pytest-Optionen oder "
+                "Argument-Dateien sein."
             )
         path_part = value.split("::", 1)[0]
         path_candidate = PurePath(path_part)
