@@ -402,7 +402,9 @@ def test_java_maven_selector_is_translated_without_shell(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
-    backend = FakeBackend()
+    backend = FakeBackend(
+        exec_output="Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\n"
+    )
     validator = DockerTestValidator(tmp_path, settings(), backend=backend)
 
     result = validator.run_java_tests(
@@ -417,19 +419,35 @@ def test_java_maven_selector_is_translated_without_shell(
         for args, _ in backend.calls
         if args[0] == "exec" and "mvn" in args
     )
-    assert exec_call[-7:] == [
+    assert exec_call[-8:] == [
         "mvn",
         "-o",
         "-B",
         "-Dmaven.repo.local=/tmp/m2",
         "-Dtest=com.example.ExampleTest#works",
         "-Dsurefire.failIfNoSpecifiedTests=false",
+        "-Dsurefire.printSummary=true",
         "test",
     ]
     assert not any(
         "/opt/cli-agent-test-cache/maven" in " ".join(args)
         for args, _ in backend.calls
     )
+
+
+def test_java_maven_selector_requires_an_executed_test(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    backend = FakeBackend(exec_output="BUILD SUCCESS\n")
+    validator = DockerTestValidator(tmp_path, settings(), backend=backend)
+
+    result = validator.run_java_tests(
+        ".",
+        "com.example.MissingTest#works",
+    )
+
+    assert result["success"] is False
+    assert result["reason"] == "test_selector_not_matched"
+    assert "keinen" in result["message_to_user"]
 
 
 def test_java_auto_detection_rejects_ambiguous_project(tmp_path: Path) -> None:
