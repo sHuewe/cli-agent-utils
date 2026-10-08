@@ -163,7 +163,7 @@ id = "post_split_final_verify"
 prompt_file = "flow/okf/prompts/post_split_final_verify.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_src/state/post-split-final-verification.json"
-overwrite_output = false
+overwrite_output = true
 workspace_access = "read"
 response_format = "json"
 
