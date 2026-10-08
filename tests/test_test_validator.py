@@ -761,11 +761,11 @@ def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
         "--no-daemon",
         "--gradle-user-home",
         "/tmp/gradle",
-        "--no-test-dry-run",
         "--rerun-tasks",
         "--init-script",
         "/tmp/cli-agent-test-selector.gradle",
         "test",
+        "--no-test-dry-run",
         "--tests",
         "com.example.ExampleTest.works",
     ]
