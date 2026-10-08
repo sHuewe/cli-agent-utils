@@ -349,44 +349,81 @@ class _ExactSecretMatcher:
         return "".join(chunks)
 
 
-def _pem_private_key_label(line: str) -> str | None:
-    marker = line.strip()
-    if not marker.startswith(_PRIVATE_KEY_BEGIN) or not marker.endswith("-----"):
+def _find_pem_private_key_begin(line: str) -> tuple[str, int, int] | None:
+    search_from = 0
+    while True:
+        start = line.find(_PRIVATE_KEY_BEGIN, search_from)
+        if start < 0:
+            return None
+        label_end = line.find("-----", start + len(_PRIVATE_KEY_BEGIN))
+        if label_end < 0:
+            return None
+        label = line[start + len(_PRIVATE_KEY_BEGIN) : label_end].strip()
+        if label.endswith("PRIVATE KEY"):
+            return label, start, label_end + 5
+        search_from = start + 1
+
+
+def _find_pem_private_key_end(
+    line: str,
+    label: str,
+    *,
+    start: int = 0,
+) -> tuple[int, int] | None:
+    marker = f"{_PRIVATE_KEY_END_PREFIX}{label}-----"
+    marker_start = line.find(marker, start)
+    if marker_start < 0:
         return None
-    label = marker[len(_PRIVATE_KEY_BEGIN) : -5].strip()
-    if not label.endswith("PRIVATE KEY"):
-        return None
-    return label
+    return marker_start, marker_start + len(marker)
+
+
+def _line_ending(line: str) -> str:
+    if line.endswith("\r\n"):
+        return "\r\n"
+    if line.endswith("\n"):
+        return "\n"
+    if line.endswith("\r"):
+        return "\r"
+    return ""
 
 
 def _redact_private_keys(value: str) -> str:
-    """Redact PEM private-key blocks with a linear line-oriented scan."""
+    """Redact PEM private-key blocks even when log lines add prefixes."""
     result: list[str] = []
-    pending: list[str] = []
     active_label: str | None = None
 
     for line in value.splitlines(keepends=True):
-        label = _pem_private_key_label(line)
         if active_label is None:
-            if label is None:
+            begin = _find_pem_private_key_begin(line)
+            if begin is None:
                 result.append(line)
-            else:
-                active_label = label
-                pending = [line]
+                continue
+
+            label, marker_start, marker_end = begin
+            result.append(line[:marker_start])
+            result.append(_REDACTION_MARKER)
+
+            end = _find_pem_private_key_end(line, label, start=marker_end)
+            if end is not None:
+                result.append(line[end[1] :])
+                continue
+
+            active_label = label
+            ending = _line_ending(line)
+            if ending:
+                result.append(ending)
             continue
 
-        if line.strip() == f"{_PRIVATE_KEY_END_PREFIX}{active_label}-----":
-            newline = "\n" if line.endswith(("\n", "\r")) else ""
-            result.append(_REDACTION_MARKER + newline)
-            pending = []
+        end = _find_pem_private_key_end(line, active_label)
+        if end is not None:
+            result.append(line[end[1] :])
             active_label = None
             continue
 
-        pending.append(line)
+        ending = _line_ending(line)
+        if ending:
+            result.append(ending)
 
-    if pending:
-        newline = "\n" if pending[-1].endswith(("\n", "\r")) else ""
-        result.append(_REDACTION_MARKER + newline)
     return "".join(result)
 
 
