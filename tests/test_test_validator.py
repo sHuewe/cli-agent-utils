@@ -1449,6 +1449,20 @@ def test_output_redactor_redacts_pem_private_key_block() -> None:
     assert "after" in result
 
 
+def test_exact_secret_cannot_corrupt_pem_boundaries() -> None:
+    redactor = OutputRedactor(["PRIVATE KEY"])
+    output = (
+        "-----BEGIN PRIVATE KEY-----\n"
+        "key-material\n"
+        "-----END PRIVATE KEY-----\n"
+    )
+
+    result = redactor.redact(output)
+
+    assert "key-material" not in result
+    assert "<redacted-private-key>" in result
+
+
 def test_output_redactor_handles_many_unmatched_private_key_markers() -> None:
     redactor = OutputRedactor()
     output = (
