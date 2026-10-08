@@ -15,7 +15,7 @@ The MCP exposes exactly:
 - `run_python_tests(project_path=".", test_selector=None)`
 - `run_java_tests(project_path=".", test_selector=None, build_system="auto")`
 
-Java method selectors use the common `com.example.ExampleTest#method` form at the MCP boundary. Maven receives that form directly; Gradle receives the equivalent `com.example.ExampleTest.method` pattern required by `--tests`.
+Java method selectors use the common `com.example.ExampleTest#method` form at the MCP boundary. Maven receives that form directly; Gradle receives the equivalent `com.example.ExampleTest.method` pattern required by `--tests`. For Maven reactor builds, modules without a matching selected test are tolerated, but the validator verifies the captured Surefire summaries and reports `test_selector_not_matched` unless at least one selected test was actually executed.
 - `run_java_build(project_path=".", build_system="auto")`
 
 There is no arbitrary command, shell, Docker or package-install tool in the MCP contract. The Java build tool also does not accept arbitrary Maven goals, Gradle tasks or additional command-line arguments.
