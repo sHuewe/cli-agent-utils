@@ -29,9 +29,9 @@ _MAVEN_SELECTOR_REPORT_DIR = "/output/surefire-reports"
 _GRADLE_SELECTOR_INIT_PATH = "/tmp/cli-agent-test-selector.gradle"
 _GRADLE_SELECTOR_RESULT_DIR = "/output/gradle-test-results"
 _GRADLE_SELECTOR_INIT_SCRIPT = """\
-gradle.projectsEvaluated {
-    allprojects {
-        tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->
+allprojects {
+    tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->
+        task.doFirst {
             task.filter.setFailOnNoMatchingTests(false)
             task.reports.junitXml.required.set(true)
             task.reports.junitXml.outputLocation.set(
@@ -884,8 +884,9 @@ class DockerTestValidator:
             }
             if selector_not_matched:
                 result_payload["reason"] = "test_selector_not_matched"
+                build_tool_name = "Maven" if framework == "maven" else "Gradle"
                 result_payload["message_to_user"] = (
-                    "Der angeforderte Maven-Test-Selector hat keinen "
+                    f"Der angeforderte {build_tool_name}-Test-Selector hat keinen "
                     "tatsächlich ausgeführten Test gefunden."
                 )
             if tested.returncode != 0 and (
