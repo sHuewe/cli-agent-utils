@@ -554,6 +554,13 @@ def test_python_selector_cannot_be_used_as_pytest_option(tmp_path: Path) -> None
         validator.run_python_tests(".", "--collect-only")
 
 
+def test_python_selector_cannot_use_pytest_argument_file(tmp_path: Path) -> None:
+    validator = DockerTestValidator(tmp_path, settings(), backend=FakeBackend())
+
+    with pytest.raises(ValidationError, match="Argument-Dateien"):
+        validator.run_python_tests(".", "@opts.txt")
+
+
 def test_gradle_uses_offline_tmpfs_cache_seed(tmp_path: Path) -> None:
     (tmp_path / "build.gradle").write_text("", encoding="utf-8")
     backend = FakeBackend()
