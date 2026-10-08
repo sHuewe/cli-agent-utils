@@ -25,10 +25,7 @@ from .test_validator_types import TestValidationError, TestValidatorSettings
 
 _JAVA_SELECTOR = re.compile(r"^[A-Za-z0-9_.$*#\[\],-]+$")
 _MAX_SELECTOR_CHARS = 512
-_MAVEN_TEST_SUMMARY = re.compile(
-    r"Tests run:\s*(\d+)\s*,\s*Failures:\s*\d+\s*,\s*Errors:\s*\d+"
-    r"\s*,\s*Skipped:\s*(\d+)"
-)
+_MAVEN_SELECTOR_REPORT_DIR = "/output/surefire-reports"
 
 
 class DockerTestValidator:
@@ -763,14 +760,26 @@ class DockerTestValidator:
                     if part
                 )
             )
-            selector_not_matched = (
-                require_maven_test_match
-                and tested.returncode == 0
-                and not any(
-                    int(tests_run) > int(skipped)
-                    for tests_run, skipped in _MAVEN_TEST_SUMMARY.findall(output)
+            selector_not_matched = False
+            if require_maven_test_match and tested.returncode == 0:
+                report_check = self._docker(
+                    [
+                        "exec",
+                        "--user",
+                        "65532:65532",
+                        container_name,
+                        "sh",
+                        "-c",
+                        (
+                            "find "
+                            + _MAVEN_SELECTOR_REPORT_DIR
+                            + " -type f -name 'TEST-*.xml' -size +0c "
+                            "-print -quit 2>/dev/null | grep -q ."
+                        ),
+                    ],
+                    timeout=self.settings.setup_timeout_seconds,
                 )
-            )
+                selector_not_matched = report_check.returncode != 0
             result_payload = {
                 "success": tested.returncode == 0 and not selector_not_matched,
                 "framework": framework,
@@ -985,7 +994,8 @@ class DockerTestValidator:
                     [
                         f"-Dtest={selector}",
                         "-Dsurefire.failIfNoSpecifiedTests=false",
-                        "-Dsurefire.printSummary=true",
+                        "-DdisableXmlReport=false",
+                        f"-Dsurefire.reportsDirectory={_MAVEN_SELECTOR_REPORT_DIR}",
                     ]
                 )
             command.append("test")
