@@ -241,9 +241,20 @@ def _safe_relative_project_file(
     return candidate
 
 
+def _strip_requirement_comment(line: str) -> str:
+    """Strip pip-style comments without treating URL/path fragments as comments."""
+    left = line.lstrip()
+    if left.startswith("#"):
+        return ""
+    for index, char in enumerate(line):
+        if char == "#" and index > 0 and line[index - 1].isspace():
+            return line[:index].rstrip()
+    return line.strip()
+
+
 def _validate_frozen_requirement_line(relative: str, line: str) -> None:
     """Validate the deliberately small requirements.txt subset supported in v1."""
-    candidate = line.split("#", 1)[0].strip()
+    candidate = _strip_requirement_comment(line)
     if not candidate:
         return
     if _INCLUDE_RE.match(candidate):
@@ -312,8 +323,8 @@ def _requirement_files(
                 f"Requirements-Datei konnte nicht gelesen werden: {relative}"
             ) from exc
         for raw_line in text.splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
+            line = _strip_requirement_comment(raw_line)
+            if not line:
                 continue
             match = _INCLUDE_RE.match(line)
             if match:
