@@ -18,7 +18,7 @@ Rules:
 - If `assessment.action` is `keep` or `skip`, return `not_changed` unless the apply step itself reported `needs_attention`.
 - If `change.status` is `needs_attention`, or a requested split was not successfully applied, return `needs_attention` and report the problem rather than presenting it as `not_changed`.
 - If any verification finding has `severity: error`, return `status: needs_attention`.
-- Before certifying a split, require snapshot.status == "captured", a non-empty complete snapshot.content, and a matching snapshot.concept_path. If absent or incomplete, return needs_attention with an error finding.
+- Before certifying a split, require snapshot.status == "captured", non-empty complete snapshot.content and snapshot.index_content, and matching snapshot.concept_path and snapshot.index_path. If absent or incomplete, return needs_attention with an error finding.
 - For a split, read the overview, every change.new_paths concept, and the direct folder index.md.
 - Independently compare the FULL original Markdown stored in snapshot.content with the combined new overview and all focused concepts. Do not rely on assessment.parts as an exhaustive inventory.
 - Check preservation of every substantial original claim, option, default, limitation, prerequisite, example, procedure, link and source/manual reference. Verify references stay with the corresponding claims.
@@ -29,6 +29,9 @@ Rules:
   - every part has valid frontmatter with non-empty `type`;
   - the overview links all new parts;
   - the folder index links the overview and every new part;
+  - the folder index links EVERY direct normal Markdown concept in the folder (exclude index.md and log.md), including all unrelated existing concepts; list the folder directly and compare exact paths, not just the proposed split parts;
+  - every pre-existing link destination in snapshot.index_content remains present in the updated index, especially links to unrelated concepts and any other original navigation destinations; report lost links as errors;
+  - no concept path has duplicate entries in the folder index;
   - each planned scope from `assessment.parts` is materially represented in the corresponding part;
   - the overview/parts remain semantically focused and the split did not merely create arbitrary fragments;
   - existing source/manual references needed by the redistributed claims are still present somewhere appropriate;
