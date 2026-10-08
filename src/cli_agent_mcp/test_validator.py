@@ -26,6 +26,17 @@ from .test_validator_types import TestValidationError, TestValidatorSettings
 _JAVA_SELECTOR = re.compile(r"^[A-Za-z0-9_.$*#\[\],-]+$")
 _MAX_SELECTOR_CHARS = 512
 _MAVEN_SELECTOR_REPORT_DIR = "/output/surefire-reports"
+_MAVEN_SELECTOR_REPORT_CHECK_SCRIPT = """\
+for report in /output/surefire-reports/TEST-*.xml; do
+    [ -f "$report" ] || continue
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            *'<testcase '*|*'<testcase>'*) exit 0 ;;
+        esac
+    done < "$report"
+done
+exit 1
+"""
 
 
 class DockerTestValidator:
@@ -771,13 +782,7 @@ class DockerTestValidator:
                         container_name,
                         "sh",
                         "-c",
-                        (
-                            "find "
-                            + _MAVEN_SELECTOR_REPORT_DIR
-                            + " -type f -name 'TEST-*.xml' -exec "
-                            "grep -l '<testcase[ >]' {} + 2>/dev/null "
-                            "| grep -q ."
-                        ),
+                        _MAVEN_SELECTOR_REPORT_CHECK_SCRIPT,
                     ],
                     timeout=self.settings.setup_timeout_seconds,
                 )
