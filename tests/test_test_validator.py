@@ -207,6 +207,29 @@ def test_output_redactor_removes_known_and_generic_secrets() -> None:
     assert "<redacted>" in text
 
 
+def test_python_requirements_respect_validator_file_size_limit(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "demo-package==1.0\n" * 100,
+        encoding="utf-8",
+    )
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        max_file_bytes=64,
+    )
+    validator = DockerTestValidator(
+        tmp_path,
+        configured,
+        backend=FakeBackend(),
+    )
+
+    with pytest.raises(ValidationError, match="Größenlimit"):
+        validator.run_python_tests(".")
+
+
 def test_python_tests_use_fixed_no_shell_command_and_redact_output(
     tmp_path: Path,
 ) -> None:
@@ -1344,6 +1367,29 @@ def test_short_sensitive_value_fails_closed(tmp_path: Path) -> None:
     )
 
     with pytest.raises(SecretDiscoveryLimitError, match="zu kurz"):
+        discover_secret_values(snapshot.archive)
+
+
+def test_yaml_aliases_share_one_structured_work_budget(tmp_path: Path) -> None:
+    shared_items = "\n".join(
+        f"    item_{index}: {{}}" for index in range(250)
+    )
+    sensitive_aliases = "\n".join(
+        f"token_{index}: *shared" for index in range(500)
+    )
+    (tmp_path / "config.yaml").write_text(
+        "shared: &shared\n"
+        f"{shared_items}\n"
+        f"{sensitive_aliases}\n",
+        encoding="utf-8",
+    )
+    snapshot = create_project_snapshot(
+        tmp_path,
+        max_file_bytes=1024 * 1024,
+        max_project_bytes=4 * 1024 * 1024,
+    )
+
+    with pytest.raises(SecretDiscoveryLimitError, match="zu groß"):
         discover_secret_values(snapshot.archive)
 
 
