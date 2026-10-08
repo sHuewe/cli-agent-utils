@@ -1463,6 +1463,21 @@ def test_exact_secret_cannot_corrupt_pem_boundaries() -> None:
     assert "<redacted-private-key>" in result
 
 
+def test_output_redactor_redacts_unterminated_private_key_to_eof() -> None:
+    redactor = OutputRedactor()
+    output = (
+        "before\n"
+        "-----BEGIN PRIVATE KEY-----\n"
+        "partial-key-material\n"
+    )
+
+    result = redactor.redact(output)
+
+    assert "partial-key-material" not in result
+    assert "<redacted-private-key>" in result
+    assert result.startswith("before\n")
+
+
 def test_output_redactor_handles_many_unmatched_private_key_markers() -> None:
     redactor = OutputRedactor()
     output = (
