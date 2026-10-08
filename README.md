@@ -97,7 +97,7 @@ Three immutable image references are configured administratively. Each image mus
 
 - a Python image containing Python, `pip` and `pytest`; project dependencies are supplied from a separately prepared Linux wheel cache,
 - a Maven image containing Maven; project dependencies can be supplied from a separately prepared per-dependency cache,
-- a Gradle image containing Gradle; project dependencies can be supplied from a separately prepared per-dependency Gradle user home.
+- a Gradle image containing Gradle; project dependencies can be supplied from a separately prepared per-dependency Gradle user home. Gradle 8.3 or newer is required for selector runs because the validator uses the task-specific test dry-run controls introduced in Gradle 8.3.
 
 Every reference must include a complete SHA-256 digest:
 
