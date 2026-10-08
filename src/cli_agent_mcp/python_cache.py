@@ -17,8 +17,8 @@ _CACHE_SCHEMA = "cli-agent-python-cache-v5"
 _REQUIREMENTS_FILE = "requirements.txt"
 _DEFAULT_MAX_REQUIREMENT_FILE_BYTES = 16 * 1024 * 1024
 _INCLUDE_RE = re.compile(
-    r"^\s*(?:(?:-r|-c)\s*=?\s*([^#\s]+)|"
-    r"(?:--requirement|--constraint)(?:\s+|=)\s*([^#\s]+))\s*$"
+    r"^\s*(?:(?:-r|-c)\s*=?\s*([^\s]+)|"
+    r"(?:--requirement|--constraint)(?:\s+|=)\s*([^\s]+))\s*$"
 )
 _FROZEN_REQUIREMENT_RE = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9.!+_-]*$"
