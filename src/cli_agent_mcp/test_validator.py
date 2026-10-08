@@ -25,6 +25,8 @@ from .test_validator_types import TestValidationError, TestValidatorSettings
 
 _JAVA_SELECTOR = re.compile(r"^[A-Za-z0-9_.$*#\[\],-]+$")
 _MAX_SELECTOR_CHARS = 512
+_GRADLE_MIN_SELECTOR_VERSION = (8, 3)
+_GRADLE_VERSION_RE = re.compile(r"(?m)^Gradle\s+(\d+)\.(\d+)(?:\.(\d+))?")
 _MAVEN_SELECTOR_REPORT_DIR = "/output/surefire-reports"
 _GRADLE_SELECTOR_INIT_PATH = "/tmp/cli-agent-test-selector.gradle"
 _GRADLE_SELECTOR_MATCH_PATH = "/output/gradle-test-match"
@@ -33,7 +35,8 @@ allprojects {
     tasks.withType(org.gradle.api.tasks.testing.Test).configureEach { task ->
         task.afterTest { descriptor, result ->
             if (
-                !task.dryRun.get()
+                !task.filter.commandLineIncludePatterns.isEmpty()
+                && !task.dryRun.get()
                 && result.resultType
                     != org.gradle.api.tasks.testing.TestResult.ResultType.SKIPPED
             ) {
@@ -41,7 +44,9 @@ allprojects {
             }
         }
         task.doFirst {
-            task.filter.setFailOnNoMatchingTests(false)
+            if (!task.filter.commandLineIncludePatterns.isEmpty()) {
+                task.filter.setFailOnNoMatchingTests(false)
+            }
         }
     }
 }
@@ -700,6 +705,57 @@ class DockerTestValidator:
                         redactor,
                         streamed.stderr or streamed.stdout,
                         verified_policy=verified_policy,
+                    )
+                    return result_payload
+
+            if require_gradle_test_match:
+                version_result = self._docker(
+                    [
+                        "exec",
+                        "--user",
+                        "65532:65532",
+                        container_name,
+                        "gradle",
+                        "--version",
+                    ],
+                    timeout=self.settings.setup_timeout_seconds,
+                )
+                version_match = (
+                    _GRADLE_VERSION_RE.search(version_result.stdout)
+                    if version_result.returncode == 0
+                    else None
+                )
+                if version_match is None:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        "Gradle-Version konnte nicht verlässlich bestimmt werden.",
+                        verified_policy=verified_policy,
+                    )
+                    result_payload["reason"] = "unsupported_gradle_version"
+                    result_payload["message_to_user"] = (
+                        "Gradle-Test-Selectoren benötigen ein "
+                        "Administrator-Image mit Gradle 8.3 oder neuer."
+                    )
+                    return result_payload
+                gradle_version = (
+                    int(version_match.group(1)),
+                    int(version_match.group(2)),
+                )
+                if gradle_version < _GRADLE_MIN_SELECTOR_VERSION:
+                    result_payload = self._failure(
+                        framework,
+                        project_path,
+                        redactor,
+                        "Die Gradle-Version unterstützt die benötigte "
+                        "Test-Selector-Ausführung nicht.",
+                        verified_policy=verified_policy,
+                    )
+                    result_payload["reason"] = "unsupported_gradle_version"
+                    result_payload["message_to_user"] = (
+                        "Gradle-Test-Selectoren benötigen ein "
+                        "Administrator-Image mit Gradle 8.3 oder neuer."
                     )
                     return result_payload
 
