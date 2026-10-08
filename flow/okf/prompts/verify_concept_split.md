@@ -27,7 +27,11 @@ Rules:
 - Verify:
   - the original path still exists as a concise overview;
   - every planned part exists directly in the same semantic folder;
+  - the rewritten ORIGINAL overview also begins at byte zero with parseable `---`-delimited YAML frontmatter and a non-empty string `type`, with no YAML parsing errors; check this independently of the new parts;
+  - the overview retains the original `type` and applicable original metadata, with no newly invented human-verification claim; report removed/corrupted required metadata as an error;
   - every part has valid frontmatter with non-empty `type`;
+  - every original Markdown heading and explicit fragment anchor from snapshot.content still resolves at the ORIGINAL overview path, even if its full section moved to a new concept; compare exact heading text, level, order, duplicate-heading slug suffixes, and explicit IDs against the snapshot;
+  - moved sections leave short heading stubs with links to the new concepts rather than breaking inbound `original.md#fragment` links; report missing, renamed, ambiguous, or displaced fragment anchors as errors;
   - the overview links all new parts;
   - the folder index links the overview and every new part;
   - the folder index links EVERY direct normal Markdown concept in the folder (exclude index.md and log.md), including all unrelated existing concepts; list the folder directly and compare exact paths, not just the proposed split parts;
