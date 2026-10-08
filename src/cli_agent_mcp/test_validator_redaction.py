@@ -349,80 +349,60 @@ class _ExactSecretMatcher:
         return "".join(chunks)
 
 
-def _find_pem_private_key_begin(line: str) -> tuple[str, int, int] | None:
-    search_from = 0
+def _find_pem_private_key_begin(
+    value: str,
+    start: int,
+) -> tuple[str, int, int] | None:
+    search_from = start
     while True:
-        start = line.find(_PRIVATE_KEY_BEGIN, search_from)
-        if start < 0:
+        marker_start = value.find(_PRIVATE_KEY_BEGIN, search_from)
+        if marker_start < 0:
             return None
-        label_end = line.find("-----", start + len(_PRIVATE_KEY_BEGIN))
+
+        label_start = marker_start + len(_PRIVATE_KEY_BEGIN)
+        label_end = value.find("-----", label_start)
         if label_end < 0:
             return None
-        label = line[start + len(_PRIVATE_KEY_BEGIN) : label_end].strip()
+
+        newline_candidates = [
+            position
+            for position in (
+                value.find("\n", label_start),
+                value.find("\r", label_start),
+            )
+            if position >= 0
+        ]
+        if newline_candidates and min(newline_candidates) < label_end:
+            search_from = marker_start + 1
+            continue
+
+        label = value[label_start:label_end].strip()
         if label.endswith("PRIVATE KEY"):
-            return label, start, label_end + 5
-        search_from = start + 1
-
-
-def _find_pem_private_key_end(
-    line: str,
-    label: str,
-    *,
-    start: int = 0,
-) -> tuple[int, int] | None:
-    marker = f"{_PRIVATE_KEY_END_PREFIX}{label}-----"
-    marker_start = line.find(marker, start)
-    if marker_start < 0:
-        return None
-    return marker_start, marker_start + len(marker)
-
-
-def _line_ending(line: str) -> str:
-    if line.endswith("\r\n"):
-        return "\r\n"
-    if line.endswith("\n"):
-        return "\n"
-    if line.endswith("\r"):
-        return "\r"
-    return ""
+            return label, marker_start, label_end + 5
+        search_from = marker_start + 1
 
 
 def _redact_private_keys(value: str) -> str:
-    """Redact PEM private-key blocks even when log lines add prefixes."""
+    """Redact all PEM private-key blocks, including prefixed and inline blocks."""
     result: list[str] = []
-    active_label: str | None = None
+    cursor = 0
 
-    for line in value.splitlines(keepends=True):
-        if active_label is None:
-            begin = _find_pem_private_key_begin(line)
-            if begin is None:
-                result.append(line)
-                continue
+    while True:
+        begin = _find_pem_private_key_begin(value, cursor)
+        if begin is None:
+            result.append(value[cursor:])
+            break
 
-            label, marker_start, marker_end = begin
-            result.append(line[:marker_start])
-            result.append(_REDACTION_MARKER)
+        label, marker_start, marker_end = begin
+        result.append(value[cursor:marker_start])
+        result.append(_REDACTION_MARKER)
 
-            end = _find_pem_private_key_end(line, label, start=marker_end)
-            if end is not None:
-                result.append(line[end[1] :])
-                continue
+        end_marker = f"{_PRIVATE_KEY_END_PREFIX}{label}-----"
+        end_start = value.find(end_marker, marker_end)
+        if end_start < 0:
+            break
 
-            active_label = label
-            ending = _line_ending(line)
-            if ending:
-                result.append(ending)
-            continue
-
-        end = _find_pem_private_key_end(line, active_label)
-        if end is not None:
-            result.append(line[end[1] :])
-            active_label = None
-            continue
-
-        ending = _line_ending(line)
-        if ending:
-            result.append(ending)
+        cursor = end_start + len(end_marker)
 
     return "".join(result)
 
