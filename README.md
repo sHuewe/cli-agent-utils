@@ -274,7 +274,7 @@ The fixed test commands are:
 
 ```text
 mvn -o -B -Dmaven.repo.local=/tmp/m2 [-Dtest=<selector> -Dsurefire.failIfNoSpecifiedTests=false] test
-gradle --offline --no-daemon --gradle-user-home /tmp/gradle [--no-test-dry-run --rerun-tasks --init-script /tmp/cli-agent-test-selector.gradle] test [--tests <selector>]
+gradle --offline --no-daemon --gradle-user-home /tmp/gradle [--rerun-tasks --init-script /tmp/cli-agent-test-selector.gradle] test [--no-test-dry-run --tests <selector>]
 ```
 
 Java also has one unified build-only tool:
