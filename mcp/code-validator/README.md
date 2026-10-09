@@ -22,6 +22,18 @@ run_java_build
 
 It does **not** expose an arbitrary shell, generic Docker command, arbitrary Maven goal, or arbitrary Gradle task.
 
+### MCP result channels
+
+The model-visible part of every tool result is returned through normal MCP `content` and, when supported by the installed MCP SDK, `structuredContent`. An optional direct user notice is carried separately in:
+
+```text
+_meta["io.github.shuewe.cli-agent/messageToUser"].text
+```
+
+The Code-Validator uses this channel for information that is intended for the human operator rather than the model. In particular, dependency-cache remediation commands are placed only in this metadata. The model-visible result receives a non-actionable explanation such as `dependencies_not_prepared` or `dependency_cache_may_be_stale`, so an LLM is not instructed to execute the trusted host-side preparation command itself.
+
+The metadata field is optional and may also be present on successful tool calls. MCP metadata is an application/client channel, not a cryptographic confidentiality boundary; the intended separation becomes an enforced boundary only when the MCP host deliberately keeps this namespaced metadata out of the model context. Clients that do not implement this extension may ignore it.
+
 ### Security model
 
 The validator requires at least `workspace_access = "read"` from `cli-agent`. Its threat model covers untrusted project contents and model-triggered execution, not a separate malicious host process that already has permission to race and mutate the workspace concurrently. The workspace path and effective permission are supplied by the Core through the reserved environment variables:
