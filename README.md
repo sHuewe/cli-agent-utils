@@ -62,4 +62,4 @@ The GitHub Actions workflow tests each distribution in a **fresh, isolated** env
 
 `flow/` remains a collection of self-contained cli-agent flow-runner configurations and prompts, including `flow/okf/`. It is not a Python package and is not installed with an MCP server.
 
-See [architecture, packaging and migration](docs/architecture.md), the [Compose README](mcp/compose/README.md), and the [Code-Validator documentation](mcp/code-validator/README.md).
+See [architecture, packaging and migration](docs/architecture.md), the [Compose README](mcp/compose/README.md), the [Code-Validator documentation](mcp/code-validator/README.md), and the [Code-Validator Docker image guide](mcp/code-validator/docs/images.md).
