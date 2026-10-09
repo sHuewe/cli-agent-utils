@@ -34,33 +34,20 @@ def _tool_result(payload: dict[str, Any]) -> CallToolResult:
                 type="text",
                 text=json.dumps(model_payload, ensure_ascii=False),
             )
-        ]
+        ],
+        "structuredContent": model_payload,
     }
-
-    fields = {
-        *getattr(CallToolResult, "__annotations__", {}).keys(),
-        *getattr(CallToolResult, "model_fields", {}).keys(),
-        *getattr(CallToolResult, "__fields__", {}).keys(),
-    }
-    if "structuredContent" in fields:
-        kwargs["structuredContent"] = model_payload
-    elif "structured_content" in fields:
-        kwargs["structured_content"] = model_payload
 
     if message_to_user is not None:
         if not isinstance(message_to_user, str) or not message_to_user.strip():
             raise CodeValidationError(
                 "message_to_user muss ein nicht-leerer String sein."
             )
-        metadata = {
+        kwargs["_meta"] = {
             CLI_AGENT_MESSAGE_TO_USER_META_KEY: {
                 "text": message_to_user,
             }
         }
-        if "_meta" in fields:
-            kwargs["_meta"] = metadata
-        else:
-            kwargs["meta"] = metadata
 
     return CallToolResult(**kwargs)
 
