@@ -698,6 +698,12 @@ class DockerCodeValidator:
                     )
                     if refresh_message is not None:
                         result_payload["reason"] = "dependency_cache_may_be_stale"
+                        result_payload["message"] = (
+                            "Die Validierung kann mit dem aktuellen vorbereiteten "
+                            "Dependency-Cache nicht zuverlässig abgeschlossen werden, "
+                            "weil benötigte Dependencies fehlen oder der Cache "
+                            "unvollständig bzw. veraltet ist."
+                        )
                         result_payload["message_to_user"] = refresh_message
                     return result_payload
 
