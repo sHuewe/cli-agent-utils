@@ -9,15 +9,15 @@
 #     -t cli-agent-gradle:8.14.5-jdk8 .
 #
 #   docker build -f mcp/code-validator/docker/gradle.Dockerfile \
-#     --build-arg JAVA_VERSION=21 --build-arg GRADLE_VERSION=8.14.5 \
-#     -t cli-agent-gradle:8.14.5-jdk21 .
+#     --build-arg JAVA_VERSION=21 --build-arg GRADLE_VERSION=9.8.0 \
+#     -t cli-agent-gradle:9.8.0-jdk21 .
 #
 #   docker build -f mcp/code-validator/docker/gradle.Dockerfile \
 #     --build-arg JAVA_VERSION=25 --build-arg GRADLE_VERSION=9.8.0 \
 #     -t cli-agent-gradle:9.8.0-jdk25 .
 
 ARG JAVA_VERSION=21
-ARG GRADLE_VERSION=8.14.5
+ARG GRADLE_VERSION=9.8.0
 
 FROM gradle:${GRADLE_VERSION}-jdk${JAVA_VERSION} AS gradle_source
 
