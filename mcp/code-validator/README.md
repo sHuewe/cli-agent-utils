@@ -55,7 +55,7 @@ Project files such as `.env` are intentionally part of the project snapshot when
 
 ### Required Docker images
 
-Three immutable image references are configured administratively. Each image must provide a POSIX `sh`, `tar`, `cat`, `cp` and `mkdir` in addition to the language/build tooling:
+Three immutable image references are configured administratively. Each image must provide a POSIX `sh`, `tar`, `cat`, `cp`, `mkdir` and `sleep` in addition to the language/build tooling:
 
 - a Python image containing Python, `pip` and `pytest`; project dependencies are supplied from a separately prepared Linux wheel cache,
 - a Maven image containing Maven; project dependencies can be supplied from a separately prepared per-dependency cache,
@@ -70,6 +70,8 @@ registry.internal/gradle-tests@sha256:<64-hex-digest>
 ```
 
 The validator never downloads packages during a test. Python installs only from a prepared local wheel cache with `--no-index`; Maven runs with `-o`; Gradle runs with `--offline`.
+
+For concrete image recommendations, Java/JDK compatibility examples, local digest-pinning guidance, and the repository's configurable Gradle image Dockerfile, see [Validator Docker images](docs/images.md). The official Gradle image is intentionally treated only as a build source there because its declared Gradle-home volume conflicts with the validator's no-image-volumes policy.
 
 All `prepare-*` commands are explicit, trusted operator actions outside the agent sandbox. They may evaluate project-controlled build logic with the current user's permissions, network access and configured package credentials. Their job is only to create a credential-free offline artifact snapshot for later use by the sandbox. A prepared cache is **not** a proof that it contains the dependencies required by the project at validation time, and the validator deliberately does not try to prove semantic equivalence between preparation and the later offline build. Profiles, dynamic versions, snapshots, platform-dependent logic or ordinary project changes can therefore make an existing cache incomplete. The sandbox simply tries the current project against the existing cache and fails closed; recognized missing-dependency failures ask the user to rerun the matching `prepare-*` command.
 
