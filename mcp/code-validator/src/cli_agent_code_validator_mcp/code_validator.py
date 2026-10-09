@@ -698,6 +698,12 @@ class DockerCodeValidator:
                     )
                     if refresh_message is not None:
                         result_payload["reason"] = "dependency_cache_may_be_stale"
+                        result_payload["message"] = (
+                            "Die Validierung kann mit dem aktuellen vorbereiteten "
+                            "Dependency-Cache nicht zuverlässig abgeschlossen werden, "
+                            "weil benötigte Dependencies fehlen oder der Cache "
+                            "unvollständig bzw. veraltet ist."
+                        )
                         result_payload["message_to_user"] = refresh_message
                     return result_payload
 
@@ -814,6 +820,12 @@ class DockerCodeValidator:
                 )
                 if refresh_message is not None:
                     result_payload["reason"] = "dependency_cache_may_be_stale"
+                    result_payload["message"] = (
+                        "Die Validierung kann mit dem aktuellen vorbereiteten "
+                        "Dependency-Cache nicht zuverlässig abgeschlossen werden, "
+                        "weil benötigte Dependencies fehlen oder der Cache "
+                        "unvollständig bzw. veraltet ist."
+                    )
                     result_payload["message_to_user"] = refresh_message
             return result_payload
         except subprocess.TimeoutExpired:
@@ -900,8 +912,8 @@ class DockerCodeValidator:
                     "reason": "dependencies_not_prepared",
                     "dependency_cache_key": entry.key,
                     "message": (
-                        "Für dieses Python-Projekt ist noch kein vorbereiteter "
-                        "Linux-Wheel-Cache vorhanden."
+                        "Die Python-Validierung kann nicht ausgeführt werden, "
+                        "weil der benötigte vorbereitete Linux-Wheel-Cache fehlt."
                     ),
                     "message_to_user": (
                         "Python-Dependencies sind noch nicht vorbereitet. Führe "
@@ -977,8 +989,8 @@ class DockerCodeValidator:
                         "reason": "dependencies_not_prepared",
                         "dependency_cache_key": entry.key,
                         "message": (
-                            "Für dieses Maven-Projekt ist noch kein vorbereiteter "
-                            "Offline-Cache vorhanden."
+                            "Die Maven-Validierung kann nicht ausgeführt werden, "
+                            "weil der benötigte vorbereitete Offline-Cache fehlt."
                         ),
                         "message_to_user": (
                             "Maven-Dependencies sind noch nicht vorbereitet. Führe "
@@ -1014,8 +1026,8 @@ class DockerCodeValidator:
                         "reason": "dependencies_not_prepared",
                         "dependency_cache_key": entry.key,
                         "message": (
-                            "Für dieses Gradle-Projekt ist noch kein vorbereiteter "
-                            "Offline-Cache vorhanden."
+                            "Die Gradle-Validierung kann nicht ausgeführt werden, "
+                            "weil der benötigte vorbereitete Offline-Cache fehlt."
                         ),
                         "message_to_user": (
                             "Gradle-Dependencies sind noch nicht vorbereitet. Führe "
@@ -1088,8 +1100,8 @@ class DockerCodeValidator:
                     "reason": "dependencies_not_prepared",
                     "dependency_cache_key": entry.key,
                     "message": (
-                        "Für dieses Maven-Projekt ist noch kein vorbereiteter "
-                        "Offline-Cache vorhanden."
+                        "Der Maven-Build kann nicht ausgeführt werden, weil der "
+                        "benötigte vorbereitete Offline-Cache fehlt."
                     ),
                     "message_to_user": (
                         "Maven-Dependencies sind noch nicht vorbereitet. Führe "
@@ -1149,8 +1161,8 @@ class DockerCodeValidator:
                     "reason": "dependencies_not_prepared",
                     "dependency_cache_key": entry.key,
                     "message": (
-                        "Für dieses Gradle-Projekt ist noch kein vorbereiteter "
-                        "Offline-Cache vorhanden."
+                        "Der Gradle-Build kann nicht ausgeführt werden, weil der "
+                        "benötigte vorbereitete Offline-Cache fehlt."
                     ),
                     "message_to_user": (
                         "Gradle-Dependencies sind noch nicht vorbereitet. Führe "

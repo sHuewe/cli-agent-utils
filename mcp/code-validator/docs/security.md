@@ -60,6 +60,18 @@ The TAR entries are written with container UID/GID `65532:65532`.
 
 The snapshot boundary is designed for an untrusted project tree selected by the agent. A separate malicious host process that already has permission to mutate that workspace concurrently is outside the validator's threat model. The implementation still uses no-follow/verified file handling as defense in depth, but it does not claim to provide an atomic filesystem snapshot against an independently compromised host user/session.
 
+## MCP result-channel separation
+
+Tool results separate model-visible status from optional operator guidance. The model-visible result is returned through normal MCP `content` / `structuredContent`. Direct operator guidance is placed only under the namespaced metadata key:
+
+```text
+_meta["io.github.shuewe.cli-agent/messageToUser"].text
+```
+
+Dependency-cache preparation commands are intentionally confined to this metadata. The model-visible result states only that required dependencies are unavailable or that the prepared cache is incomplete/stale and therefore validation could not be completed reliably.
+
+This is not a protocol-level confidentiality boundary by itself: an MCP client controls what it forwards to a model. The security property therefore depends on the host implementation keeping this metadata key out of model context while presenting it directly to the user. Unknown or third-party metadata must not be implicitly treated as trusted Core/admin output.
+
 ## Docker sandbox
 
 The validator first creates the container and inspects its effective configuration before it starts project code.

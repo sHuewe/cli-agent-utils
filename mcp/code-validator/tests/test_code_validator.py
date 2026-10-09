@@ -34,7 +34,11 @@ from cli_agent_code_validator_mcp.code_validator_redaction import (
     SecretDiscoveryLimitError,
     discover_secret_values,
 )
-from cli_agent_code_validator_mcp.server import _workspace_from_core_environment
+from cli_agent_code_validator_mcp.server import (
+    CLI_AGENT_MESSAGE_TO_USER_META_KEY,
+    _tool_result,
+    _workspace_from_core_environment,
+)
 from cli_agent_code_validator_mcp.code_validator_snapshot import (
     _open_verified_regular_file,
     create_project_snapshot,
@@ -47,6 +51,58 @@ from cli_agent_code_validator_mcp.code_validator_types import (
 PINNED_PYTHON = "registry.internal/python-tests@sha256:" + "a" * 64
 PINNED_MAVEN = "registry.internal/maven-tests@sha256:" + "b" * 64
 PINNED_GRADLE = "registry.internal/gradle-tests@sha256:" + "c" * 64
+
+
+def _wire_tool_result(result) -> dict:
+    return result.model_dump(by_alias=True, exclude_none=True)
+
+
+def test_tool_result_routes_user_message_only_through_meta() -> None:
+    result = _tool_result(
+        {
+            "success": False,
+            "reason": "dependencies_not_prepared",
+            "message": "Dependencies fehlen; die Validierung kann nicht ausgeführt werden.",
+            "message_to_user": "Führe den vorbereitenden Host-Schritt aus.",
+        }
+    )
+
+    wire = _wire_tool_result(result)
+    assert wire["structuredContent"] == {
+        "success": False,
+        "reason": "dependencies_not_prepared",
+        "message": "Dependencies fehlen; die Validierung kann nicht ausgeführt werden.",
+    }
+    assert "message_to_user" not in wire["content"][0]["text"]
+    assert "vorbereitenden Host-Schritt" not in wire["content"][0]["text"]
+    assert wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY] == {
+        "text": "Führe den vorbereitenden Host-Schritt aus."
+    }
+
+
+def test_tool_result_allows_user_message_on_success() -> None:
+    result = _tool_result(
+        {
+            "success": True,
+            "message": "Validierung erfolgreich.",
+            "message_to_user": "Zusätzliche Information nur für den Nutzer.",
+        }
+    )
+
+    wire = _wire_tool_result(result)
+    assert wire["structuredContent"]["success"] is True
+    assert wire["structuredContent"]["message"] == "Validierung erfolgreich."
+    assert wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"] == (
+        "Zusätzliche Information nur für den Nutzer."
+    )
+
+
+def test_tool_result_omits_user_meta_when_not_requested() -> None:
+    result = _tool_result({"success": True, "message": "ok"})
+
+    wire = _wire_tool_result(result)
+    assert "_meta" not in wire
+    assert wire["structuredContent"] == {"success": True, "message": "ok"}
 
 
 def settings() -> ValidatorSettings:

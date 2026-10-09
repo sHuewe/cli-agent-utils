@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import CallToolResult, TextContent
 
 from .docker_backend import DockerBackend
 from .gradle_cache import default_gradle_cache_root
@@ -16,6 +18,38 @@ from .code_validator_types import CodeValidationError, CodeValidatorSettings
 
 WORKSPACE_ACCESS_ENV = "CLI_AGENT_WORKSPACE_ACCESS"
 WORKSPACE_DIRECTORY_ENV = "CLI_AGENT_WORKSPACE_DIRECTORY"
+CLI_AGENT_MESSAGE_TO_USER_META_KEY = (
+    "io.github.shuewe.cli-agent/messageToUser"
+)
+
+
+def _tool_result(payload: dict[str, Any]) -> CallToolResult:
+    """Split model-visible output from optional cli-agent user metadata."""
+    model_payload = dict(payload)
+    message_to_user = model_payload.pop("message_to_user", None)
+
+    kwargs: dict[str, Any] = {
+        "content": [
+            TextContent(
+                type="text",
+                text=json.dumps(model_payload, ensure_ascii=False),
+            )
+        ],
+        "structuredContent": model_payload,
+    }
+
+    if message_to_user is not None:
+        if not isinstance(message_to_user, str) or not message_to_user.strip():
+            raise CodeValidationError(
+                "message_to_user muss ein nicht-leerer String sein."
+            )
+        kwargs["_meta"] = {
+            CLI_AGENT_MESSAGE_TO_USER_META_KEY: {
+                "text": message_to_user,
+            }
+        }
+
+    return CallToolResult(**kwargs)
 
 
 def _workspace_from_core_environment() -> Path:
@@ -59,7 +93,7 @@ def create_server(validator: DockerCodeValidator) -> FastMCP:
     def run_python_tests(
         project_path: str = ".",
         test_selector: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> CallToolResult:
         """Run pytest only when the task concerns Python test cases.
 
         Do not use this tool as a generic validation step after ordinary Python
@@ -68,16 +102,18 @@ def create_server(validator: DockerCodeValidator) -> FastMCP:
         cli-agent workspace. test_selector may be a normal pytest node id such
         as tests/test_config.py::test_load.
         """
-        return validator.run_python_tests(
-            project_path=project_path,
-            test_selector=test_selector,
+        return _tool_result(
+            validator.run_python_tests(
+                project_path=project_path,
+                test_selector=test_selector,
+            )
         )
 
     @mcp.tool()
     def run_java_build(
         project_path: str = ".",
         build_system: Literal["auto", "maven", "gradle"] = "auto",
-    ) -> dict[str, Any]:
+    ) -> CallToolResult:
         """Primary validation tool after Java programming changes.
 
         Call this tool first after implementing Java/Maven/Gradle code changes.
@@ -89,9 +125,11 @@ def create_server(validator: DockerCodeValidator) -> FastMCP:
         assemble; that code still executes only inside the hardened sandbox.
         The model cannot supply arbitrary goals, tasks or command-line options.
         """
-        return validator.run_java_build(
-            project_path=project_path,
-            build_system=build_system,
+        return _tool_result(
+            validator.run_java_build(
+                project_path=project_path,
+                build_system=build_system,
+            )
         )
 
     @mcp.tool()
@@ -99,7 +137,7 @@ def create_server(validator: DockerCodeValidator) -> FastMCP:
         project_path: str = ".",
         test_selector: str | None = None,
         build_system: Literal["auto", "maven", "gradle"] = "auto",
-    ) -> dict[str, Any]:
+    ) -> CallToolResult:
         """Run Java tests only when the task itself concerns test cases.
 
         Do not use this tool as a generic validation step after ordinary Java
@@ -110,10 +148,12 @@ def create_server(validator: DockerCodeValidator) -> FastMCP:
         build.gradle/build.gradle.kts. A Java selector is translated to Maven
         -Dtest or Gradle --tests without exposing an arbitrary shell command.
         """
-        return validator.run_java_tests(
-            project_path=project_path,
-            test_selector=test_selector,
-            build_system=build_system,
+        return _tool_result(
+            validator.run_java_tests(
+                project_path=project_path,
+                test_selector=test_selector,
+                build_system=build_system,
+            )
         )
 
     return mcp
