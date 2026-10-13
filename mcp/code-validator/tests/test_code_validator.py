@@ -243,7 +243,7 @@ def test_snapshot_rejects_symlink_when_supported(tmp_path: Path) -> None:
     except (OSError, NotImplementedError):
         pytest.skip("symlinks are unavailable on this platform")
 
-    with pytest.raises(ValidationError, match="Symlinks"):
+    with pytest.raises(ValidationError, match="Symlinks|Reparse-Points"):
         create_project_snapshot(
             tmp_path,
             max_file_bytes=1024 * 1024,
@@ -1805,3 +1805,53 @@ def test_output_redactor_redacts_private_key_after_standalone_delimiter() -> Non
     assert "SECRET" not in result
     assert result.startswith("-----\n")
     assert "⟦x⟧" in result
+
+def test_nested_snapshot_and_cache_walk(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.docker_backend import _iter_safe_stream_paths
+
+    nested = tmp_path / "src" / "main" / "java"
+    nested.mkdir(parents=True)
+    source = nested / "Main.java"
+    source.write_text("class Main {}\n", encoding="utf-8")
+    snapshot = create_project_snapshot(
+        tmp_path, max_file_bytes=4096, max_project_bytes=65536
+    )
+    assert source in snapshot.files
+    assert source in {path for path, _ in _iter_safe_stream_paths(tmp_path)}
+
+
+def test_snapshot_exception_has_no_absolute_path(tmp_path: Path) -> None:
+    absent = tmp_path / "private" / "file.java"
+    with pytest.raises(ValidationError) as error:
+        _open_verified_regular_file(absent, tmp_path.stat())
+    assert str(tmp_path) not in str(error.value)
+    assert "file.java" not in str(error.value)
+
+
+def test_stream_exception_has_no_absolute_path(tmp_path: Path) -> None:
+    absent = tmp_path / "private" / "cache.whl"
+    with pytest.raises(ValueError) as error:
+        _open_verified_stream_file(absent, tmp_path.stat())
+    assert str(tmp_path) not in str(error.value)
+    assert "cache.whl" not in str(error.value)
+
+
+def test_tool_result_boundary_hides_host_exception_path() -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    def fails() -> dict:
+        raise ValidationError("C:/Users/private/secret")
+
+    result = _safe_tool_call(fails)
+    assert "private" not in str(result)
+    assert "Users" not in str(result)
+    assert result.structuredContent["reason"] == "validation_error"
+
+
+def test_host_root_redaction(tmp_path: Path) -> None:
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
+    text = validator._public_text(
+        f"Cannot open {tmp_path / 'src' / 'Main.java'}", OutputRedactor(())
+    )
+    assert str(tmp_path) not in text
+    assert "[Host-Pfad]" in text
