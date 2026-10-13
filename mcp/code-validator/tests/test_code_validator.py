@@ -243,7 +243,7 @@ def test_snapshot_rejects_symlink_when_supported(tmp_path: Path) -> None:
     except (OSError, NotImplementedError):
         pytest.skip("symlinks are unavailable on this platform")
 
-    with pytest.raises(ValidationError, match="Symlinks"):
+    with pytest.raises(ValidationError, match="Symlinks|Reparse-Points"):
         create_project_snapshot(
             tmp_path,
             max_file_bytes=1024 * 1024,
@@ -1805,3 +1805,247 @@ def test_output_redactor_redacts_private_key_after_standalone_delimiter() -> Non
     assert "SECRET" not in result
     assert result.startswith("-----\n")
     assert "⟦x⟧" in result
+
+def test_nested_snapshot_and_cache_walk(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.docker_backend import _iter_safe_stream_paths
+
+    nested = tmp_path / "src" / "main" / "java"
+    nested.mkdir(parents=True)
+    source = nested / "Main.java"
+    source.write_text("class Main {}\n", encoding="utf-8")
+    snapshot = create_project_snapshot(
+        tmp_path, max_file_bytes=4096, max_project_bytes=65536
+    )
+    assert source in snapshot.files
+    assert source in {path for path, _ in _iter_safe_stream_paths(tmp_path)}
+
+
+def test_snapshot_exception_has_no_absolute_path(tmp_path: Path) -> None:
+    absent = tmp_path / "private" / "file.java"
+    with pytest.raises(ValidationError) as error:
+        _open_verified_regular_file(absent, tmp_path.stat())
+    assert str(tmp_path) not in str(error.value)
+    assert "file.java" not in str(error.value)
+
+
+def test_stream_exception_has_no_absolute_path(tmp_path: Path) -> None:
+    absent = tmp_path / "private" / "cache.whl"
+    with pytest.raises(ValueError) as error:
+        _open_verified_stream_file(absent, tmp_path.stat())
+    assert str(tmp_path) not in str(error.value)
+    assert "cache.whl" not in str(error.value)
+
+
+def test_tool_result_boundary_hides_host_exception_path() -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    def fails() -> dict:
+        raise ValidationError("C:/Users/private/secret")
+
+    result = _safe_tool_call(fails)
+    assert "private" not in str(result)
+    assert "Users" not in str(result)
+    assert result.structuredContent["reason"] == "validation_error"
+
+
+def test_host_root_redaction(tmp_path: Path) -> None:
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
+    text = validator._public_text(
+        f"Cannot open {tmp_path / 'src' / 'Main.java'}", OutputRedactor(())
+    )
+    assert str(tmp_path) not in text
+    assert "[Host-Pfad]" in text
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX fd-bound scandir test")
+def test_snapshot_rejects_replaced_directory_during_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Never archive a replacement tree using metadata from its new pathname."""
+    from contextlib import contextmanager
+    import cli_agent_code_validator_mcp.code_validator_snapshot as module
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "data.txt").write_text("original", encoding="utf-8")
+    opened_scandir = module.verified_directory_scandir
+
+    @contextmanager
+    def replace_after_open(directory, expected, **kwargs):
+        with opened_scandir(directory, expected, **kwargs) as scanner:
+            if directory == project:
+                project.rename(tmp_path / "original-project")
+                project.mkdir()
+                (project / "data.txt").write_text("replacement", encoding="utf-8")
+            yield scanner
+
+    monkeypatch.setattr(module, "verified_directory_scandir", replace_after_open)
+    with pytest.raises(ValidationError, match="Projektdatei wurde"):
+        create_project_snapshot(
+            project, max_file_bytes=4096, max_project_bytes=65536
+        )
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX fd-bound scandir test")
+def test_cache_stream_rejects_replaced_directory_during_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A replaced cache tree cannot be copied using a replacement stat."""
+    from contextlib import contextmanager
+    import cli_agent_code_validator_mcp.docker_backend as module
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "data.txt").write_text("original", encoding="utf-8")
+    opened_scandir = module.verified_directory_scandir
+
+    @contextmanager
+    def replace_after_open(directory, expected, **kwargs):
+        with opened_scandir(directory, expected, **kwargs) as scanner:
+            if directory == cache:
+                cache.rename(tmp_path / "original-cache")
+                cache.mkdir()
+                (cache / "data.txt").write_text("replacement", encoding="utf-8")
+            yield scanner
+
+    monkeypatch.setattr(module, "verified_directory_scandir", replace_after_open)
+    entries = list(module._iter_safe_stream_paths(cache))
+    assert len(entries) == 1
+    path, expected = entries[0]
+    with pytest.raises(ValueError, match="Streamed file changed"):
+        _open_verified_stream_file(path, expected)
+
+
+def test_mcp_reports_safe_ambiguous_build_diagnostic(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
+    result = _safe_tool_call(lambda: validator.run_java_build("."))
+
+    wire = _wire_tool_result(result)
+    assert wire["structuredContent"]["reason"] == "invalid_request"
+    assert "build_system" in wire["structuredContent"]["message"]
+    assert str(tmp_path) not in str(wire)
+    assert "_meta" not in wire
+
+
+def test_mcp_reports_safe_pytest_selector_diagnostic(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
+    result = _safe_tool_call(
+        lambda: validator.run_python_tests(".", test_selector="--collect-only")
+    )
+    wire = _wire_tool_result(result)
+    assert wire["structuredContent"]["reason"] == "invalid_request"
+    assert "pytest-Optionen" in wire["structuredContent"]["message"]
+    assert str(tmp_path) not in str(wire)
+
+
+def test_mcp_reports_safe_workspace_path_constraint(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
+    result = _safe_tool_call(lambda: validator.run_java_build("../outside"))
+    wire = _wire_tool_result(result)
+    assert wire["structuredContent"]["reason"] == "invalid_request"
+    assert "'..'" in wire["structuredContent"]["message"]
+    assert str(tmp_path) not in str(wire)
+
+
+def test_mcp_hides_internal_validation_error_paths() -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    def fail() -> dict:
+        raise ValidationError("C:/Users/private/cache/file")
+
+    wire = _wire_tool_result(_safe_tool_call(fail))
+    assert wire["structuredContent"]["reason"] == "validation_error"
+    assert "private" not in str(wire)
+
+
+def test_mcp_hides_unexpected_exception_paths() -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    def fail() -> dict:
+        raise OSError("/home/private/build/file")
+
+    wire = _wire_tool_result(_safe_tool_call(fail))
+    assert wire["structuredContent"]["reason"] == "internal_error"
+    assert "/home/private" not in str(wire)
+
+
+def test_mcp_reports_missing_python_requirements_without_host_paths(
+    tmp_path: Path,
+) -> None:
+    """A missing mandatory input stays actionable but does not leak the host root."""
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    project = tmp_path / "host-internal-project"
+    project.mkdir()
+    validator = DockerCodeValidator(project, settings(), backend=FakeBackend())
+
+    result = _safe_tool_call(lambda: validator.run_python_tests("."))
+    wire = _wire_tool_result(result)
+    message = wire["structuredContent"]["message"]
+
+    assert wire["structuredContent"]["success"] is False
+    assert wire["structuredContent"]["reason"] == "invalid_request"
+    assert "requirements.txt" in message
+    assert "python -m pip freeze --exclude-editable" in message
+    assert "host-internal-project" not in str(wire)
+    assert str(tmp_path) not in str(wire)
+    assert "_meta" not in wire
+
+
+def test_mcp_still_hides_internal_python_validation_errors() -> None:
+    """Only explicitly public validation errors may expose their message."""
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    def fail() -> dict:
+        raise ValidationError("Python cache: C:/Users/private/maven")
+
+    wire = _wire_tool_result(_safe_tool_call(fail))
+    assert wire["structuredContent"]["reason"] == "validation_error"
+    assert "C:/Users/private" not in str(wire)
+
+
+@pytest.mark.parametrize(
+    "cache_field",
+    ["maven_cache_root", "gradle_cache_root", "python_cache_root"],
+)
+@pytest.mark.parametrize("relative_root", [".", "cache"])
+def test_relative_cache_roots_are_resolved_before_output_redaction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cache_field: str,
+    relative_root: str,
+) -> None:
+    """Relative administrator settings must never mask ordinary words or dots."""
+    monkeypatch.chdir(tmp_path)
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        **{cache_field: Path(relative_root)},
+    )
+    expected_root = (tmp_path / relative_root).resolve()
+    actual_root = getattr(configured, cache_field)
+    assert actual_root == expected_root
+    assert actual_root.is_absolute()
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    validator = DockerCodeValidator(workspace, configured, backend=FakeBackend())
+    output = validator._public_text(
+        (
+            "Tests passed. cache is ready. Version 1.2.3.\n"
+            f"Dependency at {expected_root / 'artifact.whl'}"
+        ),
+        OutputRedactor(()),
+    )
+    assert "Tests passed. cache is ready. Version 1.2.3." in output
+    assert str(expected_root) not in output
+    assert "[Host-Pfad]" in output

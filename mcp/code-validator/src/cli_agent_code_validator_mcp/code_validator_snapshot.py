@@ -10,6 +10,7 @@ from pathlib import Path
 from .filesystem_safety import (
     _same_file,
     _is_windows_reparse_point,
+    scanned_entry_stat,
     verified_directory_scandir,
 )
 from .code_validator_types import CodeValidationError
@@ -65,7 +66,7 @@ def _open_verified_regular_file(
         before = os.stat(path, follow_symlinks=False)
     except OSError as exc:
         raise CodeValidationError(
-            f"Projektdatei konnte nicht erneut geprüft werden: {path}"
+            "Projektdatei konnte nicht erneut geprüft werden."
         ) from exc
     if (
         stat.S_ISLNK(before.st_mode)
@@ -74,14 +75,14 @@ def _open_verified_regular_file(
         or not _same_file(expected, before)
     ):
         raise CodeValidationError(
-            f"Projektdatei wurde während der Snapshot-Erstellung verändert: {path}"
+            "Projektdatei wurde während der Snapshot-Erstellung verändert."
         )
 
     try:
         fd = os.open(path, flags)
     except OSError as exc:
         raise CodeValidationError(
-            f"Projektdatei konnte nicht sicher geöffnet werden: {path}"
+            "Projektdatei konnte nicht sicher geöffnet werden."
         ) from exc
     try:
         opened = os.fstat(fd)
@@ -92,7 +93,7 @@ def _open_verified_regular_file(
             or opened.st_size != expected.st_size
         ):
             raise CodeValidationError(
-                f"Projektdatei wurde während der Snapshot-Erstellung verändert: {path}"
+                "Projektdatei wurde während der Snapshot-Erstellung verändert."
             )
         return os.fdopen(fd, "rb", closefd=True), opened
     except BaseException:
@@ -122,7 +123,7 @@ def _safe_tree_entries(
         root_stat = os.stat(root, follow_symlinks=False)
     except OSError as exc:
         raise CodeValidationError(
-            f"Projektverzeichnis konnte nicht geprüft werden: {root}"
+            "Projektverzeichnis konnte nicht geprüft werden."
         ) from exc
     if (
         stat.S_ISLNK(root_stat.st_mode)
@@ -130,7 +131,7 @@ def _safe_tree_entries(
         or not stat.S_ISDIR(root_stat.st_mode)
     ):
         raise CodeValidationError(
-            f"Projektroot ist kein sicheres Verzeichnis: {root}"
+            "Projektroot ist kein sicheres Verzeichnis."
         )
 
     def walk(directory: Path, expected: os.stat_result) -> None:
@@ -153,11 +154,11 @@ def _safe_tree_entries(
                         )
                     path = directory / entry.name
                     try:
-                        entry_stat = entry.stat(follow_symlinks=False)
+                        entry_stat = scanned_entry_stat(entry, path)
                         mode = entry_stat.st_mode
                     except OSError as exc:
                         raise CodeValidationError(
-                            f"Projektpfad konnte nicht geprüft werden: {path}"
+                            "Projektpfad konnte nicht geprüft werden."
                         ) from exc
                     if _is_windows_reparse_point(entry_stat):
                         raise CodeValidationError(
@@ -199,7 +200,7 @@ def _safe_tree_entries(
             raise
         except OSError as exc:
             raise CodeValidationError(
-                f"Projektverzeichnis konnte nicht sicher gelesen werden: {directory}"
+                "Projektverzeichnis konnte nicht sicher gelesen werden."
             ) from exc
 
     walk(root, root_stat)

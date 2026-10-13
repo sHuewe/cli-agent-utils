@@ -13,6 +13,20 @@ def _is_windows_reparse_point(file_stat: object) -> bool:
     return bool(attributes & reparse_flag)
 
 
+def scanned_entry_stat(entry: os.DirEntry[str], path: Path) -> os.stat_result:
+    """Stat an entry using the same directory identity as its scanner.
+
+    POSIX os.scandir(fd) is bound to the opened directory. Using os.stat(path)
+    here would break that binding if the directory pathname is replaced while
+    it is scanned. On Windows DirEntry.stat() may instead return zero for
+    st_dev/st_ino, so use os.stat(path, follow_symlinks=False) while the
+    non-replaceable verified Windows directory handle remains held.
+    """
+    if os.name == "nt":
+        return os.stat(path, follow_symlinks=False)
+    return entry.stat(follow_symlinks=False)
+
+
 def _same_file(expected: os.stat_result, actual: os.stat_result) -> bool:
     return (
         expected.st_dev == actual.st_dev
@@ -34,7 +48,7 @@ def _validate_directory_stat(
         or not stat.S_ISDIR(actual.st_mode)
         or not _same_file(expected, actual)
     ):
-        raise error_type(f"{message}: {path}")
+        raise error_type(message)
 
 
 @contextmanager
@@ -58,7 +72,7 @@ def verified_directory_scandir(
         if not directory_flag or not nofollow_flag:
             raise error_type(
                 "Sichere Directory-Descriptor-Traversierung wird auf dieser "
-                f"Plattform nicht unterstützt: {path}"
+                "Plattform nicht unterstützt."
             )
         flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
         fd: int | None = None
@@ -77,7 +91,7 @@ def verified_directory_scandir(
         except error_type:
             raise
         except OSError as exc:
-            raise error_type(f"{changed_message}: {path}") from exc
+            raise error_type(changed_message) from exc
         finally:
             if fd is not None:
                 try:
@@ -122,7 +136,7 @@ def verified_directory_scandir(
         None,
     )
     if handle == INVALID_HANDLE_VALUE:
-        raise error_type(f"{changed_message}: {path}")
+        raise error_type(changed_message)
 
     try:
         # The handle permits only shared reads and uses OPEN_REPARSE_POINT.
@@ -133,7 +147,7 @@ def verified_directory_scandir(
         try:
             opened = os.stat(path, follow_symlinks=False)
         except OSError as exc:
-            raise error_type(f"{changed_message}: {path}") from exc
+            raise error_type(changed_message) from exc
         _validate_directory_stat(
             path,
             expected,

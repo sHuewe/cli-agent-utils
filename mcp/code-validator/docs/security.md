@@ -454,3 +454,41 @@ Gradle -> gradle --offline --no-daemon --gradle-user-home /tmp/gradle assemble
 The separate Maven/Gradle build helpers are implementation details and are not exposed as MCP tools.
 
 
+
+## Windows snapshot integrity and model-visible errors
+
+Directory snapshots and dependency-cache streaming use a platform-aware
+child metadata check. On POSIX they retain `DirEntry.stat(follow_symlinks=False)`
+so metadata is bound to the descriptor-backed directory scan, including if its
+path is concurrently renamed or replaced. On Windows they use
+`os.stat(path, follow_symlinks=False)` for consistent inode/device values,
+while the non-replaceable directory handle is held for enumeration.
+Symlinks and Windows reparse points remain prohibited. A race regression test
+exercises a renamed/replaced directory for both snapshot and cache streaming.
+
+Internal filesystem exception messages omit absolute host paths.
+Unexpected errors in MCP tool calls return generic errors, preserving
+the existing `CallToolResult` representation and user-message metadata
+handling. Docker/build diagnostics redact known host roots. The model
+continues to receive the requested workspace-relative project path.
+
+## Actionable but safe MCP validation failures
+
+Explicit caller-input validation (ambiguous Java build system, invalid selectors,
+unsupported paths) returns a static, host-path-free diagnostic using
+`PublicValidationError`. Other `CodeValidationError` instances and unexpected
+exceptions remain generic. This preserves retry guidance without exposing
+host-side exception text or filesystem locations. Existing
+`message_to_user` metadata separation remains unchanged.
+
+A missing mandatory Python `requirements.txt` is also reported as a safe,
+actionable `PublicValidationError`. The model receives the filename and
+the suggested `pip freeze` command, but **no absolute host directory**.
+Other Python cache and filesystem errors retain the generic handling unless
+explicitly reviewed for disclosure safety.
+
+Relative cache-root options such as `--maven-cache-root .` or `cache`
+are resolved to absolute paths in `CodeValidatorSettings.__post_init__()`
+before any output masking. The output redactor therefore matches canonical
+host paths rather than short relative names or punctuation. Regression tests
+cover all three cache root settings and both relative forms.
