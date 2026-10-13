@@ -493,6 +493,20 @@ before any output masking. The output redactor therefore matches canonical
 host paths rather than short relative names or punctuation. Regression tests
 cover all three cache root settings and both relative forms.
 
-## Optional Docker prepare (trusted user action)
+## Optional Python-only Docker wheel preparation (trusted operator CLI)
 
-The standalone `cli-agent-dependency-cache` executable additionally supports `--executor docker --image <image-tag-or-digest>`. Unlike the validator's administrator-configured images, manual preparation images may use mutable tags and are not required to carry a SHA-256 digest. The regular MCP validator sandbox does **not** change: it remains no-network, non-privileged and without bind mounts. Docker prepare is a **separate** bridge-networked, non-privileged preparation container. Only explicitly selected Maven/Gradle/pip user configuration files are passed into temporary storage, never the full user home; `--no-user-config` disables this transfer. Network-facing plugins/build scripts can still read/exfiltrate these credentials. No arbitrary source-directory binds, Docker socket or host networking are provided. Project sources are streamed as a bounded snapshot and only bounded regular-file cache artifacts are accepted back. Prepared artifacts are sanitized before promotion into the offline cache.
+Only `cli-agent-dependency-cache prepare-python` supports
+`--executor docker --image <image-tag-or-digest>`. Maven and Gradle always
+use their existing host preparation paths. The administrator-configured MCP
+validator images remain digest-pinned and the validator remains offline.
+
+Docker preparation is an explicitly user-invoked operation, never an MCP tool.
+The selected image is not pulled automatically. Bridge networking is used to
+resolve Python wheels; build backends are trusted code and can read the
+selectively transferred pip configuration. Only the root `requirements.txt`
+and recursively included `-r` / `-c` files are sent from the project.
+No project directory or home directory is mounted. The generated wheel archive
+is constrained to wheel files and size-checked during transfer before being
+promoted to the project cache. A failed replacement attempts to restore the
+previous ready cache. The normal MCP validation sandbox receives neither
+credentials nor package index access.
