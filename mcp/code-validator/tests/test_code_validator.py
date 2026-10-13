@@ -1975,3 +1975,38 @@ def test_mcp_hides_unexpected_exception_paths() -> None:
     wire = _wire_tool_result(_safe_tool_call(fail))
     assert wire["structuredContent"]["reason"] == "internal_error"
     assert "/home/private" not in str(wire)
+
+
+def test_mcp_reports_missing_python_requirements_without_host_paths(
+    tmp_path: Path,
+) -> None:
+    """A missing mandatory input stays actionable but does not leak the host root."""
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    project = tmp_path / "host-internal-project"
+    project.mkdir()
+    validator = DockerCodeValidator(project, settings(), backend=FakeBackend())
+
+    result = _safe_tool_call(lambda: validator.run_python_tests("."))
+    wire = _wire_tool_result(result)
+    message = wire["structuredContent"]["message"]
+
+    assert wire["structuredContent"]["success"] is False
+    assert wire["structuredContent"]["reason"] == "invalid_request"
+    assert "requirements.txt" in message
+    assert "python -m pip freeze --exclude-editable" in message
+    assert "host-internal-project" not in str(wire)
+    assert str(tmp_path) not in str(wire)
+    assert "_meta" not in wire
+
+
+def test_mcp_still_hides_internal_python_validation_errors() -> None:
+    """Only explicitly public validation errors may expose their message."""
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    def fail() -> dict:
+        raise ValidationError("Python cache: C:/Users/private/maven")
+
+    wire = _wire_tool_result(_safe_tool_call(fail))
+    assert wire["structuredContent"]["reason"] == "validation_error"
+    assert "C:/Users/private" not in str(wire)

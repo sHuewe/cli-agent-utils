@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from .cache_identity import project_cache_key
-from .code_validator_types import CodeValidationError
+from .code_validator_types import CodeValidationError, PublicValidationError
 
 _CACHE_SCHEMA = "cli-agent-python-cache-v5"
 _REQUIREMENTS_FILE = "requirements.txt"
@@ -288,7 +288,7 @@ def _requirement_files(
     if root.is_symlink():
         raise CodeValidationError("requirements.txt darf kein Symlink sein.")
     if not root.is_file():
-        raise CodeValidationError(
+        raise PublicValidationError(
             "Python-Test-Validierung benötigt eine requirements.txt im "
             "Projektroot. Erzeuge sie in der aktivierten Projektumgebung z. B. "
             "mit 'python -m pip freeze --exclude-editable > requirements.txt'."

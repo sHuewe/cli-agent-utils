@@ -480,3 +480,9 @@ unsupported paths) returns a static, host-path-free diagnostic using
 exceptions remain generic. This preserves retry guidance without exposing
 host-side exception text or filesystem locations. Existing
 `message_to_user` metadata separation remains unchanged.
+
+A missing mandatory Python `requirements.txt` is also reported as a safe,
+actionable `PublicValidationError`. The model receives the filename and
+the suggested `pip freeze` command, but **no absolute host directory**.
+Other Python cache and filesystem errors retain the generic handling unless
+explicitly reviewed for disclosure safety.
