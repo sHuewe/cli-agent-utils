@@ -9,7 +9,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import re
 import stat
 import subprocess  # nosec B404
 import tarfile
@@ -220,10 +219,16 @@ def _image_policy(backend: DockerBackend, name: str) -> None:
         raise RuntimeError("Docker-Prepare konnte die Containerpolicy nicht prüfen.") from exc
     if not (
         host.get("NetworkMode") == "bridge"
+        and host.get("PidMode") != "host"
+        and host.get("IpcMode") != "host"
+        and host.get("UTSMode") != "host"
+        and any(str(v).startswith("no-new-privileges") for v in (host.get("SecurityOpt") or []))
         and host.get("ReadonlyRootfs") is True
         and host.get("Privileged") is False
         and host.get("Binds") in (None, [])
         and config.get("User") == "65532:65532"
+        and host.get("Tmpfs", {}).get("/tmp") is not None
+        and host.get("Tmpfs", {}).get("/work") is not None
         and any(str(v).lower() == "all" for v in (host.get("CapDrop") or []))
         and not config.get("Volumes")
         and all(m.get("Type") == "tmpfs" and m.get("Destination") in {"/tmp", "/work"} for m in mounts)
@@ -343,7 +348,6 @@ def prepare_in_docker(
                        "--disable-pip-version-check", "--wheel-dir",
                        "/tmp/prepared/wheels", "-r", "requirements.txt"]
             if "pip/pip.conf" in config:
-                command[0:0] = []  # Pip config is passed via Docker exec env below.
                 command = ["exec", "-e", "PIP_CONFIG_FILE=/tmp/config/pip/pip.conf",
                            "-w", "/work", name, *command[4:]]
             _docker_run(backend, command, timeout)
