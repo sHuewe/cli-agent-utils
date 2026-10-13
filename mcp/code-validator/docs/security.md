@@ -486,3 +486,9 @@ actionable `PublicValidationError`. The model receives the filename and
 the suggested `pip freeze` command, but **no absolute host directory**.
 Other Python cache and filesystem errors retain the generic handling unless
 explicitly reviewed for disclosure safety.
+
+Relative cache-root options such as `--maven-cache-root .` or `cache`
+are resolved to absolute paths in `CodeValidatorSettings.__post_init__()`
+before any output masking. The output redactor therefore matches canonical
+host paths rather than short relative names or punctuation. Regression tests
+cover all three cache root settings and both relative forms.

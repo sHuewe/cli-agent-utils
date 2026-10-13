@@ -2010,3 +2010,42 @@ def test_mcp_still_hides_internal_python_validation_errors() -> None:
     wire = _wire_tool_result(_safe_tool_call(fail))
     assert wire["structuredContent"]["reason"] == "validation_error"
     assert "C:/Users/private" not in str(wire)
+
+
+@pytest.mark.parametrize(
+    "cache_field",
+    ["maven_cache_root", "gradle_cache_root", "python_cache_root"],
+)
+@pytest.mark.parametrize("relative_root", [".", "cache"])
+def test_relative_cache_roots_are_resolved_before_output_redaction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cache_field: str,
+    relative_root: str,
+) -> None:
+    """Relative administrator settings must never mask ordinary words or dots."""
+    monkeypatch.chdir(tmp_path)
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        **{cache_field: Path(relative_root)},
+    )
+    expected_root = (tmp_path / relative_root).resolve()
+    actual_root = getattr(configured, cache_field)
+    assert actual_root == expected_root
+    assert actual_root.is_absolute()
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    validator = DockerCodeValidator(workspace, configured, backend=FakeBackend())
+    output = validator._public_text(
+        (
+            "Tests passed. cache is ready. Version 1.2.3.\n"
+            f"Dependency at {expected_root / 'artifact.whl'}"
+        ),
+        OutputRedactor(()),
+    )
+    assert "Tests passed. cache is ready. Version 1.2.3." in output
+    assert str(expected_root) not in output
+    assert "[Host-Pfad]" in output
