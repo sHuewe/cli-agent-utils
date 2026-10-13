@@ -1135,3 +1135,37 @@ def test_docker_prepare_rejects_invalid_image_reference(tmp_path: Path) -> None:
             prepare_in_docker(
                 "maven", tmp_path, tmp_path / "cache", image=image
             )
+
+
+def test_docker_prepare_cleans_up_when_create_times_out(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    import subprocess
+    import pytest
+    from cli_agent_code_validator_mcp import docker_prepare
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    cache = tmp_path / "cache"
+    calls = []
+
+    class FakeDocker:
+        def __init__(self, **kwargs):
+            pass
+
+        def run(self, args, *, timeout, input_bytes=None):
+            calls.append(list(args))
+            if args[0] == "create":
+                raise subprocess.TimeoutExpired(["docker", "create"], timeout)
+            return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(docker_prepare, "DockerBackend", FakeDocker)
+    with pytest.raises(subprocess.TimeoutExpired):
+        docker_prepare.prepare_in_docker(
+            "maven", project, cache, image="maven:3.9-eclipse-temurin-21",
+            use_user_config=False,
+        )
+    assert [args[0] for args in calls] == ["create", "rm"]
+    assert calls[0][calls[0].index("--name") + 1] == calls[1][-1]
+    assert calls[1][1] == "-f"
