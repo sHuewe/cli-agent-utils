@@ -700,7 +700,7 @@ def test_maven_reports_missing_prepared_dependency_cache(tmp_path: Path) -> None
     assert result["dependency_cache_key"].startswith("maven-")
 
 
-def test_python_reports_missing_wsl_prepared_dependency_cache(
+def test_python_reports_missing_prepared_dependency_cache(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "requirements.txt").write_text(
@@ -719,7 +719,9 @@ def test_python_reports_missing_wsl_prepared_dependency_cache(
 
     assert result["success"] is False
     assert result["reason"] == "dependencies_not_prepared"
-    assert result["preparation_environment"] == "WSL required"
+    assert result["preparation_environment"] == "WSL (host) or Docker"
+    assert "--executor docker --image <image>" in result["message_to_user"]
+    assert "unter WSL" in result["message_to_user"]
     assert "prepare-python" in result["message_to_user"]
 
 
