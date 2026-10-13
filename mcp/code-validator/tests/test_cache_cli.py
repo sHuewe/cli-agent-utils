@@ -1198,3 +1198,39 @@ def test_docker_prepare_windows_pip_user_config_fallback(tmp_path: Path, monkeyp
     modern.parent.mkdir(parents=True)
     modern.write_text("[global]\nindex-url = https://modern.example/simple\n")
     assert docker_prepare._pip_user_config() == modern
+
+
+def test_docker_pip_missing_explicit_config_falls_back(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_prepare
+
+    home = tmp_path / "home"
+    user_config = home / ".config" / "pip" / "pip.conf"
+    user_config.parent.mkdir(parents=True)
+    user_config.write_text("[global]\nindex-url = https://example.test/simple\n", encoding="utf-8")
+    monkeypatch.setattr(docker_prepare.sys, "platform", "linux")
+    monkeypatch.setattr(docker_prepare.Path, "home", lambda: home)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("PIP_CONFIG_FILE", str(tmp_path / "missing.conf"))
+
+    assert docker_prepare._pip_user_config() == user_config
+
+
+def test_docker_pip_macos_xdg_data_home(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_prepare
+
+    home = tmp_path / "home"
+    data_home = tmp_path / "xdg-data"
+    xdg_config = data_home / "pip" / "pip.conf"
+    xdg_config.parent.mkdir(parents=True)
+    xdg_config.write_text("[global]\n", encoding="utf-8")
+    library_config = home / "Library" / "Application Support" / "pip" / "pip.conf"
+    library_config.parent.mkdir(parents=True)
+    library_config.write_text("[global]\n", encoding="utf-8")
+    monkeypatch.setattr(docker_prepare.sys, "platform", "darwin")
+    monkeypatch.setattr(docker_prepare.Path, "home", lambda: home)
+    monkeypatch.delenv("PIP_CONFIG_FILE", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+
+    assert docker_prepare._pip_user_config() == xdg_config
+    xdg_config.unlink()
+    assert docker_prepare._pip_user_config() != library_config
