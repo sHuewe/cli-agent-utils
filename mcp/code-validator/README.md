@@ -85,25 +85,35 @@ The validator never downloads packages during a test. Python installs only from 
 
 For concrete image recommendations, Java/JDK compatibility examples, local digest-pinning guidance, and the repository's configurable Gradle image Dockerfile, see [Validator Docker images](docs/images.md). The official Gradle image is intentionally treated only as a build source there because its declared Gradle-home volume conflicts with the validator's no-image-volumes policy.
 
-### Optional Docker dependency preparation
+### Optional Python-only Docker wheel preparation
 
-Host preparation remains the default. Pass an explicit Docker image reference (ordinary tag or SHA-256 digest) to prepare the cache using a temporary Docker container:
+Maven and Gradle preparation continue to run on the host. Only
+`prepare-python` supports an optional Docker executor:
 
 ```bash
-cli-agent-dependency-cache prepare-maven . --executor docker --image maven:3.9-eclipse-temurin-21
-cli-agent-dependency-cache prepare-gradle . --executor docker --image my-gradle:9-jdk21
-cli-agent-dependency-cache prepare-python . --executor docker --image my-python-tests:3.12
+cli-agent-dependency-cache prepare-python . --executor docker --image python:3.12
 ```
 
-Unlike MCP validator images, manual Docker prepare images **do not require digest pinning**. Tags are allowed, but the selected image must be available locally and is never pulled automatically. The validator's administratively configured images remain SHA-256-digest-pinned. Docker preparation always uses Docker **bridge networking**; no network-mode flag is exposed. The image must already be present locally (`--pull never`), contain `sh`, `tar`, `mkdir`, `sleep`, and the appropriate language/build executables, and must not declare image volumes. Docker can be invoked through WSL with `--wsl` and optionally `--wsl-distribution`. No additional host directories are bind-mounted. The project is copied as a bounded snapshot into `/work`, while only selected user settings are copied into temporary container storage:
+Host mode is the default and still requires WSL Python. Docker mode accepts an
+image tag or digest (unlike the administrator-pinned validator images), requires
+the selected image to exist locally (`--pull never`), and always uses Docker
+bridge networking. No user-home or project bind mounts are made. The temporary
+container receives **only the root `requirements.txt` and all recursively
+referenced `-r` requirements / `-c` constraints files**. Local package paths
+are not supported in Docker mode; use host mode for these.
 
-- Maven: `~/.m2/settings.xml`, `settings-security.xml` (when present)
-- Gradle: `gradle.properties`, `init.gradle[.kts]`, and direct files in `init.d` from the configured Gradle user home
-- pip: a selected user config file (`pip.ini` or `pip.conf`; optionally `PIP_CONFIG_FILE`)
+A single selected pip user configuration file is transferred when available;
+`--no-user-config` disables that. Explicit `PIP_CONFIG_FILE=/dev/null` is
+honored. The temporary container needs `sh`, `tar`, `mkdir`, `sleep`,
+Python and pip. Only generated wheel files are exported to the host and used by
+the unchanged, offline, digest-pinned MCP validator.
 
-Use `--no-user-config` to skip these files. Windows-specific absolute paths, custom SSL truststores, environment variables, system/global Maven settings, and packages in adjacent filesystem directories are **not** automatically mapped into Docker. Local source requirements are deliberately rejected for Docker Python preparation but remain supported by host preparation.
-
-Only prepared wheel/artifact caches are exported from the temporary container. The existing cache sanitization and metadata steps run on the host; project source, credentials and user settings are not promoted into the offline validator. Docker preparation itself has network access and executes project-controlled build logic, which may read and exfiltrate any credentials deliberately provided to it. Run it only for trusted projects and reviewed images. Docker Python preparation does not require WSL Python, unlike host Python preparation.
+Docker prepare is a *trusted, manually invoked CLI operation*, never an MCP
+tool or an LLM-exposed action. pip build backends may run project-controlled
+code and read credentials supplied to this network-enabled preparation
+container. Run it only for trusted dependencies and images. Python/ABI
+compatibility with the separately administered validator image remains the
+operator's responsibility.
 
 All `prepare-*` commands are explicit, trusted operator actions outside the agent sandbox. They may evaluate project-controlled build logic with the current user's permissions, network access and configured package credentials. Their job is only to create a credential-free offline artifact snapshot for later use by the sandbox. A prepared cache is **not** a proof that it contains the dependencies required by the project at validation time, and the validator deliberately does not try to prove semantic equivalence between preparation and the later offline build. Profiles, dynamic versions, snapshots, platform-dependent logic or ordinary project changes can therefore make an existing cache incomplete. The sandbox simply tries the current project against the existing cache and fails closed; recognized missing-dependency failures ask the user to rerun the matching `prepare-*` command.
 
