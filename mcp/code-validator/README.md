@@ -85,6 +85,26 @@ The validator never downloads packages during a test. Python installs only from 
 
 For concrete image recommendations, Java/JDK compatibility examples, local digest-pinning guidance, and the repository's configurable Gradle image Dockerfile, see [Validator Docker images](docs/images.md). The official Gradle image is intentionally treated only as a build source there because its declared Gradle-home volume conflicts with the validator's no-image-volumes policy.
 
+### Optional Docker dependency preparation
+
+Host preparation remains the default. Pass an **administrator-reviewed, digest-pinned** image to prepare the cache using a temporary Docker container:
+
+```bash
+cli-agent-dependency-cache prepare-maven . --executor docker --image maven@sha256:<digest>
+cli-agent-dependency-cache prepare-gradle . --executor docker --image gradle@sha256:<digest>
+cli-agent-dependency-cache prepare-python . --executor docker --image python@sha256:<digest>
+```
+
+Docker preparation always uses Docker **bridge networking**; no network-mode flag is exposed. The image must already be present locally (`--pull never`), contain `sh`, `tar`, `mkdir`, `sleep`, and the appropriate language/build executables, and must not declare image volumes. Docker can be invoked through WSL with `--wsl` and optionally `--wsl-distribution`. No additional host directories are bind-mounted. The project is copied as a bounded snapshot into `/work`, while only selected user settings are copied into temporary container storage:
+
+- Maven: `~/.m2/settings.xml`, `settings-security.xml` (when present)
+- Gradle: `gradle.properties`, `init.gradle[.kts]`, and direct files in `init.d` from the configured Gradle user home
+- pip: a selected user config file (`pip.ini` or `pip.conf`; optionally `PIP_CONFIG_FILE`)
+
+Use `--no-user-config` to skip these files. Windows-specific absolute paths, custom SSL truststores, environment variables, system/global Maven settings, and packages in adjacent filesystem directories are **not** automatically mapped into Docker. Local source requirements are deliberately rejected for Docker Python preparation but remain supported by host preparation.
+
+Only prepared wheel/artifact caches are exported from the temporary container. The existing cache sanitization and metadata steps run on the host; project source, credentials and user settings are not promoted into the offline validator. Docker preparation itself has network access and executes project-controlled build logic, which may read and exfiltrate any credentials deliberately provided to it. Run it only for trusted projects and reviewed images. Docker Python preparation does not require WSL Python, unlike host Python preparation.
+
 All `prepare-*` commands are explicit, trusted operator actions outside the agent sandbox. They may evaluate project-controlled build logic with the current user's permissions, network access and configured package credentials. Their job is only to create a credential-free offline artifact snapshot for later use by the sandbox. A prepared cache is **not** a proof that it contains the dependencies required by the project at validation time, and the validator deliberately does not try to prove semantic equivalence between preparation and the later offline build. Profiles, dynamic versions, snapshots, platform-dependent logic or ordinary project changes can therefore make an existing cache incomplete. The sandbox simply tries the current project against the existing cache and fails closed; recognized missing-dependency failures ask the user to rerun the matching `prepare-*` command.
 
 For Python, dependency preparation follows the same model but **must be executed inside WSL**. This is intentional: the Docker validator runs Linux containers, so preparing with Windows pip could create Windows-only wheels. The interpreter selected by `--python-command` is probed as well and must itself report Linux; a Windows Python executable launched from WSL is rejected.
