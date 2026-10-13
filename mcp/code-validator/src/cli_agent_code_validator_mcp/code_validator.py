@@ -368,6 +368,7 @@ class DockerCodeValidator:
         dependency_cache_key: str | None = None,
         python_wheels: Path | None = None,
         gradle_home: Path | None = None,
+        python_cache_source: str | None = None,
     ) -> dict[str, Any]:
         project = self._resolve_project(project_path)
         snapshot = create_project_snapshot(
@@ -823,7 +824,7 @@ class DockerCodeValidator:
                         else (
                             {
                                 "key": dependency_cache_key,
-                                "source": "prepared-wsl-wheel-cache",
+                                "source": python_cache_source or "prepared-wsl-wheel-cache",
                             }
                             if python_wheels is not None
                             else None
@@ -920,6 +921,7 @@ class DockerCodeValidator:
             command.append(selector)
 
         python_wheels: Path | None = None
+        python_cache_source: str | None = None
         dependency_cache_key: str | None = None
         pre_test_command: list[str] | None = None
         plan = python_dependency_plan(
@@ -945,13 +947,23 @@ class DockerCodeValidator:
                         "weil der benötigte vorbereitete Linux-Wheel-Cache fehlt."
                     ),
                     "message_to_user": (
-                        "Python-Dependencies sind noch nicht vorbereitet. Führe "
-                        "unter WSL 'cli-agent-dependency-cache prepare-python <projekt>' "
-                        "aus und wiederhole den Test."
+                        "Python-Dependencies sind noch nicht vorbereitet. "
+                        "Verwende entweder Host-Prepare unter WSL mit "
+                        "'cli-agent-dependency-cache prepare-python <projekt>' "
+                        "oder Docker-Prepare mit "
+                        "'cli-agent-dependency-cache prepare-python <projekt> "
+                        "--executor docker --image <image>'. "
+                        "Wiederhole anschließend den Test."
                     ),
-                    "preparation_environment": "WSL required",
+                    "preparation_environment": "WSL (host) or Docker",
                 }
             python_wheels = entry.wheels
+            meta = entry.metadata() or {}
+            python_cache_source = (
+                "prepared-docker-wheel-cache"
+                if meta.get("preparation_environment") == "docker"
+                else "prepared-wsl-wheel-cache"
+            )
             wheel_names = entry.install_wheel_names()
             if wheel_names:
                 install = [
@@ -978,6 +990,7 @@ class DockerCodeValidator:
             pre_test_command=pre_test_command,
             dependency_cache_key=dependency_cache_key,
             python_wheels=python_wheels,
+            python_cache_source=python_cache_source,
         )
 
     def run_java_tests(

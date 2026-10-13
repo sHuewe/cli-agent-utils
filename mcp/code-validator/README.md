@@ -85,11 +85,41 @@ The validator never downloads packages during a test. Python installs only from 
 
 For concrete image recommendations, Java/JDK compatibility examples, local digest-pinning guidance, and the repository's configurable Gradle image Dockerfile, see [Validator Docker images](docs/images.md). The official Gradle image is intentionally treated only as a build source there because its declared Gradle-home volume conflicts with the validator's no-image-volumes policy.
 
+### Optional Python-only Docker wheel preparation
+
+Maven and Gradle preparation continue to run on the host. Only
+`prepare-python` supports an optional Docker executor:
+
+```bash
+cli-agent-dependency-cache prepare-python . --executor docker --image python:3.12
+```
+
+Host mode is the default and still requires WSL Python. Docker mode accepts an
+image tag or digest (unlike the administrator-pinned validator images), requires
+the selected image to exist locally (`--pull never`), and always uses Docker
+bridge networking. No user-home or project bind mounts are made. The temporary
+container receives **only the root `requirements.txt` and all recursively
+referenced `-r` requirements / `-c` constraints files**. Local package paths
+are not supported in Docker mode; use host mode for these.
+
+A single selected pip user configuration file is transferred when available;
+`--no-user-config` disables that. Explicit `PIP_CONFIG_FILE=/dev/null` is
+honored. The temporary container needs `sh`, `tar`, `mkdir`, `sleep`,
+Python and pip. Only generated wheel files are exported to the host and used by
+the unchanged, offline, digest-pinned MCP validator.
+
+Docker prepare is a *trusted, manually invoked CLI operation*, never an MCP
+tool or an LLM-exposed action. pip build backends may run project-controlled
+code and read credentials supplied to this network-enabled preparation
+container. Run it only for trusted dependencies and images. Python/ABI
+compatibility with the separately administered validator image remains the
+operator's responsibility.
+
 All `prepare-*` commands are explicit, trusted operator actions outside the agent sandbox. They may evaluate project-controlled build logic with the current user's permissions, network access and configured package credentials. Their job is only to create a credential-free offline artifact snapshot for later use by the sandbox. A prepared cache is **not** a proof that it contains the dependencies required by the project at validation time, and the validator deliberately does not try to prove semantic equivalence between preparation and the later offline build. Profiles, dynamic versions, snapshots, platform-dependent logic or ordinary project changes can therefore make an existing cache incomplete. The sandbox simply tries the current project against the existing cache and fails closed; recognized missing-dependency failures ask the user to rerun the matching `prepare-*` command.
 
-For Python, dependency preparation follows the same model but **must be executed inside WSL**. This is intentional: the Docker validator runs Linux containers, so preparing with Windows pip could create Windows-only wheels. The interpreter selected by `--python-command` is probed as well and must itself report Linux; a Windows Python executable launched from WSL is rejected.
+For Python, **host preparation must be executed inside WSL**, because Windows pip can create Windows-only wheels. The interpreter selected by `--python-command` must report Linux. Alternatively, **Docker preparation** (`prepare-python --executor docker --image <image>`) creates Linux wheels in a temporary container and does not require WSL Python.
 
-**Operational compatibility requirement:** wheel preparation uses the selected WSL Python interpreter, while test execution uses the administrator-configured Docker image. The validator deliberately does not try to infer or enforce wheel-tag/ABI compatibility between those environments. The administrator is responsible for keeping Python implementation/version, architecture and relevant platform ABI compatible between preparation and the pinned test image. A mismatch can cause the offline install to fail even though a cache exists; it is not treated as a sandbox escape or credential boundary issue.
+**Operational compatibility requirement:** wheel preparation uses the selected WSL Python interpreter (host mode) or the explicitly selected Docker image (Docker mode), while test execution uses the administrator-configured Docker image. The validator deliberately does not try to infer or enforce wheel-tag/ABI compatibility between those environments. The administrator is responsible for keeping Python implementation/version, architecture and relevant platform ABI compatible between preparation and the pinned test image. A mismatch can cause the offline install to fail even though a cache exists; it is not treated as a sandbox escape or credential boundary issue.
 
 Cache placement is explicit and consistent across Maven, Gradle and Python. `--target native` is the default and writes to the current environment's `~/.cli-agent/dependency-cache/<type>`. Use this when cli-agent and the MCP run in the same environment as preparation. For example, a fully WSL-hosted setup uses:
 

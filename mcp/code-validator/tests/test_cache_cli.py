@@ -1060,3 +1060,177 @@ def test_dependency_cache_cli_program_name() -> None:
     assert parser.prog == "cli-agent-dependency-cache"
     for command in ("prepare-python", "prepare-maven", "prepare-gradle"):
         assert parser.parse_args([command, "."]).command == command
+
+
+def test_docker_prepare_python_only_cli() -> None:
+    import pytest
+    parser = build_parser()
+    for command in ("prepare-maven", "prepare-gradle"):
+        with pytest.raises(SystemExit):
+            parser.parse_args([command, ".", "--executor", "docker"])
+    args = parser.parse_args(["prepare-python", ".", "--executor", "docker", "--image", "python:3.12"])
+    assert args.image == "python:3.12"
+
+
+def test_docker_requirements_snapshot_selective_and_recursive(tmp_path: Path) -> None:
+    import io
+    import tarfile
+    from cli_agent_code_validator_mcp.docker_prepare import _requirements_snapshot
+    project = tmp_path / "project"
+    (project / "deps").mkdir(parents=True)
+    (project / "requirements.txt").write_text("-r deps/base.txt\n", encoding="utf-8")
+    (project / "deps" / "base.txt").write_text("-c limits.txt\nfoo==1.0\n", encoding="utf-8")
+    (project / "deps" / "limits.txt").write_text("bar==2.0\n", encoding="utf-8")
+    (project / "private.py").write_text("SECRET", encoding="utf-8")
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    archive = _requirements_snapshot(project)
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        assert set(tar.getnames()) == {
+            "requirements.txt", "deps/base.txt", "deps/limits.txt"
+        }
+
+
+def test_docker_requirements_reject_local_source(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_code_validator_mcp.docker_prepare import _requirements_snapshot
+    (tmp_path / "requirements.txt").write_text("../shared-lib\n", encoding="utf-8")
+    with pytest.raises(Exception, match="Host-Prepare"):
+        _requirements_snapshot(tmp_path)
+
+
+def test_docker_prepare_cleanup_after_create_timeout(tmp_path: Path, monkeypatch) -> None:
+    import pytest
+    import subprocess
+    from cli_agent_code_validator_mcp import docker_prepare
+    (tmp_path / "requirements.txt").write_text("demo==1.0\n", encoding="utf-8")
+    calls = []
+    class FakeDocker:
+        def __init__(self, **kwargs): pass
+        def run(self, args, *, timeout, input_bytes=None):
+            calls.append(list(args))
+            if args[0] == "create":
+                raise subprocess.TimeoutExpired("docker create", timeout)
+            return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+    monkeypatch.setattr(docker_prepare, "DockerBackend", FakeDocker)
+    with pytest.raises(subprocess.TimeoutExpired):
+        docker_prepare.prepare_python_in_docker(
+            tmp_path, tmp_path / "cache", image="python:3.12", use_user_config=False
+        )
+    assert [call[0] for call in calls] == ["create", "rm"]
+    assert calls[0][calls[0].index("--name") + 1] == calls[1][-1]
+
+
+def test_docker_prepare_disabled_pip_config(tmp_path: Path, monkeypatch) -> None:
+    import os
+    from cli_agent_code_validator_mcp import docker_prepare
+    home = tmp_path / "home"
+    path = home / ".config" / "pip"
+    path.mkdir(parents=True)
+    (path / "pip.conf").write_text("[global]\nindex-url = https://secret@example.org\n")
+    monkeypatch.setattr(docker_prepare.Path, "home", lambda: home)
+    monkeypatch.setenv("PIP_CONFIG_FILE", os.devnull)
+    assert docker_prepare._pip_config_snapshot(include_user_config=True) is None
+
+
+def test_docker_prepare_rejects_invalid_image_reference(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_code_validator_mcp.docker_prepare import prepare_python_in_docker
+    for image in ("", " ", "-bad", "python:3.12 another"):
+        with pytest.raises(ValueError, match="--image"):
+            prepare_python_in_docker(tmp_path, tmp_path / "cache", image=image)
+
+
+def test_docker_wheel_archive_rejects_drive_paths(tmp_path: Path) -> None:
+    import io
+    import tarfile
+    import pytest
+    from cli_agent_code_validator_mcp.docker_prepare import _extract_wheel_archive
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        content = b"x"
+        item = tarfile.TarInfo("C:/outside.whl")
+        item.size = len(content)
+        tar.addfile(item, io.BytesIO(content))
+    buffer.seek(0)
+    with pytest.raises(ValueError, match="ungültige"):
+        _extract_wheel_archive(buffer, tmp_path)
+
+
+def test_docker_prepare_mac_pip_location(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_prepare
+    home = tmp_path / "home"
+    config = home / "Library" / "Application Support" / "pip"
+    config.mkdir(parents=True)
+    (config / "pip.conf").write_text("[global]\n")
+    monkeypatch.delenv("PIP_CONFIG_FILE", raising=False)
+    monkeypatch.setattr(docker_prepare.sys, "platform", "darwin")
+    monkeypatch.setattr(docker_prepare.Path, "home", lambda: home)
+    assert docker_prepare._pip_user_config() == config / "pip.conf"
+
+
+def test_docker_prepare_wsl_distribution_requires_wsl(monkeypatch) -> None:
+    import pytest
+    import sys
+    from cli_agent_code_validator_mcp import cache_cli
+    monkeypatch.setattr(sys, "argv", [
+        "cli-agent-dependency-cache", "prepare-python", ".",
+        "--executor", "docker", "--image", "python:3.12",
+        "--wsl-distribution", "Ubuntu",
+    ])
+    with pytest.raises(SystemExit) as err:
+        cache_cli.main()
+    assert err.value.code == 1
+
+
+def test_docker_prepare_windows_pip_user_config_fallback(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_prepare
+    home = tmp_path / "home"
+    modern = tmp_path / "appdata" / "pip" / "pip.ini"
+    legacy = home / "pip" / "pip.ini"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("[global]\nindex-url = https://legacy.example/simple\n")
+    monkeypatch.delenv("PIP_CONFIG_FILE", raising=False)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setattr(docker_prepare.sys, "platform", "win32")
+    monkeypatch.setattr(docker_prepare.Path, "home", lambda: home)
+
+    assert docker_prepare._pip_user_config() == legacy
+    modern.parent.mkdir(parents=True)
+    modern.write_text("[global]\nindex-url = https://modern.example/simple\n")
+    assert docker_prepare._pip_user_config() == modern
+
+
+def test_docker_pip_missing_explicit_config_falls_back(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_prepare
+
+    home = tmp_path / "home"
+    user_config = home / ".config" / "pip" / "pip.conf"
+    user_config.parent.mkdir(parents=True)
+    user_config.write_text("[global]\nindex-url = https://example.test/simple\n", encoding="utf-8")
+    monkeypatch.setattr(docker_prepare.sys, "platform", "linux")
+    monkeypatch.setattr(docker_prepare.Path, "home", lambda: home)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("PIP_CONFIG_FILE", str(tmp_path / "missing.conf"))
+
+    assert docker_prepare._pip_user_config() == user_config
+
+
+def test_docker_pip_macos_xdg_data_home(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_prepare
+
+    home = tmp_path / "home"
+    data_home = tmp_path / "xdg-data"
+    xdg_config = data_home / "pip" / "pip.conf"
+    xdg_config.parent.mkdir(parents=True)
+    xdg_config.write_text("[global]\n", encoding="utf-8")
+    library_config = home / "Library" / "Application Support" / "pip" / "pip.conf"
+    library_config.parent.mkdir(parents=True)
+    library_config.write_text("[global]\n", encoding="utf-8")
+    monkeypatch.setattr(docker_prepare.sys, "platform", "darwin")
+    monkeypatch.setattr(docker_prepare.Path, "home", lambda: home)
+    monkeypatch.delenv("PIP_CONFIG_FILE", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(data_home))
+
+    assert docker_prepare._pip_user_config() == xdg_config
+    xdg_config.unlink()
+    assert docker_prepare._pip_user_config() != library_config

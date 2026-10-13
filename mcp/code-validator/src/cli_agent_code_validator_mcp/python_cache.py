@@ -123,7 +123,7 @@ class PythonCacheEntry:
             value.get("schema") != _CACHE_SCHEMA
             or value.get("key") != self.key
             or value.get("ready") is not True
-            or value.get("prepared_under_wsl") is not True
+            or (value.get("prepared_under_wsl") is not True and value.get("preparation_environment") != "docker")
         ):
             return None
         return value
@@ -329,6 +329,7 @@ def _validate_requirement_line(relative: str, line: str) -> None:
 def _requirement_files(
     project: Path,
     *,
+    allow_local_sources: bool = True,
     max_file_bytes: int = _DEFAULT_MAX_REQUIREMENT_FILE_BYTES,
 ) -> tuple[Path, ...]:
     root = project / _REQUIREMENTS_FILE
@@ -389,6 +390,8 @@ def _requirement_files(
                 add(included)
                 continue
             _validate_requirement_line(relative, line)
+            if not allow_local_sources and _is_local_source_requirement(line):
+                raise CodeValidationError("Lokale Python-Quellen benötigen Host-Prepare.")
 
     add(root)
     return tuple(result[name] for name in sorted(result))
@@ -397,6 +400,7 @@ def _requirement_files(
 def python_dependency_plan(
     project: Path,
     *,
+    allow_local_sources: bool = True,
     max_file_bytes: int = _DEFAULT_MAX_REQUIREMENT_FILE_BYTES,
 ) -> PythonDependencyPlan:
     root = project.expanduser().resolve()
@@ -404,7 +408,7 @@ def python_dependency_plan(
         raise CodeValidationError(f"Python-Projekt existiert nicht: {root}")
     if max_file_bytes <= 0:
         raise ValueError("max_file_bytes muss positiv sein.")
-    _requirement_files(root, max_file_bytes=max_file_bytes)
+    _requirement_files(root, max_file_bytes=max_file_bytes, allow_local_sources=allow_local_sources)
     return PythonDependencyPlan()
 
 
@@ -479,6 +483,7 @@ def write_python_ready_metadata(
     plan: PythonDependencyPlan,
     *,
     interpreter_metadata: dict[str, str] | None = None,
+    preparation_environment: str = "wsl",
 ) -> None:
     wheels = directory / "wheels"
     wheel_names = sorted(
@@ -496,7 +501,8 @@ def write_python_ready_metadata(
                 "schema": _CACHE_SCHEMA,
                 "key": key,
                 "ready": True,
-                "prepared_under_wsl": True,
+                "prepared_under_wsl": preparation_environment == "wsl",
+                "preparation_environment": preparation_environment,
                 "python_version": (
                     interpreter_metadata["python_version"]
                     if interpreter_metadata is not None
