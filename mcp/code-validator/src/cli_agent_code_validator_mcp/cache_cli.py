@@ -584,6 +584,8 @@ def main() -> None:
     args = build_parser().parse_args()
     try:
         if args.executor == "docker":
+            if args.wsl_distribution and not args.wsl:
+                raise ValueError("--wsl-distribution benötigt --wsl.")
             if not args.image:
                 raise ValueError("--executor docker benötigt --image.")
             if args.command == "prepare-python" and args.python_command != sys.executable:
