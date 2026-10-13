@@ -1,68 +1,48 @@
-"""Trusted, explicitly user-invoked dependency preparation in a temporary Docker container.
+"""Explicitly user-invoked Python wheel preparation using a temporary Docker container.
 
-This is intentionally NOT the offline MCP validator sandbox. Network is always
-Docker bridge; a small whitelist of user config files is sent into tmpfs.
-Only sanitized dependency artifacts are promoted to the host cache.
+This is NOT an MCP tool and is NOT the offline code-validator sandbox. The
+operator trusts the requirements/build backends and any pip credentials passed
+to the bridge-networked container. Only requirements/constraints files are
+copied from the project, and only wheel files are returned to the host cache.
 """
 from __future__ import annotations
 
 import io
 import json
 import os
+import shutil
 import stat
 import subprocess  # nosec B404
 import sys
 import tarfile
 import tempfile
 import uuid
-from pathlib import Path, PurePosixPath
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
-from .code_validator_snapshot import create_project_snapshot
+from .code_validator_snapshot import _open_verified_regular_file
 from .docker_backend import DockerBackend
-from .gradle_cache import (
-    GradleCacheEntry,
-    gradle_cache_entry,
-    sanitize_gradle_home_for_promotion,
-    write_gradle_ready_metadata,
-)
-from .maven_cache import (
-    MavenCacheEntry,
-    cache_entry,
-    sanitize_repository_for_offline_use,
-    write_ready_metadata,
-)
 from .python_cache import (
     PythonCacheEntry,
+    _requirement_files,
     python_cache_entry,
     python_dependency_plan,
     write_python_ready_metadata,
 )
 
 _MAX_CONFIG_BYTES = 1024 * 1024
-_MAX_RETURN_BYTES = 4 * 1024 * 1024 * 1024
-_MAX_RETURN_FILES = 100_000
+_MAX_REQUIREMENTS_BYTES = 64 * 1024 * 1024
+_MAX_REQUIREMENTS_FILES = 256
+_MAX_WHEEL_ARCHIVE_BYTES = 1024 * 1024 * 1024
+_MAX_WHEEL_FILES = 10000
 _TRANSFER_TIMEOUT = 300
 
 
-def _config_file(files: dict[str, Path], name: str, path: Path) -> None:
-    """Include only a named regular file, never symlinks, directories or junctions."""
-    if path.is_symlink():
-        raise ValueError("Benutzerkonfiguration darf kein Symlink sein.")
-    if not path.exists():
-        return
-    info = path.stat(follow_symlinks=False)
-    if not stat.S_ISREG(info.st_mode) or info.st_size > _MAX_CONFIG_BYTES:
-        raise ValueError("Benutzerkonfiguration muss eine reguläre, kleine Datei sein.")
-    files[name] = path
-
-
 def _pip_user_config() -> Path | None:
-    """Choose the highest-priority explicit/user config, not entire pip config dirs."""
+    """Select one explicit or user pip config, never the full user directory."""
     override = os.environ.get("PIP_CONFIG_FILE")
     if override is not None:
-        # pip treats os.devnull as an explicit request to disable config files.
-        # Never fall back to a private user config in that case.
-        if override.casefold() == os.devnull.casefold():
+        if override.casefold() in {os.devnull.casefold(), "/dev/null", "nul"}:
             return None
         if override:
             return Path(override).expanduser()
@@ -70,71 +50,33 @@ def _pip_user_config() -> Path | None:
     if sys.platform == "win32":
         appdata = os.environ.get("APPDATA")
         return Path(appdata) / "pip" / "pip.ini" if appdata else home / "pip" / "pip.ini"
-    # Match pip's macOS user-config precedence: Application Support when
-    # available, then XDG_CONFIG_HOME (or ~/.config) and legacy ~/.pip.
     if sys.platform == "darwin":
         mac_home = home / "Library" / "Application Support" / "pip"
         if mac_home.is_dir():
             return mac_home / "pip.conf"
     xdg_home = os.environ.get("XDG_CONFIG_HOME")
     config_home = Path(xdg_home).expanduser() if xdg_home else home / ".config"
-    candidates = [
-        config_home / "pip" / "pip.conf",
-        home / ".pip" / "pip.conf",
-    ]
+    candidates = (config_home / "pip" / "pip.conf", home / ".pip" / "pip.conf")
     return next((p for p in candidates if p.is_file() or p.is_symlink()), None)
 
 
-def _user_configuration(
-    kind: str,
-    *,
-    gradle_user_home: Path | None,
-    include_user_config: bool,
-) -> dict[str, Path]:
-    if not include_user_config:
-        return {}
-    files: dict[str, Path] = {}
-    if kind == "maven":
-        home = Path.home() / ".m2"
-        _config_file(files, "maven/settings.xml", home / "settings.xml")
-        _config_file(files, "maven/settings-security.xml", home / "settings-security.xml")
-    elif kind == "gradle":
-        home = (gradle_user_home or Path(os.environ.get("GRADLE_USER_HOME", str(Path.home() / ".gradle")))).expanduser()
-        for name in ("gradle.properties", "init.gradle", "init.gradle.kts"):
-            _config_file(files, "gradle/" + name, home / name)
-        init = home / "init.d"
-        if init.is_symlink():
-            raise ValueError("Gradle init.d darf kein Symlink sein.")
-        if init.exists():
-            if not init.is_dir():
-                raise ValueError("Gradle init.d muss ein Verzeichnis sein.")
-            for child in sorted(init.iterdir()):
-                _config_file(files, "gradle/init.d/" + child.name, child)
-    elif kind == "python":
-        p = _pip_user_config()
-        if p is not None:
-            _config_file(files, "pip/pip.conf", p)
-    return files
+def _regular_file_bytes(path: Path, *, limit: int) -> bytes:
+    """Re-check source identity while opening, rejecting link/reparse substitution."""
+    expected = os.stat(path, follow_symlinks=False)
+    if not stat.S_ISREG(expected.st_mode) or expected.st_size > limit:
+        raise ValueError("Datei ist nicht regulär oder überschreitet das Größenlimit.")
+    handle, opened = _open_verified_regular_file(path, expected)
+    with handle:
+        data = handle.read(limit + 1)
+    if len(data) > limit or len(data) != opened.st_size:
+        raise ValueError("Datei wurde verändert oder überschreitet das Größenlimit.")
+    return data
 
 
-def _config_tar(files: dict[str, Path], *, extra: dict[str, bytes] | None = None) -> bytes:
+def _files_tar(files: dict[str, bytes]) -> bytes:
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w") as archive:
-        for name, path in files.items():
-            # Verify again when reading. The Docker prep is an explicit trusted
-            # operation, but a swapped config should not silently add symlinks.
-            info = path.stat(follow_symlinks=False)
-            if not stat.S_ISREG(info.st_mode) or path.is_symlink() or info.st_size > _MAX_CONFIG_BYTES:
-                raise ValueError("Benutzerkonfiguration wurde während des Lesens verändert.")
-            data = path.read_bytes()
-            if len(data) > _MAX_CONFIG_BYTES:
-                raise ValueError("Benutzerkonfiguration überschreitet das Limit.")
-            member = tarfile.TarInfo(name)
-            member.mode = 0o600
-            member.uid = member.gid = 65532
-            member.size = len(data)
-            archive.addfile(member, io.BytesIO(data))
-        for name, data in (extra or {}).items():
+        for name, data in files.items():
             member = tarfile.TarInfo(name)
             member.mode = 0o600
             member.uid = member.gid = 65532
@@ -143,124 +85,186 @@ def _config_tar(files: dict[str, Path], *, extra: dict[str, bytes] | None = None
     return buffer.getvalue()
 
 
+def _requirements_snapshot(project: Path) -> bytes:
+    """Archive ONLY root requirements and recursively included -r/-c files."""
+    selected = _requirement_files(project, allow_local_sources=False)
+    if len(selected) > _MAX_REQUIREMENTS_FILES:
+        raise ValueError("Zu viele Requirements-Dateien für Docker-Prepare.")
+    contents: dict[str, bytes] = {}
+    total = 0
+    for path in selected:
+        relative = path.relative_to(project).as_posix()
+        if relative.startswith("../") or relative.startswith("/"):
+            raise ValueError("Requirements-Datei liegt außerhalb des Projekts.")
+        data = _regular_file_bytes(path, limit=16 * 1024 * 1024)
+        total += len(data)
+        if total > _MAX_REQUIREMENTS_BYTES:
+            raise ValueError("Requirements überschreiten das Größenlimit.")
+        contents[relative] = data
+    return _files_tar(contents)
+
+
+def _pip_config_snapshot(*, include_user_config: bool) -> bytes | None:
+    if not include_user_config:
+        return None
+    path = _pip_user_config()
+    if path is None:
+        return None
+    if path.is_symlink():
+        raise ValueError("pip-Konfiguration darf kein Symlink sein.")
+    if not path.exists():
+        return None
+    return _files_tar({"pip/pip.conf": _regular_file_bytes(path, limit=_MAX_CONFIG_BYTES)})
+
+
 def _check(result, stage: str) -> None:
-    if result.returncode:
-        # Avoid echoing credentials possibly contained in Maven/Gradle/pip logs.
+    if result.returncode != 0:
+        # Never echo potentially credential-bearing pip/build output.
         raise RuntimeError(f"Docker-Prepare fehlgeschlagen: {stage} (Exit {result.returncode}).")
 
 
-def _docker_run(backend: DockerBackend, arguments: list[str], timeout: int, *, data: bytes | None = None) -> None:
-    _check(backend.run(arguments, timeout=timeout, input_bytes=data), arguments[0])
-
-
-def _copy_cache_archive(
+def _docker_run(
     backend: DockerBackend,
-    container: str,
-    source_dir: str,
-    host_dir: Path,
-    *,
+    args: list[str],
     timeout: int,
+    *,
+    data: bytes | None = None,
 ) -> None:
-    """Extract a bounded Docker TAR only after verifying every member.
-
-    Do not use tarfile.extractall, docker cp, or accept symlinks/hardlinks.
-    Never include user configuration or project source in the returned archive.
-    """
-    command = backend.command("exec", container, "tar", "-C", source_dir, "-cf", "-", ".")
-    with tempfile.TemporaryFile() as archive_file:
-        completed = subprocess.run(  # nosec B603
-            command,
-            stdout=archive_file,
-            stderr=subprocess.PIPE,
-            timeout=timeout,
-            check=False,
-        )
-        if completed.returncode:
-            raise RuntimeError("Docker-Prepare konnte den Cache nicht exportieren.")
-        archive_file.seek(0)
-        total_bytes = 0
-        count = 0
-        with tarfile.open(fileobj=archive_file, mode="r|") as archive:
-            for member in archive:
-                count += 1
-                total_bytes += max(member.size, 0)
-                if count > _MAX_RETURN_FILES or total_bytes > _MAX_RETURN_BYTES:
-                    raise ValueError("Docker-Cache überschreitet das Sicherheitslimit.")
-                name = member.name.removeprefix("./")
-                if not name or name == ".":
-                    continue
-                # Check raw components BEFORE PurePosixPath normalizes them.
-                # Reject Windows drives (C:relative or C:/absolute), ADS,
-                # control characters and separators across every host OS.
-                parts = name.split("/")
-                if (
-                    name.startswith("/")
-                    or any(
-                        part in {"", ".", ".."}
-                        or ":" in part
-                        or "\\" in part
-                        or any(ord(char) < 32 for char in part)
-                        for part in parts
-                    )
-                ):
-                    raise ValueError("Ungültiger Pfad im Docker-Cache.")
-                path = PurePosixPath(name)
-                dest = host_dir.joinpath(*parts)
-                if not dest.resolve().is_relative_to(host_dir.resolve()):
-                    raise ValueError("Docker-Cache-Pfad liegt außerhalb des Cache-Verzeichnisses.")
-                if member.isdir():
-                    dest.mkdir(parents=True, exist_ok=True)
-                elif member.isfile():
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    if dest.exists() or dest.is_symlink():
-                        raise ValueError("Doppelter Eintrag im Docker-Cache.")
-                    source = archive.extractfile(member)
-                    if source is None:
-                        raise ValueError("Ungültige Cache-Datei.")
-                    with dest.open("xb") as target:
-                        remaining = member.size
-                        while remaining:
-                            chunk = source.read(min(1024 * 1024, remaining))
-                            if not chunk:
-                                raise ValueError("Docker-Cache ist unvollständig.")
-                            target.write(chunk)
-                            remaining -= len(chunk)
-                else:
-                    raise ValueError("Docker-Cache enthält Symlinks oder Spezialdateien.")
+    _check(backend.run(args, timeout=timeout, input_bytes=data), args[0])
 
 
 def _image_policy(backend: DockerBackend, name: str) -> None:
-    """Verify Docker isolation settings, separately from the stricter MCP sandbox."""
     result = backend.run(["inspect", name], timeout=30)
     _check(result, "inspect")
     try:
-        obj = json.loads(result.stdout)[0]
-        host = obj["HostConfig"]
-        config = obj["Config"]
-        mounts = obj.get("Mounts", [])
+        payload = json.loads(result.stdout)
+        host = payload[0]["HostConfig"]
+        config = payload[0]["Config"]
+        mounts = payload[0].get("Mounts", [])
+        tmpfs = host.get("Tmpfs") or {}
     except (ValueError, KeyError, IndexError, TypeError) as exc:
-        raise RuntimeError("Docker-Prepare konnte die Containerpolicy nicht prüfen.") from exc
+        raise RuntimeError("Docker-Prepare konnte Container-Einstellungen nicht prüfen.") from exc
     if not (
-        host.get("NetworkMode") == "bridge"
+        isinstance(payload, list) and len(payload) == 1
+        and host.get("NetworkMode") == "bridge"
         and host.get("PidMode") != "host"
         and host.get("IpcMode") != "host"
         and host.get("UTSMode") != "host"
-        and any(str(v).startswith("no-new-privileges") for v in (host.get("SecurityOpt") or []))
         and host.get("ReadonlyRootfs") is True
         and host.get("Privileged") is False
-        and host.get("Binds") in (None, [])
+        and not host.get("Binds")
         and config.get("User") == "65532:65532"
-        and host.get("Tmpfs", {}).get("/tmp") is not None
-        and host.get("Tmpfs", {}).get("/work") is not None
+        and "/tmp" in tmpfs and "/work" in tmpfs
         and any(str(v).lower() == "all" for v in (host.get("CapDrop") or []))
+        and any(str(v).startswith("no-new-privileges") for v in (host.get("SecurityOpt") or []))
         and not config.get("Volumes")
-        and all(m.get("Type") == "tmpfs" and m.get("Destination") in {"/tmp", "/work"} for m in mounts)
+        and all(
+            isinstance(m, dict) and m.get("Type") == "tmpfs"
+            and m.get("Destination") in {"/tmp", "/work"}
+            for m in mounts
+        )
     ):
         raise RuntimeError("Docker-Prepare entspricht nicht der erwarteten Containerpolicy.")
 
 
-def prepare_in_docker(
-    kind: str,
+def _extract_wheel_archive(archive_file, destination: Path) -> None:
+    """Reject paths, symlinks, special files and non-wheel cache output."""
+    total = 0
+    count = 0
+    with tarfile.open(fileobj=archive_file, mode="r|") as archive:
+        for member in archive:
+            if member.name in {".", "./"}:
+                if not member.isdir():
+                    raise ValueError("Ungültiger Docker-Cache-Eintrag.")
+                continue
+            name = member.name.removeprefix("./")
+            if (
+                not name or name in {".", ".."} or "/" in name
+                or "\\" in name or ":" in name
+                or any(ord(char) < 32 for char in name)
+                or not name.endswith(".whl")
+                or not member.isfile()
+            ):
+                raise ValueError("Docker-Cache enthält ungültige Dateien oder Pfade.")
+            count += 1
+            total += member.size
+            if count > _MAX_WHEEL_FILES or total > _MAX_WHEEL_ARCHIVE_BYTES:
+                raise ValueError("Docker-Wheel-Cache überschreitet das Limit.")
+            if (destination / name).exists() or (destination / name).is_symlink():
+                raise ValueError("Doppeltes Wheel im Docker-Cache.")
+            source = archive.extractfile(member)
+            if source is None:
+                raise ValueError("Docker-Wheel-Cache ist ungültig.")
+            with (destination / name).open("xb") as target:
+                remaining = member.size
+                while remaining:
+                    chunk = source.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        raise ValueError("Docker-Wheel-Cache ist unvollständig.")
+                    target.write(chunk)
+                    remaining -= len(chunk)
+
+
+def _copy_wheels(
+    backend: DockerBackend, container: str, destination: Path, *, timeout: int,
+) -> None:
+    """Enforce transfer size and timeout *during* Docker archive streaming."""
+    command = backend.command(
+        "exec", container, "tar", "-C", "/tmp/prepared/wheels", "-cf", "-", "."
+    )
+    with tempfile.TemporaryFile() as output:
+        process = subprocess.Popen(  # nosec B603
+            command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+        )
+        assert process.stdout is not None
+
+        def transfer() -> None:
+            size = 0
+            with process.stdout:
+                while True:
+                    chunk = process.stdout.read(1024 * 1024)
+                    if not chunk:
+                        return
+                    size += len(chunk)
+                    if size > _MAX_WHEEL_ARCHIVE_BYTES + 1024 * 1024:
+                        raise ValueError("Docker-Archiv überschreitet das Transferlimit.")
+                    output.write(chunk)
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(transfer)
+            try:
+                future.result(timeout=timeout)
+                status = process.wait(timeout=30)
+                if status != 0:
+                    raise RuntimeError("Docker-Prepare konnte die Wheels nicht exportieren.")
+            except BaseException:
+                if process.poll() is None:
+                    process.kill()
+                process.wait()
+                raise
+        output.seek(0)
+        _extract_wheel_archive(output, destination)
+
+
+def _promote_cache(temporary: Path, final: Path) -> None:
+    """Retain previous ready cache if replacing it fails."""
+    backup = final.parent / f".{final.name}-backup-{uuid.uuid4().hex}"
+    old_exists = final.exists()
+    if final.is_symlink():
+        raise ValueError("Cache-Ziel darf kein Symlink sein.")
+    if old_exists:
+        final.rename(backup)
+    try:
+        temporary.rename(final)
+    except BaseException:
+        if old_exists:
+            backup.rename(final)
+        raise
+    if old_exists:
+        shutil.rmtree(backup)
+
+
+def prepare_python_in_docker(
     project: Path,
     cache_root: Path,
     *,
@@ -268,148 +272,76 @@ def prepare_in_docker(
     timeout: int = 1800,
     project_identity: str | None = None,
     use_user_config: bool = True,
-    gradle_user_home: Path | None = None,
     wsl: bool = False,
     wsl_distribution: str | None = None,
-) -> MavenCacheEntry | GradleCacheEntry | PythonCacheEntry:
-    if kind not in {"maven", "gradle", "python"}:
-        raise ValueError("Ungültiges Buildsystem.")
-    if not image or image.strip() != image or image.startswith("-") or any(c.isspace() for c in image):
-        raise ValueError("--image muss eine gültige, nicht leere Docker-Image-Referenz sein.")
+) -> PythonCacheEntry:
+    """Explicit operator action; never exposed through MCP."""
+    if not image or image.strip() != image or image.startswith("-") or any(ch.isspace() for ch in image):
+        raise ValueError("--image muss eine gültige Docker-Image-Referenz sein.")
     if timeout <= 0:
         raise ValueError("--timeout muss positiv sein.")
     project = project.expanduser().resolve()
+    plan = python_dependency_plan(project, allow_local_sources=False)
+    requirements_archive = _requirements_snapshot(project)
+    config_archive = _pip_config_snapshot(include_user_config=use_user_config)
     root = cache_root.expanduser().resolve()
-    if kind == "python":
-        # Local paths outside the project are not available in Docker prepare.
-        plan = python_dependency_plan(project, allow_local_sources=False)
-        entry = python_cache_entry(root, project, project_identity=project_identity)
-    elif kind == "maven":
-        entry = cache_entry(root, project, project_identity=project_identity)
-    else:
-        entry = gradle_cache_entry(root, project, project_identity=project_identity)
-
     root.mkdir(parents=True, exist_ok=True)
+    entry = python_cache_entry(root, project, project_identity=project_identity)
     if entry.directory.is_symlink():
         raise ValueError("Cache-Eintrag darf kein Symlink sein.")
-    config = _user_configuration(
-        kind, gradle_user_home=gradle_user_home, include_user_config=use_user_config
-    )
-    extra: dict[str, bytes] = {}
-    if kind == "gradle":
-        # Import lazily: cache_cli calls this module, and owns the existing script.
-        from .cache_cli import _write_gradle_runtime_resolver
-        with tempfile.TemporaryDirectory() as script_dir:
-            extra["gradle/resolver.gradle"] = _write_gradle_runtime_resolver(
-                Path(script_dir)
-            ).read_bytes()
     backend = DockerBackend(wsl=wsl, wsl_distribution=wsl_distribution)
     name = "cli-agent-prepare-" + uuid.uuid4().hex
     temporary = Path(tempfile.mkdtemp(prefix=f".{entry.key}-", dir=root))
-    # docker create may reach the daemon even if the CLI subsequently times out.
-    # The unique name is known already, so always attempt cleanup in that case.
-    created = True
     try:
+        # Even after a CLI timeout Docker may already have created the container.
         _docker_run(backend, [
             "create", "--name", name, "--pull", "never",
             "--user", "65532:65532", "--read-only",
-            "--tmpfs", "/work:rw,nosuid,nodev,size=1g,uid=65532,gid=65532,mode=0700",
+            "--tmpfs", "/work:rw,nosuid,nodev,size=64m,uid=65532,gid=65532,mode=0700",
             "--tmpfs", "/tmp:rw,nosuid,nodev,size=4g,uid=65532,gid=65532,mode=0700",
             "--network", "bridge", "--cap-drop", "ALL",
             "--security-opt", "no-new-privileges:true",
             "--pids-limit", "256", "--memory", "4g", "--cpus", "2",
             "--env", "HOME=/tmp/home", "--entrypoint", "sh",
             image, "-c",
-            "mkdir -p /tmp/home /tmp/config /tmp/prepared; while :; do sleep 3600; done",
+            "mkdir -p /tmp/home /tmp/config /tmp/prepared/wheels; while :; do sleep 3600; done",
         ], 60)
         _image_policy(backend, name)
         _docker_run(backend, ["start", name], 60)
-
-        snapshot = create_project_snapshot(
-            project, max_file_bytes=32 * 1024 * 1024,
-            max_project_bytes=512 * 1024 * 1024,
-            max_snapshot_entries=40_000,
-        )
         _docker_run(
             backend, ["exec", "-i", name, "tar", "-C", "/work", "-xf", "-"],
-            _TRANSFER_TIMEOUT, data=snapshot.archive,
+            _TRANSFER_TIMEOUT, data=requirements_archive,
         )
-        if config or extra:
+        command = ["exec", "-w", "/work", name, "python", "-m", "pip",
+                   "wheel", "--disable-pip-version-check",
+                   "--wheel-dir", "/tmp/prepared/wheels", "-r", "requirements.txt"]
+        if config_archive is not None:
             _docker_run(
                 backend, ["exec", "-i", name, "tar", "-C", "/tmp/config", "-xf", "-"],
-                _TRANSFER_TIMEOUT, data=_config_tar(config, extra=extra),
+                _TRANSFER_TIMEOUT, data=config_archive,
             )
-        command: list[str]
-        destination: Path
-        archive_source: str
-        if kind == "maven":
-            if "maven/settings-security.xml" in config:
-                _docker_run(
-                    backend, ["exec", name, "sh", "-c",
-                              "mkdir -p /tmp/home/.m2 && cp /tmp/config/maven/settings-security.xml /tmp/home/.m2/settings-security.xml"],
-                    30,
-                )
-            settings = ["-s", "/tmp/config/maven/settings.xml"] if "maven/settings.xml" in config else []
-            base = ["exec", "-w", "/work", name, "mvn", "-B", *settings, "-Dmaven.repo.local=/tmp/prepared/repository"]
-            for goal in (["dependency:go-offline"], ["-DskipTests", "package"]):
-                _docker_run(backend, [*base, *goal], timeout)
-            destination = temporary / "repository"
-            archive_source = "/tmp/prepared/repository"
-        elif kind == "gradle":
-            _docker_run(backend, ["exec", name, "sh", "-c",
-                "mkdir -p /tmp/prepared/gradle-home && if test -d /tmp/config/gradle; then cp -R /tmp/config/gradle/. /tmp/prepared/gradle-home/; fi"], 30)
-            _docker_run(backend, [
-                "exec", "-w", "/work", name, "gradle", "--no-daemon",
-                "--refresh-dependencies", "--gradle-user-home",
-                "/tmp/prepared/gradle-home", "--init-script",
-                "/tmp/config/gradle/resolver.gradle",
-                "assemble", "testClasses", "_cliAgentResolveRuntimeDependencies",
-            ], timeout)
-            destination = temporary / "gradle-home" / "caches" / "modules-2"
-            archive_source = "/tmp/prepared/gradle-home/caches/modules-2"
-        else:
-            command = ["exec", "-w", "/work", name, "python", "-m", "pip", "wheel",
-                       "--disable-pip-version-check", "--wheel-dir",
-                       "/tmp/prepared/wheels", "-r", "requirements.txt"]
-            if "pip/pip.conf" in config:
-                command = ["exec", "-e", "PIP_CONFIG_FILE=/tmp/config/pip/pip.conf",
-                           "-w", "/work", name, *command[4:]]
-            _docker_run(backend, command, timeout)
-            destination = temporary / "wheels"
-            archive_source = "/tmp/prepared/wheels"
-
-        destination.mkdir(parents=True, exist_ok=True)
-        _copy_cache_archive(
-            backend, name, archive_source, destination, timeout=timeout,
+            command = ["exec", "-e", "PIP_CONFIG_FILE=/tmp/config/pip/pip.conf",
+                       "-w", "/work", name, *command[4:]]
+        _docker_run(backend, command, timeout)
+        wheels = temporary / "wheels"
+        wheels.mkdir()
+        _copy_wheels(backend, name, wheels, timeout=timeout)
+        info = backend.run([
+            "exec", name, "python", "-c",
+            "import json,platform;print(json.dumps({'python_version':platform.python_version(),'python_implementation':platform.python_implementation(),'machine':platform.machine()}))",
+        ], timeout=30)
+        _check(info, "Python metadata")
+        write_python_ready_metadata(
+            temporary, entry.key, plan,
+            interpreter_metadata=json.loads(info.stdout),
+            preparation_environment="docker",
         )
-        if kind == "maven":
-            sanitize_repository_for_offline_use(destination)
-            write_ready_metadata(temporary, entry.key)
-        elif kind == "gradle":
-            sanitize_gradle_home_for_promotion(temporary / "gradle-home")
-            write_gradle_ready_metadata(temporary, entry.key)
-        else:
-            python_info = backend.run([
-                "exec", name, "python", "-c",
-                "import json,platform;print(json.dumps({'python_version':platform.python_version(),'python_implementation':platform.python_implementation(),'machine':platform.machine()}))",
-            ], timeout=30)
-            _check(python_info, "python metadata")
-            metadata = json.loads(python_info.stdout)
-            write_python_ready_metadata(
-                temporary, entry.key, plan, interpreter_metadata=metadata,
-                preparation_environment="docker",
-            )
-        if entry.directory.exists():
-            import shutil
-            shutil.rmtree(entry.directory)
-        temporary.replace(entry.directory)
+        _promote_cache(temporary, entry.directory)
         return entry
     finally:
-        if created:
-            try:
-                backend.run(["rm", "-f", name], timeout=30)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
+        try:
+            backend.run(["rm", "-f", name], timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
         if temporary.exists():
-            import shutil
             shutil.rmtree(temporary, ignore_errors=True)
