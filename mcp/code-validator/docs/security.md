@@ -492,3 +492,7 @@ are resolved to absolute paths in `CodeValidatorSettings.__post_init__()`
 before any output masking. The output redactor therefore matches canonical
 host paths rather than short relative names or punctuation. Regression tests
 cover all three cache root settings and both relative forms.
+
+## Optional Docker prepare (trusted user action)
+
+The standalone `cli-agent-dependency-cache` executable additionally supports `--executor docker --image <digest-pinned-image>`. The regular MCP validator sandbox does **not** change: it remains no-network, non-privileged and without bind mounts. Docker prepare is a **separate** bridge-networked, non-privileged preparation container. Only explicitly selected Maven/Gradle/pip user configuration files are passed into temporary storage, never the full user home; `--no-user-config` disables this transfer. Network-facing plugins/build scripts can still read/exfiltrate these credentials. No arbitrary source-directory binds, Docker socket or host networking are provided. Project sources are streamed as a bounded snapshot and only bounded regular-file cache artifacts are accepted back. Prepared artifacts are sanitized before promotion into the offline cache.
