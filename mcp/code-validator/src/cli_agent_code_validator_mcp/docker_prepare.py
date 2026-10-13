@@ -17,7 +17,6 @@ import uuid
 from pathlib import Path, PurePosixPath
 
 from .code_validator_snapshot import create_project_snapshot
-from .code_validator_types import is_pinned_image
 from .docker_backend import DockerBackend
 from .gradle_cache import (
     GradleCacheEntry,
@@ -251,8 +250,8 @@ def prepare_in_docker(
 ) -> MavenCacheEntry | GradleCacheEntry | PythonCacheEntry:
     if kind not in {"maven", "gradle", "python"}:
         raise ValueError("Ungültiges Buildsystem.")
-    if not is_pinned_image(image):
-        raise ValueError("--image muss einen vollständigen sha256-Digest enthalten.")
+    if not image or image.strip() != image or image.startswith("-") or any(c.isspace() for c in image):
+        raise ValueError("--image muss eine gültige, nicht leere Docker-Image-Referenz sein.")
     if timeout <= 0:
         raise ValueError("--timeout muss positiv sein.")
     project = project.expanduser().resolve()
