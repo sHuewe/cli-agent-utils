@@ -1180,3 +1180,21 @@ def test_docker_prepare_wsl_distribution_requires_wsl(monkeypatch) -> None:
     with pytest.raises(SystemExit) as err:
         cache_cli.main()
     assert err.value.code == 1
+
+
+def test_docker_prepare_windows_pip_user_config_fallback(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_prepare
+    home = tmp_path / "home"
+    modern = tmp_path / "appdata" / "pip" / "pip.ini"
+    legacy = home / "pip" / "pip.ini"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("[global]\nindex-url = https://legacy.example/simple\n")
+    monkeypatch.delenv("PIP_CONFIG_FILE", raising=False)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setattr(docker_prepare.sys, "platform", "win32")
+    monkeypatch.setattr(docker_prepare.Path, "home", lambda: home)
+
+    assert docker_prepare._pip_user_config() == legacy
+    modern.parent.mkdir(parents=True)
+    modern.write_text("[global]\nindex-url = https://modern.example/simple\n")
+    assert docker_prepare._pip_user_config() == modern
