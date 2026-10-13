@@ -58,8 +58,13 @@ def _config_file(files: dict[str, Path], name: str, path: Path) -> None:
 def _pip_user_config() -> Path | None:
     """Choose the highest-priority explicit/user config, not entire pip config dirs."""
     override = os.environ.get("PIP_CONFIG_FILE")
-    if override and override != os.devnull:
-        return Path(override).expanduser()
+    if override is not None:
+        # pip treats os.devnull as an explicit request to disable config files.
+        # Never fall back to a private user config in that case.
+        if override.casefold() == os.devnull.casefold():
+            return None
+        if override:
+            return Path(override).expanduser()
     home = Path.home()
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
