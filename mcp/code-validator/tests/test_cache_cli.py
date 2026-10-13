@@ -1108,11 +1108,29 @@ def test_docker_prepare_config_is_selective(tmp_path: Path, monkeypatch) -> None
     ) == {}
 
 
-def test_docker_prepare_rejects_non_pinned_images(tmp_path: Path) -> None:
+def test_docker_prepare_accepts_image_tag(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_prepare
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+
+    def fake_config(*args, **kwargs):
+        raise RuntimeError("image reference was accepted")
+
+    monkeypatch.setattr(docker_prepare, "_user_configuration", fake_config)
+    with pytest.raises(RuntimeError, match="image reference was accepted"):
+        docker_prepare.prepare_in_docker(
+            "maven", project, tmp_path / "cache", image="maven:3.9-eclipse-temurin-21"
+        )
+
+
+def test_docker_prepare_rejects_invalid_image_reference(tmp_path: Path) -> None:
     import pytest
     from cli_agent_code_validator_mcp.docker_prepare import prepare_in_docker
 
-    with pytest.raises(ValueError, match="sha256"):
-        prepare_in_docker(
-            "maven", tmp_path, tmp_path / "cache", image="maven:latest"
-        )
+    for image in ("", " ", "-bad-image", "maven:latest extra"):
+        with pytest.raises(ValueError, match="--image"):
+            prepare_in_docker(
+                "maven", tmp_path, tmp_path / "cache", image=image
+            )
