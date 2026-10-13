@@ -945,11 +945,15 @@ class DockerCodeValidator:
                         "weil der benötigte vorbereitete Linux-Wheel-Cache fehlt."
                     ),
                     "message_to_user": (
-                        "Python-Dependencies sind noch nicht vorbereitet. Führe "
-                        "unter WSL 'cli-agent-dependency-cache prepare-python <projekt>' "
-                        "aus und wiederhole den Test."
+                        "Python-Dependencies sind noch nicht vorbereitet. "
+                        "Verwende entweder Host-Prepare unter WSL mit "
+                        "'cli-agent-dependency-cache prepare-python <projekt>' "
+                        "oder Docker-Prepare mit "
+                        "'cli-agent-dependency-cache prepare-python <projekt> "
+                        "--executor docker --image <image>'. "
+                        "Wiederhole anschließend den Test."
                     ),
-                    "preparation_environment": "WSL required",
+                    "preparation_environment": "WSL (host) or Docker",
                 }
             python_wheels = entry.wheels
             wheel_names = entry.install_wheel_names()
