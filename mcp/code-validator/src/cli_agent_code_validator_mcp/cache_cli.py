@@ -44,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Prepare dependency caches for the offline cli-agent code validator. "
             "This command runs as the current user and may use normal Maven, "
-            "Gradle or pip/PyPI/JFrog configuration. Python preparation requires WSL."
+            "Gradle or pip/PyPI/JFrog configuration. Host Python preparation requires WSL; Docker preparation does not."
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -134,7 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
         "prepare-python",
         help=(
             "Prepare Linux-compatible Python wheels for offline tests. "
-            "This command must be run inside WSL."
+            "Host mode requires WSL; Docker mode requires a Linux image."
         ),
     )
     prepare_python.add_argument("project", type=Path)
@@ -161,7 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=sys.executable,
         help=(
             "Python interpreter used for pip wheel preparation "
-            "(default: current WSL Python)."
+            "(host mode; default: current Python interpreter)."
         ),
     )
     prepare_python.add_argument(
@@ -175,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
                     "prepare-python": prepare_python}[cmd]
         selected.add_argument("--executor", choices=("host", "docker"),
                               default="host", help="Preparation backend (default: host).")
-        selected.add_argument("--image", help="Digest-pinned Docker image; required with --executor docker.")
+        selected.add_argument("--image", help="Docker image tag or digest; required with --executor docker.")
         selected.add_argument("--no-user-config", action="store_true",
                               help="Do not copy selected user package manager settings into Docker.")
         selected.add_argument("--wsl", action="store_true",
