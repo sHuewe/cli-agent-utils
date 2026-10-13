@@ -1169,3 +1169,34 @@ def test_docker_prepare_cleans_up_when_create_times_out(
     assert [args[0] for args in calls] == ["create", "rm"]
     assert calls[0][calls[0].index("--name") + 1] == calls[1][-1]
     assert calls[1][1] == "-f"
+
+
+def test_docker_prepare_respects_disabled_pip_config(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from cli_agent_code_validator_mcp.docker_prepare import _user_configuration
+
+    home = tmp_path / "home"
+    config = home / ".config" / "pip"
+    config.mkdir(parents=True)
+    (config / "pip.conf").write_text(
+        "[global]\nindex-url = https://user:secret@repo.example/simple\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cli_agent_code_validator_mcp.docker_prepare.Path.home", lambda: home
+    )
+    monkeypatch.setenv("PIP_CONFIG_FILE", __import__("os").devnull)
+    assert _user_configuration(
+        "python", gradle_user_home=None, include_user_config=True
+    ) == {}
+
+
+def test_prepare_help_describes_both_python_executors() -> None:
+    parser = build_parser()
+    assert "Docker preparation does not" in parser.description
+    arguments = parser.parse_args(
+        ["prepare-python", ".", "--executor", "docker", "--image", "python:3.12"]
+    )
+    assert arguments.image == "python:3.12"
+    assert arguments.executor == "docker"
