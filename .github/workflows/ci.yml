@@ -39,3 +39,33 @@ jobs:
             /tmp/mcp-wheel-smoke/bin/cli-agent-code-validator-mcp --help
             /tmp/mcp-wheel-smoke/bin/cli-agent-dependency-cache --help
           fi
+  
+  windows-code-validator:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Windows code-validator
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "./mcp/code-validator[dev]"
+      - name: Run Windows tests
+        shell: pwsh
+        run: python -m pytest mcp/code-validator/tests -q
+      - name: Verify Windows wheel
+        shell: pwsh
+        run: |
+          python -m pip install build
+          python -m build --wheel --outdir dist/ mcp/code-validator
+          python -m venv .wheel-smoke
+          $wheel = Get-ChildItem dist/*.whl | Select-Object -First 1
+          & .wheel-smoke/Scripts/python.exe -m pip install $wheel.FullName
+          & .wheel-smoke/Scripts/cli-agent-code-validator-mcp.exe --help
+          & .wheel-smoke/Scripts/cli-agent-dependency-cache.exe --help

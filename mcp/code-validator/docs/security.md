@@ -440,3 +440,17 @@ Gradle -> gradle --offline --no-daemon --gradle-user-home /tmp/gradle assemble
 The separate Maven/Gradle build helpers are implementation details and are not exposed as MCP tools.
 
 
+
+## Windows snapshot compatibility and error confidentiality
+
+On Windows, `DirEntry.stat()` may report zero values for device and inode
+while `os.stat(path, follow_symlinks=False)` reports their actual values.
+Both snapshot enumeration and dependency-cache streaming use `os.stat`
+consistently. File identity and reparse-point checks remain enabled.
+
+Host filesystem error messages do not include full paths. MCP tool handlers
+return generic failure objects on unexpected exceptions rather than exposing
+raw exception text to the LLM. Known host-root prefixes are masked in
+externally produced Docker/build diagnostics. Normal tool responses retain
+the caller-supplied workspace-relative `project_path`.
+Windows tests run on Python 3.11 and 3.12 in GitHub Actions.

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from mcp.server.fastmcp import FastMCP
 
@@ -31,6 +31,24 @@ def _workspace_from_core_environment() -> Path:
             "aktuellen cli-agent Core mit --with-os-read oder --with-os-write."
         )
     return Path(workspace)
+
+
+def _invoke_tool(action: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """Do not expose raw host exception details to the LLM."""
+    try:
+        return action()
+    except CodeValidationError:
+        return {
+            "success": False,
+            "reason": "validation_error",
+            "message": "Die Projekt- oder Cache-Validierung ist fehlgeschlagen.",
+        }
+    except Exception:
+        return {
+            "success": False,
+            "reason": "internal_error",
+            "message": "Der Code-Validator konnte den Vorgang nicht abschließen.",
+        }
 
 
 def create_server(validator: DockerCodeValidator) -> FastMCP:
@@ -68,9 +86,11 @@ def create_server(validator: DockerCodeValidator) -> FastMCP:
         cli-agent workspace. test_selector may be a normal pytest node id such
         as tests/test_config.py::test_load.
         """
-        return validator.run_python_tests(
-            project_path=project_path,
-            test_selector=test_selector,
+        return _invoke_tool(
+            lambda: validator.run_python_tests(
+                project_path=project_path,
+                test_selector=test_selector,
+            )
         )
 
     @mcp.tool()
@@ -89,9 +109,11 @@ def create_server(validator: DockerCodeValidator) -> FastMCP:
         assemble; that code still executes only inside the hardened sandbox.
         The model cannot supply arbitrary goals, tasks or command-line options.
         """
-        return validator.run_java_build(
-            project_path=project_path,
-            build_system=build_system,
+        return _invoke_tool(
+            lambda: validator.run_java_build(
+                project_path=project_path,
+                build_system=build_system,
+            )
         )
 
     @mcp.tool()
@@ -110,10 +132,12 @@ def create_server(validator: DockerCodeValidator) -> FastMCP:
         build.gradle/build.gradle.kts. A Java selector is translated to Maven
         -Dtest or Gradle --tests without exposing an arbitrary shell command.
         """
-        return validator.run_java_tests(
-            project_path=project_path,
-            test_selector=test_selector,
-            build_system=build_system,
+        return _invoke_tool(
+            lambda: validator.run_java_tests(
+                project_path=project_path,
+                test_selector=test_selector,
+                build_system=build_system,
+            )
         )
 
     return mcp

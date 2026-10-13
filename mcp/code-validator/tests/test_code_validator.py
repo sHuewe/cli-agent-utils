@@ -1749,3 +1749,65 @@ def test_output_redactor_redacts_private_key_after_standalone_delimiter() -> Non
     assert "SECRET" not in result
     assert result.startswith("-----\n")
     assert "⟦x⟧" in result
+
+def test_nested_windows_compatible_snapshot_and_cache_walk(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.docker_backend import _iter_safe_stream_paths
+
+    nested = tmp_path / "src" / "main" / "java"
+    nested.mkdir(parents=True)
+    source = nested / "Main.java"
+    source.write_text("class Main {}\\n", encoding="utf-8")
+    snapshot = create_project_snapshot(
+        tmp_path, max_file_bytes=4096, max_project_bytes=65536
+    )
+    assert source in snapshot.files
+    assert source in {path for path, _ in _iter_safe_stream_paths(tmp_path)}
+
+
+def test_snapshot_error_does_not_expose_host_file_path(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.code_validator_snapshot import _open_verified_regular_file
+
+    absent = tmp_path / "private" / "source.java"
+    with pytest.raises(ValidationError) as error:
+        _open_verified_regular_file(absent, tmp_path.stat())
+    assert str(tmp_path) not in str(error.value)
+    assert "source.java" not in str(error.value)
+
+
+def test_stream_error_does_not_expose_host_cache_path(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.docker_backend import _open_verified_stream_file
+
+    absent = tmp_path / "secret" / "cache.whl"
+    with pytest.raises(ValueError) as error:
+        _open_verified_stream_file(absent, tmp_path.stat())
+    assert str(tmp_path) not in str(error.value)
+    assert "cache.whl" not in str(error.value)
+
+
+@pytest.mark.parametrize("error", [
+    ValidationError("Unsafe: C:/Users/private/workspace/file.py"),
+    OSError("Cannot open /home/private/maven/repository"),
+    RuntimeError("C:/Users/private/host"),
+])
+def test_mcp_boundary_never_forwards_host_exception_paths(error: Exception) -> None:
+    from cli_agent_code_validator_mcp.server import _invoke_tool
+
+    def fail() -> dict:
+        raise error
+
+    result = _invoke_tool(fail)
+    assert result["success"] is False
+    assert "private" not in str(result)
+    assert "Users" not in str(result)
+    assert "/home/" not in str(result)
+
+
+def test_public_docker_output_redacts_known_workspace_root(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.code_validator_redaction import OutputRedactor
+
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
+    output = validator._public_text(
+        f"Could not read {tmp_path / 'src' / 'Main.java'}", OutputRedactor(())
+    )
+    assert str(tmp_path) not in output
+    assert "[Host-Pfad ausgeblendet]" in output
