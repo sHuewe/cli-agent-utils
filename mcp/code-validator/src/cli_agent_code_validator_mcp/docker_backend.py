@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from .filesystem_safety import (
     _same_file,
     _is_windows_reparse_point,
+    scanned_entry_stat,
     verified_directory_scandir,
 )
 
@@ -41,7 +42,7 @@ def _iter_safe_stream_paths(source: Path):
                 for entry in entries:
                     path = directory / entry.name
                     try:
-                        entry_stat = os.stat(path, follow_symlinks=False)
+                        entry_stat = scanned_entry_stat(entry, path)
                     except OSError as exc:
                         raise ValueError(
                             "Streamed path could not be inspected."

@@ -1855,3 +1855,62 @@ def test_host_root_redaction(tmp_path: Path) -> None:
     )
     assert str(tmp_path) not in text
     assert "[Host-Pfad]" in text
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX fd-bound scandir test")
+def test_snapshot_rejects_replaced_directory_during_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Never archive a replacement tree using metadata from its new pathname."""
+    from contextlib import contextmanager
+    import cli_agent_code_validator_mcp.code_validator_snapshot as module
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "data.txt").write_text("original", encoding="utf-8")
+    opened_scandir = module.verified_directory_scandir
+
+    @contextmanager
+    def replace_after_open(directory, expected, **kwargs):
+        with opened_scandir(directory, expected, **kwargs) as scanner:
+            if directory == project:
+                project.rename(tmp_path / "original-project")
+                project.mkdir()
+                (project / "data.txt").write_text("replacement", encoding="utf-8")
+            yield scanner
+
+    monkeypatch.setattr(module, "verified_directory_scandir", replace_after_open)
+    with pytest.raises(ValidationError, match="Projektdatei wurde"):
+        create_project_snapshot(
+            project, max_file_bytes=4096, max_project_bytes=65536
+        )
+
+
+@pytest.mark.skipif(__import__("os").name == "nt", reason="POSIX fd-bound scandir test")
+def test_cache_stream_rejects_replaced_directory_during_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A replaced cache tree cannot be copied using a replacement stat."""
+    from contextlib import contextmanager
+    import cli_agent_code_validator_mcp.docker_backend as module
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "data.txt").write_text("original", encoding="utf-8")
+    opened_scandir = module.verified_directory_scandir
+
+    @contextmanager
+    def replace_after_open(directory, expected, **kwargs):
+        with opened_scandir(directory, expected, **kwargs) as scanner:
+            if directory == cache:
+                cache.rename(tmp_path / "original-cache")
+                cache.mkdir()
+                (cache / "data.txt").write_text("replacement", encoding="utf-8")
+            yield scanner
+
+    monkeypatch.setattr(module, "verified_directory_scandir", replace_after_open)
+    entries = list(module._iter_safe_stream_paths(cache))
+    assert len(entries) == 1
+    path, expected = entries[0]
+    with pytest.raises(ValueError, match="Streamed file changed"):
+        _open_verified_stream_file(path, expected)

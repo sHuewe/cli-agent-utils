@@ -10,6 +10,7 @@ from pathlib import Path
 from .filesystem_safety import (
     _same_file,
     _is_windows_reparse_point,
+    scanned_entry_stat,
     verified_directory_scandir,
 )
 from .code_validator_types import CodeValidationError
@@ -153,7 +154,7 @@ def _safe_tree_entries(
                         )
                     path = directory / entry.name
                     try:
-                        entry_stat = os.stat(path, follow_symlinks=False)
+                        entry_stat = scanned_entry_stat(entry, path)
                         mode = entry_stat.st_mode
                     except OSError as exc:
                         raise CodeValidationError(

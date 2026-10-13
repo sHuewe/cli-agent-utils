@@ -457,10 +457,14 @@ The separate Maven/Gradle build helpers are implementation details and are not e
 
 ## Windows snapshot integrity and model-visible errors
 
-Directory snapshots and dependency-cache streaming use
-`os.stat(path, follow_symlinks=False)`, rather than `DirEntry.stat()`,
-for consistent inode/device comparison on Windows. Symlinks and Windows
-reparse points remain prohibited.
+Directory snapshots and dependency-cache streaming use a platform-aware
+child metadata check. On POSIX they retain `DirEntry.stat(follow_symlinks=False)`
+so metadata is bound to the descriptor-backed directory scan, including if its
+path is concurrently renamed or replaced. On Windows they use
+`os.stat(path, follow_symlinks=False)` for consistent inode/device values,
+while the non-replaceable directory handle is held for enumeration.
+Symlinks and Windows reparse points remain prohibited. A race regression test
+exercises a renamed/replaced directory for both snapshot and cache streaming.
 
 Internal filesystem exception messages omit absolute host paths.
 Unexpected errors in MCP tool calls return generic errors, preserving

@@ -13,6 +13,20 @@ def _is_windows_reparse_point(file_stat: object) -> bool:
     return bool(attributes & reparse_flag)
 
 
+def scanned_entry_stat(entry: os.DirEntry[str], path: Path) -> os.stat_result:
+    """Stat an entry using the same directory identity as its scanner.
+
+    POSIX os.scandir(fd) is bound to the opened directory. Using os.stat(path)
+    here would break that binding if the directory pathname is replaced while
+    it is scanned. On Windows DirEntry.stat() may instead return zero for
+    st_dev/st_ino, so use os.stat(path, follow_symlinks=False) while the
+    non-replaceable verified Windows directory handle remains held.
+    """
+    if os.name == "nt":
+        return os.stat(path, follow_symlinks=False)
+    return entry.stat(follow_symlinks=False)
+
+
 def _same_file(expected: os.stat_result, actual: os.stat_result) -> bool:
     return (
         expected.st_dev == actual.st_dev
