@@ -187,7 +187,7 @@ def test_snapshot_rejects_symlink_when_supported(tmp_path: Path) -> None:
     except (OSError, NotImplementedError):
         pytest.skip("symlinks are unavailable on this platform")
 
-    with pytest.raises(ValidationError, match="Symlinks"):
+    with pytest.raises(ValidationError, match="Symlinks|Reparse-Points"):
         create_project_snapshot(
             tmp_path,
             max_file_bytes=1024 * 1024,
