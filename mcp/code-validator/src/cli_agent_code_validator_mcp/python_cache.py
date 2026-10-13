@@ -25,7 +25,7 @@ _FROZEN_REQUIREMENT_RE = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9.!+_-]*$"
 )
 _LOCAL_FILE_REQUIREMENT_RE = re.compile(
-    r"^[A-Za-z0-9][A-Za-z0-9._-]*\\s+@\\s+(file:///[^\\s]+)$"
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*\s+@\s+(file:///[^\s]+)$"
 )
 
 
