@@ -114,13 +114,13 @@ The validator therefore does not try to parse every possible package-manager inp
 
 The configured Python image must contain Python, pip and pytest. Project dependencies are provided by a separate prepared wheel cache.
 
-A Windows pipx installation exposes `cli-agent-dependency-cache.exe` for Windows-side commands, but it is not sufficient for Python preparation. Install `cli-agent-code-validator-mcp` through pipx inside WSL as well and invoke the Linux `cli-agent-dependency-cache` there. Calling the Windows `.exe` from a WSL shell still runs Windows Python and is rejected.
+A Windows pipx installation exposes `cli-agent-dependency-cache.exe`. For **host Python preparation**, install `cli-agent-code-validator-mcp` inside WSL and use its Linux CLI; calling the Windows executable from WSL still runs Windows Python and is rejected. Alternatively, use Docker preparation with `--executor docker --image <image>` from Windows without WSL Python.
 
-Python cache preparation **must run inside WSL**. Cache placement depends on where the MCP itself runs.
+**Host** Python cache preparation must run inside WSL; **Docker** Python cache preparation uses the supplied Linux image and does not require WSL Python. Cache placement depends on where the MCP itself runs.
 
 ### Python preparation/image compatibility
 
-Wheel preparation intentionally runs with the selected WSL Python interpreter so the user's normal pip/JFrog configuration and credentials stay outside the MCP and test container. Test execution, however, uses the administrator-configured pinned Docker image.
+Wheel preparation uses the selected WSL Python interpreter in host mode or the selected Linux Docker image in Docker mode. In both cases pip/JFrog credentials stay outside the MCP validator sandbox; Docker preparation may selectively transmit the user's pip configuration into the temporary networked preparation container. Test execution, however, uses the administrator-configured pinned Docker image.
 
 The validator does **not** attempt to derive the target image's Python wheel tags or compare them with the preparation interpreter. Matching the environments is an explicit administrator responsibility. In practice, the administrator must keep the preparation interpreter and test image compatible in at least:
 
@@ -144,7 +144,7 @@ cd /mnt/c/dev/my-project
 cli-agent-dependency-cache prepare-python . --target windows
 ```
 
-The command checks that it is actually running under WSL and refuses preparation on native Windows. It also probes the interpreter selected by `--python-command` and requires that interpreter itself to report a Linux platform, so invoking a Windows Python executable from WSL is rejected. This avoids accidentally generating Windows-only wheels for the Linux Docker sandbox. The command also prints:
+In **host mode**, the command checks that it is actually running under WSL and refuses preparation on native Windows. It also probes the interpreter selected by `--python-command` and requires that interpreter itself to report a Linux platform, so invoking a Windows Python executable from WSL is rejected. This avoids accidentally generating Windows-only wheels for the Linux Docker sandbox. The command also prints:
 
 ```text
 Python dependency preparation: WSL is required.
@@ -213,7 +213,7 @@ python -m pip install \
 
 The test process uses `PYTHONPATH=/tmp/python-deps:/work:/work/src`. No pip index configuration or credentials are copied into the sandbox.
 
-The Python cache identity is project-scoped and does not change when requirements files change. If the project has never been prepared, `run_python_tests` returns `reason = "dependencies_not_prepared"` and explicitly states that `cli-agent-dependency-cache prepare-python <project>` must be run under WSL. Running preparation always rebuilds and replaces only after a successful preparation the existing project cache. If a later offline install/test shows a recognized missing-package pattern, the tool returns `dependency_cache_may_be_stale` with a user-facing refresh hint.
+The Python cache identity is project-scoped and does not change when requirements files change. If the project has never been prepared, `run_python_tests` returns `reason = "dependencies_not_prepared"` and describes the two supported remedies: host preparation under WSL (`cli-agent-dependency-cache prepare-python <project>`) or Docker preparation (`cli-agent-dependency-cache prepare-python <project> --executor docker --image <image>`). Running preparation always rebuilds and replaces only after a successful preparation the existing project cache. If a later offline install/test shows a recognized missing-package pattern, the tool returns `dependency_cache_may_be_stale` with a user-facing refresh hint.
 
 ### Maven
 
