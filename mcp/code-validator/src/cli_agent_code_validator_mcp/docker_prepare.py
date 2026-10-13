@@ -67,7 +67,7 @@ def _pip_user_config() -> Path | None:
         if override:
             return Path(override).expanduser()
     home = Path.home()
-    if os.name == "nt":
+    if sys.platform == "win32":
         appdata = os.environ.get("APPDATA")
         return Path(appdata) / "pip" / "pip.ini" if appdata else home / "pip" / "pip.ini"
     # Match pip's macOS user-config precedence: Application Support when
