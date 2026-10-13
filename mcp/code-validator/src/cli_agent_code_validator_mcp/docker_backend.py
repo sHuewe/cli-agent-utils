@@ -20,14 +20,14 @@ def _iter_safe_stream_paths(source: Path):
     try:
         source_stat = os.stat(source, follow_symlinks=False)
     except OSError as exc:
-        raise ValueError(f"Streamed directory could not be inspected: {source}") from exc
+        raise ValueError("Streamed directory could not be inspected.") from exc
     if (
         stat.S_ISLNK(source_stat.st_mode)
         or _is_windows_reparse_point(source_stat)
         or not stat.S_ISDIR(source_stat.st_mode)
     ):
         raise ValueError(
-            f"Symlink/reparse point streamed directory is not allowed: {source}"
+            "Symlink/reparse point streamed directory is not allowed."
         )
 
     def walk(directory: Path, expected: os.stat_result):
@@ -41,18 +41,17 @@ def _iter_safe_stream_paths(source: Path):
                 for entry in entries:
                     path = directory / entry.name
                     try:
-                        entry_stat = entry.stat(follow_symlinks=False)
+                        entry_stat = os.stat(path, follow_symlinks=False)
                     except OSError as exc:
                         raise ValueError(
-                            f"Streamed path could not be inspected: {path}"
+                            "Streamed path could not be inspected."
                         ) from exc
                     if (
                         stat.S_ISLNK(entry_stat.st_mode)
                         or _is_windows_reparse_point(entry_stat)
                     ):
                         raise ValueError(
-                            "Symlink/reparse point in streamed directory is not allowed: "
-                            f"{path}"
+                            "Symlink/reparse point in streamed directory is not allowed."
                         )
                     if stat.S_ISDIR(entry_stat.st_mode):
                         yield path, entry_stat
@@ -61,13 +60,13 @@ def _iter_safe_stream_paths(source: Path):
                         yield path, entry_stat
                     else:
                         raise ValueError(
-                            f"Unsupported filesystem entry in streamed directory: {path}"
+                            "Unsupported filesystem entry in streamed directory."
                         )
         except ValueError:
             raise
         except OSError as exc:
             raise ValueError(
-                f"Streamed directory could not be safely read: {directory}"
+                "Streamed directory could not be safely read."
             ) from exc
 
     yield from walk(source, source_stat)
@@ -79,19 +78,19 @@ def _open_verified_stream_file(path: Path, expected: os.stat_result):
     try:
         before = os.stat(path, follow_symlinks=False)
     except OSError as exc:
-        raise ValueError(f"Streamed file could not be re-inspected: {path}") from exc
+        raise ValueError("Streamed file could not be re-inspected.") from exc
     if (
         stat.S_ISLNK(before.st_mode)
         or _is_windows_reparse_point(before)
         or not stat.S_ISREG(before.st_mode)
         or not _same_file(expected, before)
     ):
-        raise ValueError(f"Streamed file changed during transfer: {path}")
+        raise ValueError("Streamed file changed during transfer.")
 
     try:
         fd = os.open(path, flags)
     except OSError as exc:
-        raise ValueError(f"Streamed file could not be safely opened: {path}") from exc
+        raise ValueError("Streamed file could not be safely opened.") from exc
     try:
         opened = os.fstat(fd)
         if (
@@ -100,7 +99,7 @@ def _open_verified_stream_file(path: Path, expected: os.stat_result):
             or not _same_file(expected, opened)
             or opened.st_size != expected.st_size
         ):
-            raise ValueError(f"Streamed file changed during transfer: {path}")
+            raise ValueError("Streamed file changed during transfer.")
         return os.fdopen(fd, "rb", closefd=True), opened
     except BaseException:
         os.close(fd)
@@ -236,8 +235,7 @@ class DockerBackend:
                                 archive.addfile(info, handle)
                         else:
                             raise ValueError(
-                                "Unsupported filesystem entry in streamed "
-                                f"directory: {path}"
+                                "Unsupported filesystem entry in streamed directory."
                             )
             except BaseException as exc:
                 writer_error.append(exc)

@@ -41,7 +41,7 @@ class DockerCodeValidator:
         self.workspace = workspace.expanduser().resolve()
         if not self.workspace.is_dir():
             raise CodeValidationError(
-                f"Projekt-Workspace existiert nicht: {self.workspace}"
+                "Projekt-Workspace existiert nicht."
             )
         self.settings = settings
         self.backend = backend or DockerBackend()
@@ -287,7 +287,36 @@ class DockerCodeValidator:
         )
 
     def _public_text(self, value: str, redactor: OutputRedactor) -> str:
-        return self._bounded(redactor.redact(value)).strip()
+        """Redact host paths in model-visible Docker or build output."""
+        output = redactor.redact(value)
+        for root in (
+            self.workspace,
+            self.settings.python_cache_root,
+            self.settings.gradle_cache_root,
+            self.settings.maven_cache_root,
+            Path.home(),
+        ):
+            if root is None:
+                continue
+            text = str(root)
+            variants = {text, text.replace(chr(92), "/"), text.replace("/", chr(92))}
+            for variant in variants:
+                output = re.sub(
+                    re.escape(variant),
+                    "[Host-Pfad]",
+                    output,
+                    flags=re.IGNORECASE,
+                )
+        # Unknown Windows host paths must not leak either, including paths
+        # containing spaces. Omit the entire line instead of guessing where
+        # the pathname ends.
+        output = "\n".join(
+            "[Host-Pfad in Ausgabe ausgeblendet]"
+            if re.search(r"(?i)(?<![a-z0-9])[a-z]:[\\/]|\\\\[^\\\s]+\\", line)
+            else line
+            for line in output.split("\n")
+        )
+        return self._bounded(output).strip()
 
     @staticmethod
     def _dependency_refresh_message(framework: str, output: str) -> str | None:
@@ -383,7 +412,7 @@ class DockerCodeValidator:
                     framework,
                     project_path,
                     redactor,
-                    f"Docker ist nicht verfügbar: {exc}",
+                    "Docker ist nicht verfügbar.",
                 )
                 return result_payload
             if available.returncode != 0:
@@ -515,7 +544,7 @@ class DockerCodeValidator:
                         framework,
                         project_path,
                         redactor,
-                        f"Python-Wheel-Cache konnte nicht übertragen werden: {exc}",
+                        "Python-Wheel-Cache konnte nicht übertragen werden.",
                         verified_policy=verified_policy,
                     )
                     return result_payload
@@ -584,7 +613,7 @@ class DockerCodeValidator:
                         framework,
                         project_path,
                         redactor,
-                        f"Gradle-Dependency-Cache konnte nicht übertragen werden: {exc}",
+                        "Gradle-Dependency-Cache konnte nicht übertragen werden.",
                         verified_policy=verified_policy,
                     )
                     return result_payload
@@ -653,7 +682,7 @@ class DockerCodeValidator:
                         framework,
                         project_path,
                         redactor,
-                        f"Maven-Dependency-Cache konnte nicht übertragen werden: {exc}",
+                        "Maven-Dependency-Cache konnte nicht übertragen werden.",
                         verified_policy=verified_policy,
                     )
                     return result_payload
