@@ -774,6 +774,32 @@ def test_python_uses_wsl_prepared_wheels_offline(tmp_path: Path) -> None:
     assert "-r" not in install
 
 
+def test_python_docker_prepared_wheel_cache_source(tmp_path: Path) -> None:
+    (tmp_path / "requirements.txt").write_text(
+        "demo-package==1.0\n", encoding="utf-8",
+    )
+    cache_root = tmp_path / "python-cache"
+    entry = python_cache_entry(cache_root, tmp_path)
+    entry.wheels.mkdir(parents=True)
+    (entry.wheels / "demo_package-1.0-py3-none-any.whl").write_bytes(b"wheel")
+    write_python_ready_metadata(
+        entry.directory,
+        entry.key,
+        python_dependency_plan(tmp_path),
+        preparation_environment="docker",
+    )
+    backend = FakeBackend()
+    configured = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        python_cache_root=cache_root,
+    )
+    result = DockerCodeValidator(tmp_path, configured, backend=backend).run_python_tests(".")
+    assert result["success"] is True
+    assert result["dependency_cache"]["source"] == "prepared-docker-wheel-cache"
+
+
 def test_python_cache_transfer_timeout_is_marked_timed_out(
     tmp_path: Path,
 ) -> None:
