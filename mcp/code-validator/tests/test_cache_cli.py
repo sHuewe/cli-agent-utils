@@ -1061,205 +1061,122 @@ def test_dependency_cache_cli_program_name() -> None:
     for command in ("prepare-python", "prepare-maven", "prepare-gradle"):
         assert parser.parse_args([command, "."]).command == command
 
-def test_docker_prepare_cli_requires_image() -> None:
+
+def test_docker_prepare_python_only_cli() -> None:
     import pytest
-    from cli_agent_code_validator_mcp.cache_cli import build_parser
+    parser = build_parser()
+    for command in ("prepare-maven", "prepare-gradle"):
+        with pytest.raises(SystemExit):
+            parser.parse_args([command, ".", "--executor", "docker"])
+    args = parser.parse_args(["prepare-python", ".", "--executor", "docker", "--image", "python:3.12"])
+    assert args.image == "python:3.12"
 
-    args = build_parser().parse_args(
-        ["prepare-python", ".", "--executor", "docker"]
-    )
-    assert args.executor == "docker"
-    assert args.image is None
 
-
-def test_docker_python_plan_rejects_external_source_only_in_docker(
-    tmp_path: Path,
-) -> None:
-    import pytest
-    from cli_agent_code_validator_mcp.python_cache import python_dependency_plan
-
+def test_docker_requirements_snapshot_selective_and_recursive(tmp_path: Path) -> None:
+    import io
+    import tarfile
+    from cli_agent_code_validator_mcp.docker_prepare import _requirements_snapshot
     project = tmp_path / "project"
-    project.mkdir()
-    (project / "requirements.txt").write_text("../shared-lib\n", encoding="utf-8")
-
-    assert python_dependency_plan(project).has_dependencies
-    with pytest.raises(Exception, match="Host-Prepare"):
-        python_dependency_plan(project, allow_local_sources=False)
-
-
-def test_docker_prepare_config_is_selective(tmp_path: Path, monkeypatch) -> None:
-    from cli_agent_code_validator_mcp.docker_prepare import _user_configuration
-
-    home = tmp_path / "home"
-    m2 = home / ".m2"
-    m2.mkdir(parents=True)
-    (m2 / "settings.xml").write_text("<settings/>", encoding="utf-8")
-    (m2 / "private.txt").write_text("should-not-transfer", encoding="utf-8")
-    monkeypatch.setattr(
-        "cli_agent_code_validator_mcp.docker_prepare.Path.home",
-        lambda: home,
-    )
-    names = _user_configuration(
-        "maven", gradle_user_home=None, include_user_config=True
-    )
-    assert set(names) == {"maven/settings.xml"}
-    assert _user_configuration(
-        "maven", gradle_user_home=None, include_user_config=False
-    ) == {}
-
-
-def test_docker_prepare_accepts_image_tag(tmp_path: Path, monkeypatch) -> None:
-    import pytest
-    from cli_agent_code_validator_mcp import docker_prepare
-
-    project = tmp_path / "project"
-    project.mkdir()
+    (project / "deps").mkdir(parents=True)
+    (project / "requirements.txt").write_text("-r deps/base.txt\n", encoding="utf-8")
+    (project / "deps" / "base.txt").write_text("-c limits.txt\nfoo==1.0\n", encoding="utf-8")
+    (project / "deps" / "limits.txt").write_text("bar==2.0\n", encoding="utf-8")
+    (project / "private.py").write_text("SECRET", encoding="utf-8")
     (project / "pom.xml").write_text("<project/>", encoding="utf-8")
+    archive = _requirements_snapshot(project)
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        assert set(tar.getnames()) == {
+            "requirements.txt", "deps/base.txt", "deps/limits.txt"
+        }
 
-    def fake_config(*args, **kwargs):
-        raise RuntimeError("image reference was accepted")
 
-    monkeypatch.setattr(docker_prepare, "_user_configuration", fake_config)
-    with pytest.raises(RuntimeError, match="image reference was accepted"):
-        docker_prepare.prepare_in_docker(
-            "maven", project, tmp_path / "cache", image="maven:3.9-eclipse-temurin-21"
+def test_docker_requirements_reject_local_source(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_code_validator_mcp.docker_prepare import _requirements_snapshot
+    (tmp_path / "requirements.txt").write_text("../shared-lib\n", encoding="utf-8")
+    with pytest.raises(Exception, match="Host-Prepare"):
+        _requirements_snapshot(tmp_path)
+
+
+def test_docker_prepare_cleanup_after_create_timeout(tmp_path: Path, monkeypatch) -> None:
+    import pytest
+    import subprocess
+    from cli_agent_code_validator_mcp import docker_prepare
+    (tmp_path / "requirements.txt").write_text("demo==1.0\n", encoding="utf-8")
+    calls = []
+    class FakeDocker:
+        def __init__(self, **kwargs): pass
+        def run(self, args, *, timeout, input_bytes=None):
+            calls.append(list(args))
+            if args[0] == "create":
+                raise subprocess.TimeoutExpired("docker create", timeout)
+            return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+    monkeypatch.setattr(docker_prepare, "DockerBackend", FakeDocker)
+    with pytest.raises(subprocess.TimeoutExpired):
+        docker_prepare.prepare_python_in_docker(
+            tmp_path, tmp_path / "cache", image="python:3.12", use_user_config=False
         )
+    assert [call[0] for call in calls] == ["create", "rm"]
+    assert calls[0][calls[0].index("--name") + 1] == calls[1][-1]
+
+
+def test_docker_prepare_disabled_pip_config(tmp_path: Path, monkeypatch) -> None:
+    import os
+    from cli_agent_code_validator_mcp import docker_prepare
+    home = tmp_path / "home"
+    path = home / ".config" / "pip"
+    path.mkdir(parents=True)
+    (path / "pip.conf").write_text("[global]\nindex-url = https://secret@example.org\n")
+    monkeypatch.setattr(docker_prepare.Path, "home", lambda: home)
+    monkeypatch.setenv("PIP_CONFIG_FILE", os.devnull)
+    assert docker_prepare._pip_config_snapshot(include_user_config=True) is None
 
 
 def test_docker_prepare_rejects_invalid_image_reference(tmp_path: Path) -> None:
     import pytest
-    from cli_agent_code_validator_mcp.docker_prepare import prepare_in_docker
-
-    for image in ("", " ", "-bad-image", "maven:latest extra"):
+    from cli_agent_code_validator_mcp.docker_prepare import prepare_python_in_docker
+    for image in ("", " ", "-bad", "python:3.12 another"):
         with pytest.raises(ValueError, match="--image"):
-            prepare_in_docker(
-                "maven", tmp_path, tmp_path / "cache", image=image
-            )
+            prepare_python_in_docker(tmp_path, tmp_path / "cache", image=image)
 
 
-def test_docker_prepare_cleans_up_when_create_times_out(
-    tmp_path: Path, monkeypatch,
-) -> None:
-    import subprocess
-    import pytest
-    from cli_agent_code_validator_mcp import docker_prepare
-
-    project = tmp_path / "project"
-    project.mkdir()
-    (project / "pom.xml").write_text("<project/>", encoding="utf-8")
-    cache = tmp_path / "cache"
-    calls = []
-
-    class FakeDocker:
-        def __init__(self, **kwargs):
-            pass
-
-        def run(self, args, *, timeout, input_bytes=None):
-            calls.append(list(args))
-            if args[0] == "create":
-                raise subprocess.TimeoutExpired(["docker", "create"], timeout)
-            return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-
-    monkeypatch.setattr(docker_prepare, "DockerBackend", FakeDocker)
-    with pytest.raises(subprocess.TimeoutExpired):
-        docker_prepare.prepare_in_docker(
-            "maven", project, cache, image="maven:3.9-eclipse-temurin-21",
-            use_user_config=False,
-        )
-    assert [args[0] for args in calls] == ["create", "rm"]
-    assert calls[0][calls[0].index("--name") + 1] == calls[1][-1]
-    assert calls[1][1] == "-f"
-
-
-def test_docker_prepare_respects_disabled_pip_config(
-    tmp_path: Path, monkeypatch,
-) -> None:
-    from cli_agent_code_validator_mcp.docker_prepare import _user_configuration
-
-    home = tmp_path / "home"
-    config = home / ".config" / "pip"
-    config.mkdir(parents=True)
-    (config / "pip.conf").write_text(
-        "[global]\nindex-url = https://user:secret@repo.example/simple\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        "cli_agent_code_validator_mcp.docker_prepare.Path.home", lambda: home
-    )
-    monkeypatch.setenv("PIP_CONFIG_FILE", __import__("os").devnull)
-    assert _user_configuration(
-        "python", gradle_user_home=None, include_user_config=True
-    ) == {}
-
-
-def test_prepare_help_describes_both_python_executors() -> None:
-    parser = build_parser()
-    assert "Docker preparation does not" in parser.description
-    arguments = parser.parse_args(
-        ["prepare-python", ".", "--executor", "docker", "--image", "python:3.12"]
-    )
-    assert arguments.image == "python:3.12"
-    assert arguments.executor == "docker"
-
-
-def test_docker_cache_rejects_windows_drive_member(tmp_path: Path, monkeypatch) -> None:
+def test_docker_wheel_archive_rejects_drive_paths(tmp_path: Path) -> None:
     import io
     import tarfile
-    import subprocess
     import pytest
-    from cli_agent_code_validator_mcp.docker_prepare import _copy_cache_archive
-
-    archive_path = tmp_path / "payload.tar"
-    with tarfile.open(archive_path, "w") as archive:
-        payload = b"not-in-cache"
-        item = tarfile.TarInfo("C:/outside/file")
-        item.size = len(payload)
-        archive.addfile(item, io.BytesIO(payload))
-
-    class FakeBackend:
-        def command(self, *args):
-            return ["fake", *args]
-
-    def fake_run(args, *, stdout, stderr, timeout, check):
-        stdout.write(archive_path.read_bytes())
-        return subprocess.CompletedProcess(args, 0)
-
-    monkeypatch.setattr(
-        "cli_agent_code_validator_mcp.docker_prepare.subprocess.run",
-        fake_run,
-    )
-    with pytest.raises(ValueError, match="Ungültiger Pfad"):
-        _copy_cache_archive(
-            FakeBackend(), "demo", "/tmp/prepared", tmp_path / "cache",
-            timeout=10,
-        )
+    from cli_agent_code_validator_mcp.docker_prepare import _extract_wheel_archive
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        content = b"x"
+        item = tarfile.TarInfo("C:/outside.whl")
+        item.size = len(content)
+        tar.addfile(item, io.BytesIO(content))
+    buffer.seek(0)
+    with pytest.raises(ValueError, match="ungültige"):
+        _extract_wheel_archive(buffer, tmp_path)
 
 
-def test_mac_pip_config_location(tmp_path: Path, monkeypatch) -> None:
+def test_docker_prepare_mac_pip_location(tmp_path: Path, monkeypatch) -> None:
     from cli_agent_code_validator_mcp import docker_prepare
-
     home = tmp_path / "home"
     config = home / "Library" / "Application Support" / "pip"
     config.mkdir(parents=True)
-    (config / "pip.conf").write_text("[global]\\n", encoding="utf-8")
+    (config / "pip.conf").write_text("[global]\n")
     monkeypatch.delenv("PIP_CONFIG_FILE", raising=False)
     monkeypatch.setattr(docker_prepare.sys, "platform", "darwin")
     monkeypatch.setattr(docker_prepare.Path, "home", lambda: home)
     assert docker_prepare._pip_user_config() == config / "pip.conf"
 
 
-def test_docker_preparation_rejects_wsl_distribution_without_wsl(
-    monkeypatch,
-) -> None:
-    import sys
+def test_docker_prepare_wsl_distribution_requires_wsl(monkeypatch) -> None:
     import pytest
+    import sys
     from cli_agent_code_validator_mcp import cache_cli
-
     monkeypatch.setattr(sys, "argv", [
-        "cli-agent-dependency-cache", "prepare-maven", ".",
-        "--executor", "docker", "--image", "maven:3.9",
+        "cli-agent-dependency-cache", "prepare-python", ".",
+        "--executor", "docker", "--image", "python:3.12",
         "--wsl-distribution", "Ubuntu",
     ])
-    with pytest.raises(SystemExit) as error:
+    with pytest.raises(SystemExit) as err:
         cache_cli.main()
-    assert error.value.code == 1
+    assert err.value.code == 1
