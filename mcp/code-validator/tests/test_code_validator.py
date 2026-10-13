@@ -1914,3 +1914,64 @@ def test_cache_stream_rejects_replaced_directory_during_scan(
     path, expected = entries[0]
     with pytest.raises(ValueError, match="Streamed file changed"):
         _open_verified_stream_file(path, expected)
+
+
+def test_mcp_reports_safe_ambiguous_build_diagnostic(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    (tmp_path / "build.gradle").write_text("", encoding="utf-8")
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
+    result = _safe_tool_call(lambda: validator.run_java_build("."))
+
+    wire = _wire_tool_result(result)
+    assert wire["structuredContent"]["reason"] == "invalid_request"
+    assert "build_system" in wire["structuredContent"]["message"]
+    assert str(tmp_path) not in str(wire)
+    assert "_meta" not in wire
+
+
+def test_mcp_reports_safe_pytest_selector_diagnostic(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
+    result = _safe_tool_call(
+        lambda: validator.run_python_tests(".", test_selector="--collect-only")
+    )
+    wire = _wire_tool_result(result)
+    assert wire["structuredContent"]["reason"] == "invalid_request"
+    assert "pytest-Optionen" in wire["structuredContent"]["message"]
+    assert str(tmp_path) not in str(wire)
+
+
+def test_mcp_reports_safe_workspace_path_constraint(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FakeBackend())
+    result = _safe_tool_call(lambda: validator.run_java_build("../outside"))
+    wire = _wire_tool_result(result)
+    assert wire["structuredContent"]["reason"] == "invalid_request"
+    assert "'..'" in wire["structuredContent"]["message"]
+    assert str(tmp_path) not in str(wire)
+
+
+def test_mcp_hides_internal_validation_error_paths() -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    def fail() -> dict:
+        raise ValidationError("C:/Users/private/cache/file")
+
+    wire = _wire_tool_result(_safe_tool_call(fail))
+    assert wire["structuredContent"]["reason"] == "validation_error"
+    assert "private" not in str(wire)
+
+
+def test_mcp_hides_unexpected_exception_paths() -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    def fail() -> dict:
+        raise OSError("/home/private/build/file")
+
+    wire = _wire_tool_result(_safe_tool_call(fail))
+    assert wire["structuredContent"]["reason"] == "internal_error"
+    assert "/home/private" not in str(wire)

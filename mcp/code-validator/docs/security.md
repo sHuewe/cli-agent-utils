@@ -471,3 +471,12 @@ Unexpected errors in MCP tool calls return generic errors, preserving
 the existing `CallToolResult` representation and user-message metadata
 handling. Docker/build diagnostics redact known host roots. The model
 continues to receive the requested workspace-relative project path.
+
+## Actionable but safe MCP validation failures
+
+Explicit caller-input validation (ambiguous Java build system, invalid selectors,
+unsupported paths) returns a static, host-path-free diagnostic using
+`PublicValidationError`. Other `CodeValidationError` instances and unexpected
+exceptions remain generic. This preserves retry guidance without exposing
+host-side exception text or filesystem locations. Existing
+`message_to_user` metadata separation remains unchanged.
