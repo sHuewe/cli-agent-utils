@@ -45,7 +45,11 @@ def _pip_user_config() -> Path | None:
         if override.casefold() in {os.devnull.casefold(), "/dev/null", "nul"}:
             return None
         if override:
-            return Path(override).expanduser()
+            explicit = Path(override).expanduser()
+            # pip suppresses user config only if its explicit config exists.
+            # Preserve a symlink here so _pip_config_snapshot can reject it.
+            if explicit.is_file() or explicit.is_symlink():
+                return explicit
     home = Path.home()
     if sys.platform == "win32":
         appdata = os.environ.get("APPDATA")
@@ -55,9 +59,19 @@ def _pip_user_config() -> Path | None:
         )
         return next((p for p in candidates if p.is_file() or p.is_symlink()), None)
     if sys.platform == "darwin":
-        mac_config = home / "Library" / "Application Support" / "pip" / "pip.conf"
-        if mac_config.is_file() or mac_config.is_symlink():
-            return mac_config
+        xdg_data_home = os.environ.get("XDG_DATA_HOME")
+        if xdg_data_home:
+            mac_config = Path(xdg_data_home).expanduser() / "pip" / "pip.conf"
+            if mac_config.parent.is_dir() and (
+                mac_config.is_file() or mac_config.is_symlink()
+            ):
+                return mac_config
+            # With XDG_DATA_HOME set, pip does not use Library/Application
+            # Support as a fallback; it checks ~/.config and the legacy path.
+        else:
+            mac_config = home / "Library" / "Application Support" / "pip" / "pip.conf"
+            if mac_config.is_file() or mac_config.is_symlink():
+                return mac_config
     xdg_home = os.environ.get("XDG_CONFIG_HOME")
     config_home = Path(xdg_home).expanduser() if xdg_home else home / ".config"
     candidates = (config_home / "pip" / "pip.conf", home / ".pip" / "pip.conf")
