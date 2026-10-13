@@ -34,7 +34,7 @@ def _validate_directory_stat(
         or not stat.S_ISDIR(actual.st_mode)
         or not _same_file(expected, actual)
     ):
-        raise error_type(f"{message}: {path}")
+        raise error_type(message)
 
 
 @contextmanager
@@ -58,7 +58,7 @@ def verified_directory_scandir(
         if not directory_flag or not nofollow_flag:
             raise error_type(
                 "Sichere Directory-Descriptor-Traversierung wird auf dieser "
-                f"Plattform nicht unterstützt: {path}"
+                "Plattform nicht unterstützt."
             )
         flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
         fd: int | None = None
@@ -77,7 +77,7 @@ def verified_directory_scandir(
         except error_type:
             raise
         except OSError as exc:
-            raise error_type(f"{changed_message}: {path}") from exc
+            raise error_type(changed_message) from exc
         finally:
             if fd is not None:
                 try:
@@ -122,7 +122,7 @@ def verified_directory_scandir(
         None,
     )
     if handle == INVALID_HANDLE_VALUE:
-        raise error_type(f"{changed_message}: {path}")
+        raise error_type(changed_message)
 
     try:
         # The handle permits only shared reads and uses OPEN_REPARSE_POINT.
@@ -133,7 +133,7 @@ def verified_directory_scandir(
         try:
             opened = os.stat(path, follow_symlinks=False)
         except OSError as exc:
-            raise error_type(f"{changed_message}: {path}") from exc
+            raise error_type(changed_message) from exc
         _validate_directory_stat(
             path,
             expected,
