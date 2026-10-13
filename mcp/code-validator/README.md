@@ -87,15 +87,15 @@ For concrete image recommendations, Java/JDK compatibility examples, local diges
 
 ### Optional Docker dependency preparation
 
-Host preparation remains the default. Pass an **administrator-reviewed, digest-pinned** image to prepare the cache using a temporary Docker container:
+Host preparation remains the default. Pass an explicit Docker image reference (ordinary tag or SHA-256 digest) to prepare the cache using a temporary Docker container:
 
 ```bash
-cli-agent-dependency-cache prepare-maven . --executor docker --image maven@sha256:<digest>
-cli-agent-dependency-cache prepare-gradle . --executor docker --image gradle@sha256:<digest>
-cli-agent-dependency-cache prepare-python . --executor docker --image python@sha256:<digest>
+cli-agent-dependency-cache prepare-maven . --executor docker --image maven:3.9-eclipse-temurin-21
+cli-agent-dependency-cache prepare-gradle . --executor docker --image my-gradle:9-jdk21
+cli-agent-dependency-cache prepare-python . --executor docker --image my-python-tests:3.12
 ```
 
-Docker preparation always uses Docker **bridge networking**; no network-mode flag is exposed. The image must already be present locally (`--pull never`), contain `sh`, `tar`, `mkdir`, `sleep`, and the appropriate language/build executables, and must not declare image volumes. Docker can be invoked through WSL with `--wsl` and optionally `--wsl-distribution`. No additional host directories are bind-mounted. The project is copied as a bounded snapshot into `/work`, while only selected user settings are copied into temporary container storage:
+Unlike MCP validator images, manual Docker prepare images **do not require digest pinning**. Tags are allowed, but the selected image must be available locally and is never pulled automatically. The validator's administratively configured images remain SHA-256-digest-pinned. Docker preparation always uses Docker **bridge networking**; no network-mode flag is exposed. The image must already be present locally (`--pull never`), contain `sh`, `tar`, `mkdir`, `sleep`, and the appropriate language/build executables, and must not declare image volumes. Docker can be invoked through WSL with `--wsl` and optionally `--wsl-distribution`. No additional host directories are bind-mounted. The project is copied as a bounded snapshot into `/work`, while only selected user settings are copied into temporary container storage:
 
 - Maven: `~/.m2/settings.xml`, `settings-security.xml` (when present)
 - Gradle: `gradle.properties`, `init.gradle[.kts]`, and direct files in `init.d` from the configured Gradle user home
