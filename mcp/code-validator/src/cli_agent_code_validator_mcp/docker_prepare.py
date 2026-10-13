@@ -282,7 +282,9 @@ def prepare_in_docker(
     backend = DockerBackend(wsl=wsl, wsl_distribution=wsl_distribution)
     name = "cli-agent-prepare-" + uuid.uuid4().hex
     temporary = Path(tempfile.mkdtemp(prefix=f".{entry.key}-", dir=root))
-    created = False
+    # docker create may reach the daemon even if the CLI subsequently times out.
+    # The unique name is known already, so always attempt cleanup in that case.
+    created = True
     try:
         _docker_run(backend, [
             "create", "--name", name, "--pull", "never",
@@ -296,7 +298,6 @@ def prepare_in_docker(
             image, "-c",
             "mkdir -p /tmp/home /tmp/config /tmp/prepared; while :; do sleep 3600; done",
         ], 60)
-        created = True
         _image_policy(backend, name)
         _docker_run(backend, ["start", name], 60)
 
