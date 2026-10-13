@@ -1109,6 +1109,7 @@ def test_docker_prepare_config_is_selective(tmp_path: Path, monkeypatch) -> None
 
 
 def test_docker_prepare_accepts_image_tag(tmp_path: Path, monkeypatch) -> None:
+    import pytest
     from cli_agent_code_validator_mcp import docker_prepare
 
     project = tmp_path / "project"
