@@ -49,11 +49,15 @@ def _pip_user_config() -> Path | None:
     home = Path.home()
     if sys.platform == "win32":
         appdata = os.environ.get("APPDATA")
-        return Path(appdata) / "pip" / "pip.ini" if appdata else home / "pip" / "pip.ini"
+        candidates = (
+            *((Path(appdata) / "pip" / "pip.ini",) if appdata else ()),
+            home / "pip" / "pip.ini",
+        )
+        return next((p for p in candidates if p.is_file() or p.is_symlink()), None)
     if sys.platform == "darwin":
-        mac_home = home / "Library" / "Application Support" / "pip"
-        if mac_home.is_dir():
-            return mac_home / "pip.conf"
+        mac_config = home / "Library" / "Application Support" / "pip" / "pip.conf"
+        if mac_config.is_file() or mac_config.is_symlink():
+            return mac_config
     xdg_home = os.environ.get("XDG_CONFIG_HOME")
     config_home = Path(xdg_home).expanduser() if xdg_home else home / ".config"
     candidates = (config_home / "pip" / "pip.conf", home / ".pip" / "pip.conf")
