@@ -11,6 +11,7 @@ import json
 import os
 import stat
 import subprocess  # nosec B404
+import sys
 import tarfile
 import tempfile
 import uuid
@@ -69,8 +70,16 @@ def _pip_user_config() -> Path | None:
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
         return Path(appdata) / "pip" / "pip.ini" if appdata else home / "pip" / "pip.ini"
+    # Match pip's macOS user-config precedence: Application Support when
+    # available, then XDG_CONFIG_HOME (or ~/.config) and legacy ~/.pip.
+    if sys.platform == "darwin":
+        mac_home = home / "Library" / "Application Support" / "pip"
+        if mac_home.is_dir():
+            return mac_home / "pip.conf"
+    xdg_home = os.environ.get("XDG_CONFIG_HOME")
+    config_home = Path(xdg_home).expanduser() if xdg_home else home / ".config"
     candidates = [
-        home / ".config" / "pip" / "pip.conf",
+        config_home / "pip" / "pip.conf",
         home / ".pip" / "pip.conf",
     ]
     return next((p for p in candidates if p.is_file() or p.is_symlink()), None)
@@ -180,15 +189,25 @@ def _copy_cache_archive(
                 name = member.name.removeprefix("./")
                 if not name or name == ".":
                     continue
-                path = PurePosixPath(name)
+                # Check raw components BEFORE PurePosixPath normalizes them.
+                # Reject Windows drives (C:relative or C:/absolute), ADS,
+                # control characters and separators across every host OS.
+                parts = name.split("/")
                 if (
-                    path.is_absolute()
-                    or ".." in path.parts
-                    or "\\" in name
-                    or any(part in {"", "."} for part in path.parts)
+                    name.startswith("/")
+                    or any(
+                        part in {"", ".", ".."}
+                        or ":" in part
+                        or "\\" in part
+                        or any(ord(char) < 32 for char in part)
+                        for part in parts
+                    )
                 ):
                     raise ValueError("Ungültiger Pfad im Docker-Cache.")
-                dest = host_dir.joinpath(*path.parts)
+                path = PurePosixPath(name)
+                dest = host_dir.joinpath(*parts)
+                if not dest.resolve().is_relative_to(host_dir.resolve()):
+                    raise ValueError("Docker-Cache-Pfad liegt außerhalb des Cache-Verzeichnisses.")
                 if member.isdir():
                     dest.mkdir(parents=True, exist_ok=True)
                 elif member.isfile():
