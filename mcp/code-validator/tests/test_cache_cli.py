@@ -707,6 +707,102 @@ def test_prepare_python_resolves_requirements_once(
 
 
 
+def test_python_plan_allows_local_packages_outside_project(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    sibling = tmp_path / "my_library"
+    sibling.mkdir()
+    (sibling / "pyproject.toml").write_text(
+        '[build-system]\nrequires = ["setuptools"]\nbuild-backend = "setuptools.build_meta"\n',
+        encoding="utf-8",
+    )
+    (project / "requirements.txt").write_text(
+        "../my_library\n", encoding="utf-8",
+    )
+
+    assert python_dependency_plan(project).has_dependencies
+
+
+def test_python_plan_allows_local_file_direct_reference(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "requirements.txt").write_text(
+        "demo-package @ file:///mnt/c/dev/demo-package\n",
+        encoding="utf-8",
+    )
+
+    assert python_dependency_plan(project).has_dependencies
+
+
+def test_python_plan_rejects_remote_and_editable_sources(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_code_validator_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    for requirement in (
+        "-e ../my-library",
+        "demo @ https://example.invalid/demo.whl",
+        "demo @ file://another-host/share/package",
+        "git+https://example.invalid/org/repo",
+        "https://example.invalid/archive.tar.gz",
+        "${PACKAGE_PATH}",
+    ):
+        (project / "requirements.txt").write_text(
+            requirement + "\n", encoding="utf-8",
+        )
+        with pytest.raises(Exception):
+            python_dependency_plan(project)
+
+
+def test_prepare_python_preserves_local_source_requirement(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    sibling = tmp_path / "my_library"
+    sibling.mkdir()
+    (sibling / "pyproject.toml").write_text(
+        '[project]\nname = "my-library"\nversion = "1.0"\n',
+        encoding="utf-8",
+    )
+    (project / "requirements.txt").write_text(
+        "../my_library\n", encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "cli_agent_code_validator_mcp.cache_cli.require_wsl", lambda: None
+    )
+    monkeypatch.setattr(
+        "cli_agent_code_validator_mcp.cache_cli._python_interpreter_metadata",
+        lambda _command, *, timeout: {
+            "python_version": "3.12.0",
+            "python_implementation": "CPython",
+            "machine": "x86_64",
+        },
+    )
+    calls = []
+
+    def fake_run(command, *, cwd, timeout):
+        calls.append((command, cwd))
+        wheels = Path(command[command.index("--wheel-dir") + 1])
+        (wheels / "my_library-1.0-py3-none-any.whl").write_bytes(b"wheel")
+
+    monkeypatch.setattr(
+        "cli_agent_code_validator_mcp.cache_cli._run_python", fake_run
+    )
+    entry = prepare_python(project, tmp_path / "cache", python_command="python3")
+
+    assert entry.is_ready()
+    assert (entry.wheels / "my_library-1.0-py3-none-any.whl").is_file()
+    assert len(calls) == 1
+    assert calls[0][0][-2:] == ["-r", "requirements.txt"]
+    assert calls[0][1] == project.resolve()
+
+
 def test_python_plan_rejects_path_that_only_contains_double_equals(
     tmp_path: Path,
 ) -> None:
