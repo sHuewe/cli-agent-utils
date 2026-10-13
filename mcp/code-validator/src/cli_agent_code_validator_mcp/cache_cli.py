@@ -170,18 +170,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=1800,
         help="Timeout per pip wheel command in seconds.",
     )
-    for cmd in ("prepare-maven", "prepare-gradle", "prepare-python"):
-        selected = {"prepare-maven": prepare, "prepare-gradle": prepare_gradle,
-                    "prepare-python": prepare_python}[cmd]
-        selected.add_argument("--executor", choices=("host", "docker"),
-                              default="host", help="Preparation backend (default: host).")
-        selected.add_argument("--image", help="Docker image tag or digest; required with --executor docker.")
-        selected.add_argument("--no-user-config", action="store_true",
-                              help="Do not copy selected user package manager settings into Docker.")
-        selected.add_argument("--wsl", action="store_true",
-                              help="Use Docker in WSL (Docker executor only).")
-        selected.add_argument("--wsl-distribution", default=None,
-                              help="Specific WSL distribution for Docker.")
+    prepare_python.add_argument("--executor", choices=("host", "docker"), default="host",
+                                help="Python wheel preparation backend (default: host).")
+    prepare_python.add_argument("--image",
+                                help="Docker image tag or digest, required for Python Docker preparation.")
+    prepare_python.add_argument("--no-user-config", action="store_true",
+                                help="Do not copy selected pip settings into Docker.")
+    prepare_python.add_argument("--wsl", action="store_true",
+                                help="Run Docker CLI in WSL (Docker executor only).")
+    prepare_python.add_argument("--wsl-distribution", default=None,
+                                help="WSL distribution for Docker; requires --wsl.")
     return parser
 
 
@@ -583,34 +581,30 @@ def _run_python(command: list[str], *, cwd: Path, timeout: int) -> None:
 def main() -> None:
     args = build_parser().parse_args()
     try:
-        if args.executor == "docker":
-            if args.wsl_distribution and not args.wsl:
-                raise ValueError("--wsl-distribution benötigt --wsl.")
-            if not args.image:
-                raise ValueError("--executor docker benötigt --image.")
-            if args.command == "prepare-python" and args.python_command != sys.executable:
-                raise ValueError("--python-command ist mit --executor docker nicht kompatibel.")
-            if args.command == "prepare-maven" and args.maven_command != "mvn":
-                raise ValueError("--maven-command ist mit --executor docker nicht kompatibel.")
-            if args.command == "prepare-gradle" and args.gradle_command is not None:
-                raise ValueError("--gradle-command ist mit --executor docker nicht kompatibel.")
-            from .docker_prepare import prepare_in_docker
-            cache_name = args.command.removeprefix("prepare-")
-            root = _resolve_cache_root(cache_name, explicit=args.cache_root,
-                                       target=args.target)
-            identity = _project_identity_for_target(args.project, args.target)
-            entry = prepare_in_docker(
-                cache_name, args.project, root, image=args.image,
-                timeout=args.timeout, project_identity=identity,
-                use_user_config=not args.no_user_config,
-                gradle_user_home=getattr(args, "source_gradle_user_home", None),
-                wsl=args.wsl, wsl_distribution=args.wsl_distribution,
-            )
-            print(f"{cache_name} dependency key: {entry.key}")
-            print("Cache ready for offline validator use.")
-            return
-        if args.image or args.no_user_config or args.wsl or args.wsl_distribution:
-            raise ValueError("Docker-Optionen benötigen --executor docker.")
+        if args.command == "prepare-python":
+            if args.executor == "docker":
+                if args.wsl_distribution and not args.wsl:
+                    raise ValueError("--wsl-distribution benötigt --wsl.")
+                if not args.image:
+                    raise ValueError("--executor docker benötigt --image.")
+                if args.python_command != sys.executable:
+                    raise ValueError("--python-command ist nur für Host-Prepare verfügbar.")
+                from .docker_prepare import prepare_python_in_docker
+                root = _resolve_cache_root("python", explicit=args.cache_root,
+                                           target=args.target)
+                identity = _project_identity_for_target(args.project, args.target)
+                entry = prepare_python_in_docker(
+                    args.project, root, image=args.image,
+                    timeout=args.timeout, project_identity=identity,
+                    use_user_config=not args.no_user_config,
+                    wsl=args.wsl, wsl_distribution=args.wsl_distribution,
+                )
+                print(f"Python dependency key: {entry.key}")
+                print(f"Wheel cache: {entry.wheels}")
+                print("Cache ready for offline validator use.")
+                return
+            if args.image or args.no_user_config or args.wsl or args.wsl_distribution:
+                raise ValueError("Docker-Optionen benötigen --executor docker.")
         if args.command == "prepare-maven":
             cache_root = _resolve_cache_root(
                 "maven",
