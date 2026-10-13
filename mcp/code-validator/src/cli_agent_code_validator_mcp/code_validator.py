@@ -21,7 +21,7 @@ from .code_validator_redaction import (
     discover_secret_values,
 )
 from .code_validator_snapshot import create_project_snapshot
-from .code_validator_types import CodeValidationError, CodeValidatorSettings
+from .code_validator_types import CodeValidationError, CodeValidatorSettings, PublicValidationError
 
 _JAVA_SELECTOR = re.compile(r"^[A-Za-z0-9_.$*#\[\],-]+$")
 _MAX_SELECTOR_CHARS = 512
@@ -48,27 +48,27 @@ class DockerCodeValidator:
 
     def _resolve_project(self, project_path: str) -> Path:
         if not isinstance(project_path, str) or not project_path.strip():
-            raise CodeValidationError("Der Projektpfad darf nicht leer sein.")
+            raise PublicValidationError("Der Projektpfad darf nicht leer sein.")
         candidate = Path(project_path)
         windows = PureWindowsPath(project_path)
         if candidate.is_absolute() or windows.is_absolute() or windows.drive:
-            raise CodeValidationError(
+            raise PublicValidationError(
                 "Der Projektpfad muss relativ zum Workspace sein."
             )
         if ".." in PurePath(project_path).parts or ".." in windows.parts:
-            raise CodeValidationError(
+            raise PublicValidationError(
                 "Der Projektpfad darf '..' nicht enthalten."
             )
         resolved = (self.workspace / candidate).resolve()
         try:
             resolved.relative_to(self.workspace)
         except ValueError as exc:
-            raise CodeValidationError(
+            raise PublicValidationError(
                 "Der Projektpfad verweist außerhalb des Workspaces."
             ) from exc
         if not resolved.is_dir():
-            raise CodeValidationError(
-                f"Projekt existiert nicht: {project_path!r}"
+            raise PublicValidationError(
+                "Projektverzeichnis im Workspace nicht gefunden."
             )
         return resolved
 
@@ -77,26 +77,26 @@ class DockerCodeValidator:
         if selector is None:
             return None
         if not isinstance(selector, str):
-            raise CodeValidationError("Der Test-Selector muss ein String sein.")
+            raise PublicValidationError("Der Test-Selector muss ein String sein.")
         value = selector.strip()
         if not value:
-            raise CodeValidationError("Der Test-Selector darf nicht leer sein.")
+            raise PublicValidationError("Der Test-Selector darf nicht leer sein.")
         if len(value) > _MAX_SELECTOR_CHARS:
-            raise CodeValidationError("Der Test-Selector ist zu lang.")
+            raise PublicValidationError("Der Test-Selector ist zu lang.")
         if any(ord(char) < 32 or ord(char) == 127 for char in value):
-            raise CodeValidationError(
+            raise PublicValidationError(
                 "Der Test-Selector darf keine Steuerzeichen enthalten."
             )
         if java:
             if value.startswith("-"):
-                raise CodeValidationError(
+                raise PublicValidationError(
                     "Java-Test-Selectoren dürfen keine Build-Tool-Optionen sein."
                 )
             if not _JAVA_SELECTOR.fullmatch(value):
-                raise CodeValidationError("Ungültiger Java-Test-Selector.")
+                raise PublicValidationError("Ungültiger Java-Test-Selector.")
             return value
         if value.startswith(("-", "@")):
-            raise CodeValidationError(
+            raise PublicValidationError(
                 "Python-Test-Selectoren dürfen keine pytest-Optionen oder "
                 "Argument-Dateien sein."
             )
@@ -110,7 +110,7 @@ class DockerCodeValidator:
             or ".." in path_candidate.parts
             or ".." in windows_path.parts
         ):
-            raise CodeValidationError(
+            raise PublicValidationError(
                 "Python-Test-Selector muss innerhalb des Projekts liegen."
             )
         return value
@@ -127,18 +127,18 @@ class DockerCodeValidator:
         )
         if requested == "maven":
             if not has_maven:
-                raise CodeValidationError(
+                raise PublicValidationError(
                     "build_system='maven' benötigt eine pom.xml."
                 )
             return "maven"
         if requested == "gradle":
             if not has_gradle:
-                raise CodeValidationError(
+                raise PublicValidationError(
                     "build_system='gradle' benötigt build.gradle oder build.gradle.kts."
                 )
             return "gradle"
         if has_maven and has_gradle:
-            raise CodeValidationError(
+            raise PublicValidationError(
                 "Java-Buildsystem ist mehrdeutig; setze build_system auf "
                 "'maven' oder 'gradle'."
             )
@@ -146,7 +146,7 @@ class DockerCodeValidator:
             return "maven"
         if has_gradle:
             return "gradle"
-        raise CodeValidationError(
+        raise PublicValidationError(
             "Kein unterstütztes Java-Buildsystem gefunden "
             "(pom.xml/build.gradle/build.gradle.kts)."
         )
@@ -988,7 +988,7 @@ class DockerCodeValidator:
     ) -> dict[str, Any]:
         project = self._resolve_project(project_path)
         if build_system not in {"auto", "maven", "gradle"}:
-            raise CodeValidationError(
+            raise PublicValidationError(
                 "build_system muss 'auto', 'maven' oder 'gradle' sein."
             )
         selected = self._detect_java_build_system(project, build_system)
@@ -1087,7 +1087,7 @@ class DockerCodeValidator:
 
         project = self._resolve_project(project_path)
         if build_system not in {"auto", "maven", "gradle"}:
-            raise CodeValidationError(
+            raise PublicValidationError(
                 "build_system muss 'auto', 'maven' oder 'gradle' sein."
             )
         selected = self._detect_java_build_system(project, build_system)
@@ -1102,7 +1102,7 @@ class DockerCodeValidator:
         """Build/package a Maven project offline without executing tests."""
         project = self._resolve_project(project_path)
         if not (project / "pom.xml").is_file():
-            raise CodeValidationError(
+            raise PublicValidationError(
                 "run_maven_build benötigt eine pom.xml."
             )
 
@@ -1163,7 +1163,7 @@ class DockerCodeValidator:
             (project / "build.gradle").is_file()
             or (project / "build.gradle.kts").is_file()
         ):
-            raise CodeValidationError(
+            raise PublicValidationError(
                 "run_gradle_build benötigt build.gradle oder build.gradle.kts."
             )
 

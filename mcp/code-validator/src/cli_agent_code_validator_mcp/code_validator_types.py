@@ -9,6 +9,14 @@ class CodeValidationError(RuntimeError):
     """A code-validator request or sandbox setup is invalid."""
 
 
+class PublicValidationError(CodeValidationError):
+    """A static, path-free input-validation error safe for MCP output.
+
+    Do not pass user data, host paths, or underlying exception details.
+    """
+
+
+
 _IMAGE_DIGEST = re.compile(r"^.+@sha256:[0-9a-f]{64}$", re.IGNORECASE)
 
 

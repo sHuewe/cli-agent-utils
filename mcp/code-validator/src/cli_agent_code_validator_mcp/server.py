@@ -14,7 +14,7 @@ from .gradle_cache import default_gradle_cache_root
 from .maven_cache import default_maven_cache_root
 from .python_cache import default_python_cache_root
 from .code_validator import DockerCodeValidator
-from .code_validator_types import CodeValidationError, CodeValidatorSettings
+from .code_validator_types import CodeValidationError, CodeValidatorSettings, PublicValidationError
 
 WORKSPACE_ACCESS_ENV = "CLI_AGENT_WORKSPACE_ACCESS"
 WORKSPACE_DIRECTORY_ENV = "CLI_AGENT_WORKSPACE_DIRECTORY"
@@ -71,6 +71,12 @@ def _safe_tool_call(action: Callable[[], dict[str, Any]]) -> CallToolResult:
     """Do not let raw exceptions expose host paths in MCP error responses."""
     try:
         return _tool_result(action())
+    except PublicValidationError as exc:
+        return _tool_result({
+            "success": False,
+            "reason": "invalid_request",
+            "message": str(exc),
+        })
     except CodeValidationError:
         return _tool_result({
             "success": False,
