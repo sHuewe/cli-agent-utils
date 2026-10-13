@@ -9,6 +9,7 @@ import subprocess  # nosec B404
 import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 
 from .cache_identity import project_cache_key
 from .code_validator_types import CodeValidationError, PublicValidationError
@@ -22,6 +23,9 @@ _INCLUDE_RE = re.compile(
 )
 _FROZEN_REQUIREMENT_RE = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9._-]*==[A-Za-z0-9][A-Za-z0-9.!+_-]*$"
+)
+_LOCAL_FILE_REQUIREMENT_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*\\s+@\\s+(file:///[^\\s]+)$"
 )
 
 
@@ -252,8 +256,47 @@ def _strip_requirement_comment(line: str) -> str:
     return line.strip()
 
 
-def _validate_frozen_requirement_line(relative: str, line: str) -> None:
-    """Validate the deliberately small requirements.txt subset supported in v1."""
+def _is_local_source_requirement(value: str) -> bool:
+    """Recognize explicit local sources without resolving them on the validator host.
+
+    Source paths may be outside the project during trusted host preparation.
+    The offline validator only checks the requirements syntax; it installs
+    wheels from the prepared cache and never dereferences source paths.
+    """
+    if "${" in value:
+        return False
+
+    direct_reference = _LOCAL_FILE_REQUIREMENT_RE.fullmatch(value)
+    if direct_reference:
+        parsed = urlsplit(direct_reference.group(1))
+        return (
+            parsed.scheme == "file"
+            and not parsed.netloc
+            and parsed.path.startswith("/")
+            and not parsed.query
+            and not parsed.fragment
+        )
+
+    # Explicit filesystem paths, never arbitrary pip URLs or options.
+    # Editable installs are intentionally excluded: their wheels may point
+    # back to source files absent from the offline test container.
+    if (
+        not value
+        or "==" in value
+        or any(character.isspace() for character in value)
+        or any(character in value for character in "\\\\:;?#$\"'")
+        or value.startswith(("-", "//"))
+    ):
+        return False
+    if value in {".", ".."}:
+        return True
+    if value.startswith(("./", "../", "/")):
+        return True
+    return "/" in value
+
+
+def _validate_requirement_line(relative: str, line: str) -> None:
+    """Allow pinned index packages or explicit local, non-editable sources."""
     candidate = _strip_requirement_comment(line)
     if not candidate:
         return
@@ -266,17 +309,21 @@ def _validate_frozen_requirement_line(relative: str, line: str) -> None:
         elif len(candidate) >= 2:
             option_name = candidate[:2]
         raise CodeValidationError(
-            "requirements.txt unterstützt im Code-Validator nur gepinnte "
-            "Pakete sowie -r/--requirement und -c/--constraint. "
+            "requirements.txt unterstützt nur gepinnte Pakete, lokale "
+            "Paketquellen sowie -r/--requirement und -c/--constraint. "
             f"Nicht unterstützte Option in {relative}: {option_name!r}"
         )
-    if _FROZEN_REQUIREMENT_RE.fullmatch(candidate) is None:
-        raise CodeValidationError(
-            "requirements.txt muss für den Code-Validator ausschließlich "
-            "eingefrorene Index-Abhängigkeiten im Format package==version "
-            "enthalten. Pfade, URLs, VCS-Referenzen und Marker werden nicht "
-            f"unterstützt ({relative})."
-        )
+    if (
+        _FROZEN_REQUIREMENT_RE.fullmatch(candidate) is not None
+        or _is_local_source_requirement(candidate)
+    ):
+        return
+    raise CodeValidationError(
+        "requirements.txt muss gepinnte Index-Abhängigkeiten (package==version) "
+        "oder explizite lokale Paketpfade/file-URLs enthalten. "
+        "Remote-URLs, VCS, editierbare Pakete und weitere pip-Optionen "
+        f"werden nicht unterstützt ({relative})."
+    )
 
 
 def _requirement_files(
@@ -341,7 +388,7 @@ def _requirement_files(
                 )
                 add(included)
                 continue
-            _validate_frozen_requirement_line(relative, line)
+            _validate_requirement_line(relative, line)
 
     add(root)
     return tuple(result[name] for name in sorted(result))
