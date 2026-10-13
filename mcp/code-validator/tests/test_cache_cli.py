@@ -1200,3 +1200,66 @@ def test_prepare_help_describes_both_python_executors() -> None:
     )
     assert arguments.image == "python:3.12"
     assert arguments.executor == "docker"
+
+
+def test_docker_cache_rejects_windows_drive_member(tmp_path: Path, monkeypatch) -> None:
+    import io
+    import tarfile
+    import subprocess
+    import pytest
+    from cli_agent_code_validator_mcp.docker_prepare import _copy_cache_archive
+
+    archive_path = tmp_path / "payload.tar"
+    with tarfile.open(archive_path, "w") as archive:
+        payload = b"not-in-cache"
+        item = tarfile.TarInfo("C:/outside/file")
+        item.size = len(payload)
+        archive.addfile(item, io.BytesIO(payload))
+
+    class FakeBackend:
+        def command(self, *args):
+            return ["fake", *args]
+
+    def fake_run(args, *, stdout, stderr, timeout, check):
+        stdout.write(archive_path.read_bytes())
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(
+        "cli_agent_code_validator_mcp.docker_prepare.subprocess.run",
+        fake_run,
+    )
+    with pytest.raises(ValueError, match="Ungültiger Pfad"):
+        _copy_cache_archive(
+            FakeBackend(), "demo", "/tmp/prepared", tmp_path / "cache",
+            timeout=10,
+        )
+
+
+def test_mac_pip_config_location(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_prepare
+
+    home = tmp_path / "home"
+    config = home / "Library" / "Application Support" / "pip"
+    config.mkdir(parents=True)
+    (config / "pip.conf").write_text("[global]\\n", encoding="utf-8")
+    monkeypatch.delenv("PIP_CONFIG_FILE", raising=False)
+    monkeypatch.setattr(docker_prepare.sys, "platform", "darwin")
+    monkeypatch.setattr(docker_prepare.Path, "home", lambda: home)
+    assert docker_prepare._pip_user_config() == config / "pip.conf"
+
+
+def test_docker_preparation_rejects_wsl_distribution_without_wsl(
+    monkeypatch,
+) -> None:
+    import sys
+    import pytest
+    from cli_agent_code_validator_mcp import cache_cli
+
+    monkeypatch.setattr(sys, "argv", [
+        "cli-agent-dependency-cache", "prepare-maven", ".",
+        "--executor", "docker", "--image", "maven:3.9",
+        "--wsl-distribution", "Ubuntu",
+    ])
+    with pytest.raises(SystemExit) as error:
+        cache_cli.main()
+    assert error.value.code == 1
