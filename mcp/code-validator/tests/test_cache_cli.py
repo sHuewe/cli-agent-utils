@@ -1060,3 +1060,59 @@ def test_dependency_cache_cli_program_name() -> None:
     assert parser.prog == "cli-agent-dependency-cache"
     for command in ("prepare-python", "prepare-maven", "prepare-gradle"):
         assert parser.parse_args([command, "."]).command == command
+
+def test_docker_prepare_cli_requires_image() -> None:
+    import pytest
+    from cli_agent_code_validator_mcp.cache_cli import build_parser
+
+    args = build_parser().parse_args(
+        ["prepare-python", ".", "--executor", "docker"]
+    )
+    assert args.executor == "docker"
+    assert args.image is None
+
+
+def test_docker_python_plan_rejects_external_source_only_in_docker(
+    tmp_path: Path,
+) -> None:
+    import pytest
+    from cli_agent_code_validator_mcp.python_cache import python_dependency_plan
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "requirements.txt").write_text("../shared-lib\\n", encoding="utf-8")
+
+    assert python_dependency_plan(project).has_dependencies
+    with pytest.raises(Exception, match="Host-Prepare"):
+        python_dependency_plan(project, allow_local_sources=False)
+
+
+def test_docker_prepare_config_is_selective(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp.docker_prepare import _user_configuration
+
+    home = tmp_path / "home"
+    m2 = home / ".m2"
+    m2.mkdir(parents=True)
+    (m2 / "settings.xml").write_text("<settings/>", encoding="utf-8")
+    (m2 / "private.txt").write_text("should-not-transfer", encoding="utf-8")
+    monkeypatch.setattr(
+        "cli_agent_code_validator_mcp.docker_prepare.Path.home",
+        lambda: home,
+    )
+    names = _user_configuration(
+        "maven", gradle_user_home=None, include_user_config=True
+    )
+    assert set(names) == {"maven/settings.xml"}
+    assert _user_configuration(
+        "maven", gradle_user_home=None, include_user_config=False
+    ) == {}
+
+
+def test_docker_prepare_rejects_non_pinned_images(tmp_path: Path) -> None:
+    import pytest
+    from cli_agent_code_validator_mcp.docker_prepare import prepare_in_docker
+
+    with pytest.raises(ValueError, match="sha256"):
+        prepare_in_docker(
+            "maven", tmp_path, tmp_path / "cache", image="maven:latest"
+        )
