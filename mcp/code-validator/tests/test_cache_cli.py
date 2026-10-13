@@ -1080,7 +1080,7 @@ def test_docker_python_plan_rejects_external_source_only_in_docker(
 
     project = tmp_path / "project"
     project.mkdir()
-    (project / "requirements.txt").write_text("../shared-lib\\n", encoding="utf-8")
+    (project / "requirements.txt").write_text("../shared-lib\n", encoding="utf-8")
 
     assert python_dependency_plan(project).has_dependencies
     with pytest.raises(Exception, match="Host-Prepare"):
