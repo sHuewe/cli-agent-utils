@@ -34,8 +34,8 @@ _MAX_DISCOVERED_SECRET_CHARS = 1024 * 1024
 _MAX_STRUCTURED_NODES = 100_000
 _SUPPRESSED_OUTPUT = (
     "[Testausgabe unterdrückt: Die Secret-Erkennung konnte nicht vollständig "
-    "und sicher durchgeführt werden. Der Test wurde ausgeführt, aber seine "
-    "Ausgabe wird nicht an das Modell zurückgegeben.]"
+    "und sicher durchgeführt werden. Diagnostische Ausgaben werden "
+    "nicht an das Modell zurückgegeben.]"
 )
 
 
@@ -270,8 +270,15 @@ def discover_secret_values(
             content = extracted.read(max_file_bytes + 1)
             if len(content) > max_file_bytes:
                 continue
-            for candidate in _parse_structured_secret_values(path, content):
-                add(candidate)
+            try:
+                for candidate in _parse_structured_secret_values(path, content):
+                    add(candidate)
+            except SecretDiscoveryLimitError as exc:
+                # The file name is for operator diagnostics only, never a
+                # model-visible output when discovery has failed.
+                raise SecretDiscoveryLimitError(
+                    f"Secret-Erkennung in {member.name} fehlgeschlagen: {exc}"
+                ) from exc
 
     return tuple(sorted(values, key=len, reverse=True))
 
@@ -413,6 +420,7 @@ class OutputRedactor:
         secret_values: Iterable[str] = (),
         *,
         suppress_output: bool = False,
+        suppression_reason: str | None = None,
     ) -> None:
         values = {
             value
@@ -421,6 +429,7 @@ class OutputRedactor:
         }
         self._matcher = _ExactSecretMatcher(values)
         self._suppress_output = suppress_output
+        self.suppression_reason = suppression_reason
 
     @property
     def suppresses_output(self) -> bool:
