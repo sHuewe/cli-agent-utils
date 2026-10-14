@@ -1234,3 +1234,74 @@ def test_docker_pip_macos_xdg_data_home(tmp_path: Path, monkeypatch) -> None:
     assert docker_prepare._pip_user_config() == xdg_config
     xdg_config.unlink()
     assert docker_prepare._pip_user_config() != library_config
+
+
+def test_maven_metadata_readonly_windows_retry(tmp_path: Path, monkeypatch) -> None:
+    import stat
+    from cli_agent_code_validator_mcp import maven_cache
+
+    repo = tmp_path / "repository"
+    repo.mkdir()
+    artifact = repo / "artifact.jar"
+    artifact.write_bytes(b"jar")
+    metadata = repo / "_remote.repositories"
+    metadata.write_text("origin")
+    monkeypatch.setattr(maven_cache, "_WINDOWS", True)
+    original = Path.unlink
+    attempts = []
+
+    def fake_unlink(self, *args, **kwargs):
+        if self == metadata:
+            attempts.append(self.stat().st_mode)
+            if len(attempts) == 1:
+                raise PermissionError(13, "permission denied", str(self))
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fake_unlink)
+    metadata.chmod(stat.S_IREAD)
+    maven_cache.sanitize_repository_for_offline_use(repo)
+    assert len(attempts) == 2
+    assert not metadata.exists()
+    assert artifact.read_bytes() == b"jar"
+
+
+def test_maven_metadata_failure_reports_file_and_cause(tmp_path: Path, monkeypatch) -> None:
+    import pytest
+    from cli_agent_code_validator_mcp import maven_cache
+
+    repo = tmp_path / "repository"
+    repo.mkdir()
+    metadata = repo / "resolver-status.properties"
+    metadata.write_text("metadata")
+
+    def fail_unlink(_path):
+        raise PermissionError(13, "locked by process", str(metadata))
+
+    monkeypatch.setattr(maven_cache, "_unlink_maven_metadata", fail_unlink)
+    with pytest.raises(Exception, match="resolver-status.properties.*locked by process"):
+        maven_cache.sanitize_repository_for_offline_use(repo)
+    assert metadata.exists()
+
+
+def test_maven_failed_prepare_warns_on_cleanup_error(tmp_path: Path, monkeypatch, capsys) -> None:
+    import pytest
+    from cli_agent_code_validator_mcp import cache_cli
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>")
+    cache = tmp_path / "cache"
+    monkeypatch.setattr(cache_cli.shutil, "which", lambda command: command)
+
+    def fake_maven(command, *, cwd, timeout):
+        raise RuntimeError("Maven failed")
+
+    def fake_cleanup(path):
+        raise PermissionError(13, "file locked", str(path))
+
+    monkeypatch.setattr(cache_cli, "_run", fake_maven)
+    monkeypatch.setattr(cache_cli, "remove_maven_temporary_cache", fake_cleanup)
+    with pytest.raises(RuntimeError, match="Maven failed"):
+        cache_cli.prepare_maven(project, cache)
+    captured = capsys.readouterr()
+    assert "Temporärer Maven-Cache" in captured.err
+    assert "file locked" in captured.err
