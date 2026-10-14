@@ -736,7 +736,7 @@ class DockerCodeValidator:
                             "unvollständig bzw. veraltet ist."
                         )
                         if not redactor.suppresses_output:
-                        result_payload["message_to_user"] = refresh_message
+                            result_payload["message_to_user"] = refresh_message
                     return result_payload
 
             try:
