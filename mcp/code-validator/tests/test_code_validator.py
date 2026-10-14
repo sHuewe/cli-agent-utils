@@ -2107,3 +2107,23 @@ def test_user_diagnostic_includes_exception_chain_only_in_meta() -> None:
     assert "PermissionError" in details
     assert "C:/private/cache.jar" in details
     assert "Stelle:" in details
+
+
+def test_user_diagnostics_handles_broken_exception_str() -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    class BrokenException(Exception):
+        def __str__(self):
+            raise RuntimeError("stringification failed")
+
+    def fails() -> dict:
+        raise BrokenException()
+
+    wire = _wire_tool_result(_safe_tool_call(fails))
+    assert wire["structuredContent"] == {
+        "success": False,
+        "reason": "internal_error",
+        "message": "Der Code-Validator konnte die Anfrage nicht abschließen.",
+    }
+    assert "stringification failed" not in wire["content"][0]["text"]
+    assert "BrokenException" in wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
