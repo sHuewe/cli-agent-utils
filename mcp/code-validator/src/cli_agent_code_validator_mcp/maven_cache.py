@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,39 @@ from .code_validator_types import CodeValidationError
 
 _CACHE_SCHEMA = "cli-agent-maven-cache-v5"
 _MAVEN_TRANSIENT_FILES = {"_remote.repositories", "resolver-status.properties"}
+_WINDOWS = os.name == "nt"
+
+
+def _unlink_maven_metadata(path: Path) -> None:
+    """Retry a read-only Windows metadata file exactly once, without following links."""
+    try:
+        path.unlink()
+    except PermissionError:
+        if not _WINDOWS or path.is_symlink():
+            raise
+        mode = path.stat(follow_symlinks=False).st_mode
+        if not stat.S_ISREG(mode) or mode & stat.S_IWRITE:
+            raise
+        # Windows cannot unlink files with the read-only attribute. Only change
+        # the selected metadata file, not downloaded artifacts or directories.
+        path.chmod(mode | stat.S_IWRITE)
+        path.unlink()
+
+
+def remove_maven_temporary_cache(directory: Path) -> None:
+    """Remove a temporary repository even if Maven made files read-only on Windows."""
+    def onerror(function, name: str, exc_info) -> None:
+        original = exc_info[1]
+        path = Path(name)
+        if not _WINDOWS or not isinstance(original, PermissionError) or path.is_symlink():
+            raise original
+        mode = path.stat(follow_symlinks=False).st_mode
+        if not stat.S_ISREG(mode) or mode & stat.S_IWRITE:
+            raise original
+        path.chmod(mode | stat.S_IWRITE)
+        function(name)
+
+    shutil.rmtree(directory, onerror=onerror)
 
 
 def default_maven_cache_root() -> Path:
@@ -172,11 +206,13 @@ def sanitize_repository_for_offline_use(repository: Path) -> None:
                         or entry.name.endswith(".lastUpdated")
                     ):
                         try:
-                            path.unlink()
+                            _unlink_maven_metadata(path)
                         except OSError as exc:
+                            # Local, operator-invoked CLI only: include the
+                            # failing file and OS reason for actionable diagnosis.
                             raise CodeValidationError(
                                 "Maven-Repository-Metadaten konnten nicht "
-                                "bereinigt werden."
+                                f"bereinigt werden: {path} ({exc})."
                             ) from exc
                 else:
                     raise CodeValidationError(
