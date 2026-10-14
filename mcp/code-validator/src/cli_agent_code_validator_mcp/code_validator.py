@@ -797,14 +797,19 @@ class DockerCodeValidator:
                         "HOME=/tmp/home",
                         "--env",
                         "PYTHONPATH=/tmp/python-deps:/work:/work/src",
+                        "--interactive",
                         container_name,
                         "sh",
-                        "-c",
-                        'exec "$@" > /output/test.log 2>&1',
-                        "cli-agent-test-command",
+                        "-s",
+                        "--",
                         *command,
                     ],
                     timeout=self.settings.test_timeout_seconds,
+                    # Pipe the fixed runner script over stdin instead of passing
+                    # it as an argv string to wsl.exe. An intermediate WSL shell
+                    # must not expand "$@" before the container's shell sees it.
+                    # Arguments stay distinct; no model/project text is eval'd.
+                    input_bytes=b'exec "$@" > /output/test.log 2>&1' + bytes([10]),
                 )
             except subprocess.TimeoutExpired:
                 result_payload = self._failure(
