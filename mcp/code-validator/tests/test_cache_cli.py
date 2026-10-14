@@ -1305,3 +1305,27 @@ def test_maven_failed_prepare_warns_on_cleanup_error(tmp_path: Path, monkeypatch
     captured = capsys.readouterr()
     assert "Temporärer Maven-Cache" in captured.err
     assert "file locked" in captured.err
+
+
+def test_maven_metadata_disappearing_during_cleanup_is_ok(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import maven_cache
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    artifact = repository / "demo.jar"
+    artifact.write_bytes(b"artifact")
+    metadata = repository / "_remote.repositories"
+    metadata.write_text("origin")
+
+    real_unlink = Path.unlink
+
+    def concurrent_unlink(path, *args, **kwargs):
+        if path == metadata:
+            real_unlink(path)
+            raise FileNotFoundError(2, "No such file or directory", str(path))
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", concurrent_unlink)
+    maven_cache.sanitize_repository_for_offline_use(repository)
+    assert artifact.read_bytes() == b"artifact"
+    assert not metadata.exists()
