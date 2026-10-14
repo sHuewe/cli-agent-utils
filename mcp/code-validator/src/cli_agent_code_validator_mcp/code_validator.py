@@ -735,6 +735,7 @@ class DockerCodeValidator:
                             "weil benötigte Dependencies fehlen oder der Cache "
                             "unvollständig bzw. veraltet ist."
                         )
+                        if not redactor.suppresses_output:
                         result_payload["message_to_user"] = refresh_message
                     return result_payload
 
@@ -864,7 +865,8 @@ class DockerCodeValidator:
                         "weil benötigte Dependencies fehlen oder der Cache "
                         "unvollständig bzw. veraltet ist."
                     )
-                    result_payload["message_to_user"] = refresh_message
+                    if not redactor.suppresses_output:
+                        result_payload["message_to_user"] = refresh_message
             return result_payload
         except subprocess.TimeoutExpired:
             result_payload = self._failure(
