@@ -1360,7 +1360,9 @@ def test_maven_metadata_disappears_before_entry_stat(tmp_path: Path, monkeypatch
             self._scan = real_scandir(path)
         def __enter__(self):
             self._scan.__enter__()
-            return iter(EntryProxy(entry) for entry in self._scan)
+            return self
+        def __iter__(self):
+            return (EntryProxy(entry) for entry in self._scan)
         def __exit__(self, *args):
             return self._scan.__exit__(*args)
 
