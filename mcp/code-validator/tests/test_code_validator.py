@@ -2127,3 +2127,54 @@ def test_user_diagnostics_handles_broken_exception_str() -> None:
     }
     assert "stringification failed" not in wire["content"][0]["text"]
     assert "BrokenException" in wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
+
+
+def test_suppressed_secret_discovery_setup_failure_is_user_only(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    def fail_discovery(*args, **kwargs):
+        raise SecretDiscoveryLimitError("Secret-Erkennung in config.properties fehlgeschlagen")
+    monkeypatch.setattr(
+        "cli_agent_code_validator_mcp.code_validator.discover_secret_values",
+        fail_discovery,
+    )
+
+    class FailedDocker(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            if list(arguments)[0] == "version":
+                return DockerCommandResult(1, "", "private docker setup reason")
+            return super().run(arguments, timeout=timeout, input_bytes=input_bytes)
+
+    validator = DockerCodeValidator(tmp_path, settings(), backend=FailedDocker())
+    wire = _wire_tool_result(_safe_tool_call(lambda: validator.run_java_build(".")))
+    assert wire["structuredContent"]["success"] is False
+    assert "private docker setup reason" not in str(wire["structuredContent"])
+    assert "private docker setup reason" not in wire["content"][0]["text"]
+    private = wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
+    assert "config.properties" in private
+    assert "private docker setup reason" in private
+
+
+def test_suppressed_secret_discovery_preserves_build_log_in_user_meta(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    def fail_discovery(*args, **kwargs):
+        raise SecretDiscoveryLimitError("Zu viele Secret-Werte")
+    monkeypatch.setattr(
+        "cli_agent_code_validator_mcp.code_validator.discover_secret_values",
+        fail_discovery,
+    )
+    backend = FakeBackend(exec_output="private build failure")
+    validator = DockerCodeValidator(tmp_path, settings(), backend=backend)
+    wire = _wire_tool_result(_safe_tool_call(lambda: validator.run_java_build(".")))
+    assert "private build failure" not in str(wire["structuredContent"])
+    assert "private build failure" not in wire["content"][0]["text"]
+    private = wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
+    assert "Zu viele Secret-Werte" in private
+    assert "private build failure" in private
