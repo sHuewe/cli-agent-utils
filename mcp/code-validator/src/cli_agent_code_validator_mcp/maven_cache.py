@@ -19,6 +19,9 @@ def _unlink_maven_metadata(path: Path) -> None:
     """Retry a read-only Windows metadata file exactly once, without following links."""
     try:
         path.unlink()
+    except FileNotFoundError:
+        # Another process removed the transient metadata after directory scan.
+        return
     except PermissionError:
         if not _WINDOWS or path.is_symlink():
             raise
