@@ -2203,7 +2203,7 @@ def test_suppressed_cache_failure_includes_refresh_hint_in_user_meta(
     class FailingBuild(FakeBackend):
         def run(self, arguments, *, timeout, input_bytes=None):
             args = list(arguments)
-            if args[0] == "exec" and "sh" in args and "-c" in args:
+            if args[0] == "exec" and "sh" in args and "-s" in args:
                 return DockerCommandResult(1, "", "")
             if args[0] == "exec" and "cat" in args:
                 return DockerCommandResult(
@@ -2264,3 +2264,23 @@ def test_maven_stream_error_cause_is_user_only(tmp_path: Path) -> None:
     assert "ValueError" in diagnostic
     assert "PermissionError" in diagnostic
     assert "C:/private/cache/foo.jar" in diagnostic
+
+
+def test_validator_streams_fixed_runner_script_through_stdin(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    backend = FakeBackend(exec_output="BUILD SUCCESS")
+    result = DockerCodeValidator(tmp_path, settings(), backend=backend).run_java_build(".")
+    assert result["success"] is True
+    calls = [
+        (args, payload) for args, payload in backend.calls
+        if args[0] == "exec" and "-s" in args and "sh" in args
+    ]
+    assert len(calls) == 1
+    args, payload = calls[0]
+    assert args[args.index("sh") + 1:args.index("sh") + 3] == ["-s", "--"]
+    assert args[-6:] == [
+        "mvn", "-o", "-B", "-Dmaven.repo.local=/tmp/m2", "-DskipTests", "package"
+    ]
+    assert "--interactive" in args
+    assert payload == b'exec "$@" > /output/test.log 2>&1' + bytes([10])
+    assert "-c" not in args
