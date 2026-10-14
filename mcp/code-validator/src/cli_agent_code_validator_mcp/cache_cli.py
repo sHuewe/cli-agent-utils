@@ -23,6 +23,7 @@ from .maven_cache import (
     MavenCacheEntry,
     default_maven_cache_root,
     maven_dependency_key,
+    remove_maven_temporary_cache,
     sanitize_repository_for_offline_use,
     write_ready_metadata,
 )
@@ -311,7 +312,14 @@ def prepare_maven(
         temporary.replace(entry.directory)
         return entry
     except BaseException:
-        shutil.rmtree(temporary, ignore_errors=True)
+        try:
+            remove_maven_temporary_cache(temporary)
+        except OSError as cleanup_error:
+            print(
+                f"Warnung: Temporärer Maven-Cache konnte nicht vollständig "
+                f"entfernt werden: {temporary} ({cleanup_error})",
+                file=sys.stderr,
+            )
         raise
 
 
