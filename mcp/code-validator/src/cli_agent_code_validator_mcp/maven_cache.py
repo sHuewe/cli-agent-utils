@@ -15,23 +15,29 @@ _MAVEN_TRANSIENT_FILES = {"_remote.repositories", "resolver-status.properties"}
 _WINDOWS = os.name == "nt"
 
 
+def _is_maven_transient_name(name: str) -> bool:
+    return name in _MAVEN_TRANSIENT_FILES or name.endswith(".lastUpdated")
+
+
 def _unlink_maven_metadata(path: Path) -> None:
-    """Retry a read-only Windows metadata file exactly once, without following links."""
+    """Remove transient metadata; tolerate disappearance at any cleanup stage."""
     try:
-        path.unlink()
+        try:
+            path.unlink()
+        except PermissionError:
+            if not _WINDOWS or path.is_symlink():
+                raise
+            mode = path.stat(follow_symlinks=False).st_mode
+            if not stat.S_ISREG(mode) or mode & stat.S_IWRITE:
+                raise
+            # Windows cannot unlink files with the read-only attribute. Only
+            # change the selected metadata file, never other cache artifacts.
+            path.chmod(mode | stat.S_IWRITE)
+            path.unlink()
     except FileNotFoundError:
-        # Another process removed the transient metadata after directory scan.
+        # A concurrent process may remove resolver metadata at any step:
+        # initial unlink, stat, chmod or the retrying unlink.
         return
-    except PermissionError:
-        if not _WINDOWS or path.is_symlink():
-            raise
-        mode = path.stat(follow_symlinks=False).st_mode
-        if not stat.S_ISREG(mode) or mode & stat.S_IWRITE:
-            raise
-        # Windows cannot unlink files with the read-only attribute. Only change
-        # the selected metadata file, not downloaded artifacts or directories.
-        path.chmod(mode | stat.S_IWRITE)
-        path.unlink()
 
 
 def remove_maven_temporary_cache(directory: Path) -> None:
@@ -193,6 +199,13 @@ def sanitize_repository_for_offline_use(repository: Path) -> None:
                 path = Path(entry.path)
                 try:
                     mode = entry.stat(follow_symlinks=False).st_mode
+                except FileNotFoundError as exc:
+                    if _is_maven_transient_name(entry.name):
+                        # Metadata was removed between scandir and stat.
+                        continue
+                    raise CodeValidationError(
+                        "Ein Maven-Cache-Eintrag konnte nicht geprüft werden."
+                    ) from exc
                 except OSError as exc:
                     raise CodeValidationError(
                         "Ein Maven-Cache-Eintrag konnte nicht geprüft werden."
@@ -204,10 +217,7 @@ def sanitize_repository_for_offline_use(repository: Path) -> None:
                 if stat.S_ISDIR(mode):
                     walk(path)
                 elif stat.S_ISREG(mode):
-                    if (
-                        entry.name in _MAVEN_TRANSIENT_FILES
-                        or entry.name.endswith(".lastUpdated")
-                    ):
+                    if _is_maven_transient_name(entry.name):
                         try:
                             _unlink_maven_metadata(path)
                         except OSError as exc:
