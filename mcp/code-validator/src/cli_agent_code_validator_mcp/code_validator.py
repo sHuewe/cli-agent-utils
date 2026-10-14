@@ -383,11 +383,12 @@ class DockerCodeValidator:
                 max_file_bytes=self.settings.max_file_bytes,
             )
             redactor = OutputRedactor(discovered_secrets)
-        except SecretDiscoveryLimitError:
-            # Project configuration remains available inside the no-network
-            # sandbox, but output is fail-closed if bounded secret discovery
-            # cannot safely enumerate all candidate values.
-            redactor = OutputRedactor(suppress_output=True)
+        except SecretDiscoveryLimitError as exc:
+            # The model sees no output if secret discovery is incomplete.
+            # The operator sees the reason only through MCP user metadata.
+            redactor = OutputRedactor(
+                suppress_output=True, suppression_reason=str(exc)
+            )
         container_name = f"cli-agent-code-validator-{uuid.uuid4().hex[:12]}"
         created = False
         create_may_have_succeeded = False
@@ -839,6 +840,13 @@ class DockerCodeValidator:
                     "root_filesystem": "read-only",
                 },
             }
+            if redactor.suppresses_output:
+                result_payload["message_to_user"] = (
+                    "Die Secret-Erkennung war unvollständig: "
+                    f"{redactor.suppression_reason or 'unbekannte Ursache'}. "
+                    "Maven-/Test-Ausgabe wird nur hier angezeigt, nicht dem LLM.\n"
+                    f"Ausgabe:\n{self._bounded(output)}"
+                )
             if tested.returncode != 0 and (
                 dependency_repository is not None
                 or gradle_home is not None
@@ -895,7 +903,7 @@ class DockerCodeValidator:
         verified_policy: dict[str, Any] | None = None,
         timed_out: bool = False,
     ) -> dict[str, Any]:
-        return {
+        payload = {
             "success": False,
             "framework": framework,
             "project_path": project_path,
@@ -908,6 +916,14 @@ class DockerCodeValidator:
                 "network_mode": "none",
             },
         }
+        if redactor.suppresses_output:
+            payload["message_to_user"] = (
+                "Secret-Erkennung unvollständig: "
+                f"{redactor.suppression_reason or 'unbekannte Ursache'}. "
+                "Der Validator konnte die Ausführung nicht abschließen. "
+                f"Technischer Fehler: {self._bounded(detail)}"
+            )
+        return payload
 
     def run_python_tests(
         self,
