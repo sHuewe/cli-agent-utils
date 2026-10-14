@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import traceback
 from typing import Any, Callable, Literal
 
 from mcp.server.fastmcp import FastMCP
@@ -67,6 +68,30 @@ def _workspace_from_core_environment() -> Path:
     return Path(workspace)
 
 
+def _user_error_details(exc: BaseException) -> str:
+    """Provide local user diagnostics while leaving the model result unchanged."""
+    lines = ["Der Code-Validator hat eine Exception ausgelöst:"]
+    current: BaseException | None = exc
+    visited: set[int] = set()
+    for depth in range(6):
+        if current is None or id(current) in visited:
+            break
+        visited.add(id(current))
+        kind = type(current).__name__
+        detail = str(current).strip()
+        lines.append(f"{kind}: {detail}" if detail else kind)
+        tb = traceback.extract_tb(current.__traceback__)
+        if tb:
+            frame = tb[-1]
+            lines.append(f"  Stelle: {frame.filename}:{frame.lineno} ({frame.name})")
+        current = current.__cause__ if current.__cause__ is not None else (
+            None if current.__suppress_context__ else current.__context__
+        )
+        if current is not None and depth < 5:
+            lines.append("Verursacht durch:")
+    return "\n".join(lines)
+
+
 def _safe_tool_call(action: Callable[[], dict[str, Any]]) -> CallToolResult:
     """Do not let raw exceptions expose host paths in MCP error responses."""
     try:
@@ -77,17 +102,19 @@ def _safe_tool_call(action: Callable[[], dict[str, Any]]) -> CallToolResult:
             "reason": "invalid_request",
             "message": str(exc),
         })
-    except CodeValidationError:
+    except CodeValidationError as exc:
         return _tool_result({
             "success": False,
             "reason": "validation_error",
             "message": "Der Code-Validator hat die Validierung abgebrochen.",
+            "message_to_user": _user_error_details(exc),
         })
-    except Exception:
+    except Exception as exc:
         return _tool_result({
             "success": False,
             "reason": "internal_error",
             "message": "Der Code-Validator konnte die Anfrage nicht abschließen.",
+            "message_to_user": _user_error_details(exc),
         })
 
 
