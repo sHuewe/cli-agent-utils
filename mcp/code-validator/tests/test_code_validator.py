@@ -2227,3 +2227,40 @@ def test_suppressed_cache_failure_includes_refresh_hint_in_user_meta(
     private = wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
     assert "ModuleNotFoundError" in private
     assert "prepare-python" in private
+
+
+def test_maven_stream_error_cause_is_user_only(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    cache_root = tmp_path / "cache"
+    entry = cache_entry(cache_root, tmp_path)
+    entry.repository.mkdir(parents=True)
+    (entry.repository / "foo.jar").write_bytes(b"jar")
+    write_ready_metadata(entry.directory, entry.key)
+
+    class BrokenStreamBackend(FakeBackend):
+        def stream_tar_directory(self, source, arguments, *, timeout):
+            try:
+                raise PermissionError(13, "Datei gesperrt", "C:/private/cache/foo.jar")
+            except PermissionError as cause:
+                raise ValueError("Streamed file could not be safely opened.") from cause
+
+    config = ValidatorSettings(
+        python_image=PINNED_PYTHON,
+        maven_image=PINNED_MAVEN,
+        gradle_image=PINNED_GRADLE,
+        maven_cache_root=cache_root,
+    )
+    result = _safe_tool_call(lambda: DockerCodeValidator(
+        tmp_path, config, backend=BrokenStreamBackend()
+    ).run_java_build("."))
+    wire = _wire_tool_result(result)
+    assert wire["structuredContent"]["success"] is False
+    assert "private/cache/foo.jar" not in str(wire["structuredContent"])
+    assert "private/cache/foo.jar" not in wire["content"][0]["text"]
+    diagnostic = wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
+    assert "Maven-Dependency-Cache" in diagnostic
+    assert "ValueError" in diagnostic
+    assert "PermissionError" in diagnostic
+    assert "C:/private/cache/foo.jar" in diagnostic
