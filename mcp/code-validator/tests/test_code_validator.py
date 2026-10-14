@@ -2178,3 +2178,52 @@ def test_suppressed_secret_discovery_preserves_build_log_in_user_meta(
     private = wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
     assert "Zu viele Secret-Werte" in private
     assert "private build failure" in private
+
+
+def test_suppressed_cache_failure_includes_refresh_hint_in_user_meta(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    (tmp_path / "requirements.txt").write_text("demo==1.0\n", encoding="utf-8")
+    cache_root = tmp_path / "python-cache"
+    entry = python_cache_entry(cache_root, tmp_path)
+    entry.wheels.mkdir(parents=True)
+    (entry.wheels / "demo-1.0-py3-none-any.whl").write_bytes(b"wheel")
+    write_python_ready_metadata(
+        entry.directory, entry.key, python_dependency_plan(tmp_path)
+    )
+    monkeypatch.setattr(
+        "cli_agent_code_validator_mcp.code_validator.discover_secret_values",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            SecretDiscoveryLimitError("Secret-Erkennung nicht vollständig")
+        ),
+    )
+
+    class FailingBuild(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            if args[0] == "exec" and "sh" in args and "-c" in args:
+                return DockerCommandResult(1, "", "")
+            if args[0] == "exec" and "cat" in args:
+                return DockerCommandResult(
+                    0, "ModuleNotFoundError: No module named 'demo'", ""
+                )
+            return super().run(arguments, timeout=timeout, input_bytes=input_bytes)
+
+    validator = DockerCodeValidator(
+        tmp_path,
+        ValidatorSettings(
+            python_image=PINNED_PYTHON,
+            maven_image=PINNED_MAVEN,
+            gradle_image=PINNED_GRADLE,
+            python_cache_root=cache_root,
+        ),
+        backend=FailingBuild(),
+    )
+    wire = _wire_tool_result(_safe_tool_call(lambda: validator.run_python_tests(".")))
+    assert wire["structuredContent"]["reason"] == "dependency_cache_may_be_stale"
+    assert "ModuleNotFoundError" not in str(wire["structuredContent"])
+    private = wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
+    assert "ModuleNotFoundError" in private
+    assert "prepare-python" in private
