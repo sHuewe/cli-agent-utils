@@ -1305,3 +1305,97 @@ def test_maven_failed_prepare_warns_on_cleanup_error(tmp_path: Path, monkeypatch
     captured = capsys.readouterr()
     assert "Temporärer Maven-Cache" in captured.err
     assert "file locked" in captured.err
+
+
+def test_maven_metadata_disappearing_during_cleanup_is_ok(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import maven_cache
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    artifact = repository / "demo.jar"
+    artifact.write_bytes(b"artifact")
+    metadata = repository / "_remote.repositories"
+    metadata.write_text("origin")
+
+    real_unlink = Path.unlink
+
+    def concurrent_unlink(path, *args, **kwargs):
+        if path == metadata:
+            real_unlink(path)
+            raise FileNotFoundError(2, "No such file or directory", str(path))
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", concurrent_unlink)
+    maven_cache.sanitize_repository_for_offline_use(repository)
+    assert artifact.read_bytes() == b"artifact"
+    assert not metadata.exists()
+
+
+def test_maven_metadata_disappears_before_entry_stat(tmp_path: Path, monkeypatch) -> None:
+    import os
+    import pytest
+    from cli_agent_code_validator_mcp import maven_cache
+
+    repo = tmp_path / "repository"
+    repo.mkdir()
+    (repo / "demo.jar").write_bytes(b"artifact")
+    missing = repo / "resolver-status.properties"
+    missing.write_text("metadata")
+    real_scandir = maven_cache.os.scandir
+
+    class EntryProxy:
+        def __init__(self, entry):
+            self._entry = entry
+            self.name = entry.name
+            self.path = entry.path
+
+        def stat(self, *args, **kwargs):
+            if self.name == "resolver-status.properties":
+                missing.unlink(missing_ok=True)
+                raise FileNotFoundError(2, "File missing", self.path)
+            return self._entry.stat(*args, **kwargs)
+
+    class ScanProxy:
+        def __init__(self, path):
+            self._scan = real_scandir(path)
+        def __enter__(self):
+            self._scan.__enter__()
+            return self
+        def __iter__(self):
+            return (EntryProxy(entry) for entry in self._scan)
+        def __exit__(self, *args):
+            return self._scan.__exit__(*args)
+
+    monkeypatch.setattr(maven_cache.os, "scandir", lambda path: ScanProxy(path))
+    maven_cache.sanitize_repository_for_offline_use(repo)
+    assert (repo / "demo.jar").read_bytes() == b"artifact"
+
+
+def test_maven_metadata_disappears_during_readonly_retry(tmp_path: Path, monkeypatch) -> None:
+    import stat
+    import pytest
+    from cli_agent_code_validator_mcp import maven_cache
+
+    repo = tmp_path / "repository"
+    repo.mkdir()
+    metadata = repo / "_remote.repositories"
+    metadata.write_text("metadata")
+    metadata.chmod(stat.S_IREAD)
+    monkeypatch.setattr(maven_cache, "_WINDOWS", True)
+    real_unlink = Path.unlink
+    calls = 0
+
+    def racing_unlink(path, *args, **kwargs):
+        nonlocal calls
+        if path == metadata:
+            calls += 1
+            if calls == 1:
+                raise PermissionError(13, "Readonly", str(path))
+            real_unlink(path)
+            raise FileNotFoundError(2, "Missing", str(path))
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", racing_unlink)
+    maven_cache.sanitize_repository_for_offline_use(repo)
+    assert calls == 2
+    assert not metadata.exists()
