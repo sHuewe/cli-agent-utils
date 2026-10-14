@@ -809,7 +809,7 @@ class DockerCodeValidator:
                     # it as an argv string to wsl.exe. An intermediate WSL shell
                     # must not expand "$@" before the container's shell sees it.
                     # Arguments stay distinct; no model/project text is eval'd.
-                    input_bytes=b'exec "$@" > /output/test.log 2>&1\\n',
+                    input_bytes=b'exec "$@" > /output/test.log 2>&1' + bytes([10]),
                 )
             except subprocess.TimeoutExpired:
                 result_payload = self._failure(
