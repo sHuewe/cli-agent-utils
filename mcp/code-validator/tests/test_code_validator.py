@@ -1871,9 +1871,10 @@ def test_tool_result_boundary_hides_host_exception_path() -> None:
         raise ValidationError("C:/Users/private/secret")
 
     result = _safe_tool_call(fails)
-    assert "private" not in str(result)
-    assert "Users" not in str(result)
+    assert "private" not in str(result.structuredContent)
+    assert "Users" not in result.content[0].text
     assert result.structuredContent["reason"] == "validation_error"
+    assert "C:/Users/private/secret" in _wire_tool_result(result)["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
 
 
 def test_host_root_redaction(tmp_path: Path) -> None:
@@ -1991,7 +1992,9 @@ def test_mcp_hides_internal_validation_error_paths() -> None:
 
     wire = _wire_tool_result(_safe_tool_call(fail))
     assert wire["structuredContent"]["reason"] == "validation_error"
-    assert "private" not in str(wire)
+    assert "private" not in str(wire["structuredContent"])
+    assert "private" not in wire["content"][0]["text"]
+    assert "C:/Users/private/cache/file" in wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
 
 
 def test_mcp_hides_unexpected_exception_paths() -> None:
@@ -2002,7 +2005,9 @@ def test_mcp_hides_unexpected_exception_paths() -> None:
 
     wire = _wire_tool_result(_safe_tool_call(fail))
     assert wire["structuredContent"]["reason"] == "internal_error"
-    assert "/home/private" not in str(wire)
+    assert "/home/private" not in str(wire["structuredContent"])
+    assert "/home/private" not in wire["content"][0]["text"]
+    assert "/home/private/build/file" in wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
 
 
 def test_mcp_reports_missing_python_requirements_without_host_paths(
@@ -2037,7 +2042,9 @@ def test_mcp_still_hides_internal_python_validation_errors() -> None:
 
     wire = _wire_tool_result(_safe_tool_call(fail))
     assert wire["structuredContent"]["reason"] == "validation_error"
-    assert "C:/Users/private" not in str(wire)
+    assert "C:/Users/private" not in str(wire["structuredContent"])
+    assert "C:/Users/private" not in wire["content"][0]["text"]
+    assert "C:/Users/private/maven" in wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
 
 
 @pytest.mark.parametrize(
@@ -2077,3 +2084,26 @@ def test_relative_cache_roots_are_resolved_before_output_redaction(
     assert "Tests passed. cache is ready. Version 1.2.3." in output
     assert str(expected_root) not in output
     assert "[Host-Pfad]" in output
+
+
+def test_user_diagnostic_includes_exception_chain_only_in_meta() -> None:
+    from cli_agent_code_validator_mcp.server import _safe_tool_call
+
+    def fail() -> dict:
+        try:
+            raise PermissionError(13, "Zugriff verweigert", "C:/private/cache.jar")
+        except PermissionError as cause:
+            raise ValidationError("Maven-Cache konnte nicht gelesen werden.") from cause
+
+    wire = _wire_tool_result(_safe_tool_call(fail))
+    assert wire["structuredContent"] == {
+        "success": False,
+        "reason": "validation_error",
+        "message": "Der Code-Validator hat die Validierung abgebrochen.",
+    }
+    assert "private" not in wire["content"][0]["text"]
+    details = wire["_meta"][CLI_AGENT_MESSAGE_TO_USER_META_KEY]["text"]
+    assert "CodeValidationError" in details
+    assert "PermissionError" in details
+    assert "C:/private/cache.jar" in details
+    assert "Stelle:" in details
