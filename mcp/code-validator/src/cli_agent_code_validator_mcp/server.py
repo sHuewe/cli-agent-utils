@@ -78,9 +78,16 @@ def _user_error_details(exc: BaseException) -> str:
             break
         visited.add(id(current))
         kind = type(current).__name__
-        detail = str(current).strip()
+        try:
+            detail = str(current).strip()
+        except Exception:
+            # Third-party exceptions may implement a broken __str__.
+            detail = "(Fehlertext konnte nicht gelesen werden)"
         lines.append(f"{kind}: {detail}" if detail else kind)
-        tb = traceback.extract_tb(current.__traceback__)
+        try:
+            tb = traceback.extract_tb(current.__traceback__)
+        except Exception:
+            tb = []
         if tb:
             frame = tb[-1]
             lines.append(f"  Stelle: {frame.filename}:{frame.lineno} ({frame.name})")
@@ -90,6 +97,17 @@ def _user_error_details(exc: BaseException) -> str:
         if current is not None and depth < 5:
             lines.append("Verursacht durch:")
     return "\n".join(lines)
+
+
+def _safe_user_error_details(exc: BaseException) -> str:
+    """A failed diagnostic must never escape the MCP safe error boundary."""
+    try:
+        return _user_error_details(exc)
+    except Exception:
+        return (
+            "Der Code-Validator hat einen Fehler ausgelöst. "
+            "Die erweiterte Diagnose konnte nicht erzeugt werden."
+        )
 
 
 def _safe_tool_call(action: Callable[[], dict[str, Any]]) -> CallToolResult:
@@ -107,14 +125,14 @@ def _safe_tool_call(action: Callable[[], dict[str, Any]]) -> CallToolResult:
             "success": False,
             "reason": "validation_error",
             "message": "Der Code-Validator hat die Validierung abgebrochen.",
-            "message_to_user": _user_error_details(exc),
+            "message_to_user": _safe_user_error_details(exc),
         })
     except Exception as exc:
         return _tool_result({
             "success": False,
             "reason": "internal_error",
             "message": "Der Code-Validator konnte die Anfrage nicht abschließen.",
-            "message_to_user": _user_error_details(exc),
+            "message_to_user": _safe_user_error_details(exc),
         })
 
 
