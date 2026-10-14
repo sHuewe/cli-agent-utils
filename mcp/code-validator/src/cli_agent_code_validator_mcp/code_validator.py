@@ -356,6 +356,33 @@ class DockerCodeValidator:
         )
 
 
+    @staticmethod
+    def _user_transfer_exception(stage: str, error: Exception) -> str:
+        """Keep original transfer errors and OS causes in user-only metadata.
+
+        In particular, the TAR streamer wraps Windows filesystem failures in
+        ValueError. Its __cause__ carries the actionable filename and WinError.
+        Never place this diagnostic in model-visible content.
+        """
+        lines = [f"{stage} fehlgeschlagen:"]
+        current: BaseException | None = error
+        visited: set[int] = set()
+        for _ in range(6):
+            if current is None or id(current) in visited:
+                break
+            visited.add(id(current))
+            try:
+                detail = str(current)
+            except Exception:
+                detail = "(Fehlertext nicht verfügbar)"
+            lines.append(f"{type(current).__name__}: {detail}")
+            current = current.__cause__ if current.__cause__ is not None else (
+                None if current.__suppress_context__ else current.__context__
+            )
+            if current is not None:
+                lines.append("Verursacht durch:")
+        return "\n".join(lines)[:8192]
+
     def _run_tests(
         self,
         *,
@@ -549,6 +576,11 @@ class DockerCodeValidator:
                         "Python-Wheel-Cache konnte nicht übertragen werden.",
                         verified_policy=verified_policy,
                     )
+                    diagnostic = self._user_transfer_exception("Python-Wheel-Cache", exc)
+                    if result_payload.get("message_to_user"):
+                        result_payload["message_to_user"] += "\n\n" + diagnostic
+                    else:
+                        result_payload["message_to_user"] = diagnostic
                     return result_payload
                 if streamed_python.returncode != 0:
                     result_payload = self._failure(
@@ -618,6 +650,11 @@ class DockerCodeValidator:
                         "Gradle-Dependency-Cache konnte nicht übertragen werden.",
                         verified_policy=verified_policy,
                     )
+                    diagnostic = self._user_transfer_exception("Gradle-Dependency-Cache", exc)
+                    if result_payload.get("message_to_user"):
+                        result_payload["message_to_user"] += "\n\n" + diagnostic
+                    else:
+                        result_payload["message_to_user"] = diagnostic
                     return result_payload
                 if streamed_gradle.returncode != 0:
                     result_payload = self._failure(
@@ -687,6 +724,11 @@ class DockerCodeValidator:
                         "Maven-Dependency-Cache konnte nicht übertragen werden.",
                         verified_policy=verified_policy,
                     )
+                    diagnostic = self._user_transfer_exception("Maven-Dependency-Cache", exc)
+                    if result_payload.get("message_to_user"):
+                        result_payload["message_to_user"] += "\n\n" + diagnostic
+                    else:
+                        result_payload["message_to_user"] = diagnostic
                     return result_payload
                 if streamed.returncode != 0:
                     result_payload = self._failure(
