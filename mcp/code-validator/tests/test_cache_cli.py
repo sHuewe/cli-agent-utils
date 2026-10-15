@@ -1740,3 +1740,4 @@ def test_maven_test_warmup_can_be_disabled(tmp_path: Path, monkeypatch) -> None:
     assert calls == ["dependency:go-offline", "package"]
     args = build_parser().parse_args(["prepare-maven", ".", "--skip-test-warmup"])
     assert args.skip_test_warmup is True
+
