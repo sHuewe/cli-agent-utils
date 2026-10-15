@@ -1023,7 +1023,7 @@ def test_prepare_maven_rebuilds_existing_project_cache(
     assert first.key == second.key
     assert first_marker == "3"
     assert second_marker == "6"
-    assert len(calls) == 4
+    assert len(calls) == 6
 
 
 
