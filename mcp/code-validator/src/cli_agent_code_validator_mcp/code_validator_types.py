@@ -17,7 +17,7 @@ class PublicValidationError(CodeValidationError):
 
 
 
-_IMAGE_DIGEST = re.compile(r"^.+@sha256:[0-9a-f]{64}$", re.IGNORECASE)
+_IMAGE_DIGEST = re.compile(r"^(?:.+@sha256:|sha256:)[0-9a-f]{64}$", re.IGNORECASE)
 
 
 def is_pinned_image(image: str) -> bool:
@@ -54,7 +54,7 @@ class CodeValidatorSettings:
                 raise ValueError(f"{name} darf nicht leer sein.")
             if not is_pinned_image(image):
                 raise ValueError(
-                    f"{name} muss einen vollständigen sha256-Digest enthalten."
+                    f"{name} muss einen vollständigen Repository-Digest oder eine Docker-Image-ID (sha256:<64 hex>) enthalten."
                 )
         if self.test_timeout_seconds <= 0 or self.setup_timeout_seconds <= 0:
             raise ValueError("Timeouts müssen positiv sein.")
