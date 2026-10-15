@@ -2316,7 +2316,9 @@ def test_validator_timeout_defaults_and_docker_probe_budget(tmp_path: Path) -> N
 
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
     backend = TimedBackend()
-    DockerCodeValidator(tmp_path, defaults, backend=backend)._run_tests(\n        project_path=".", image=PINNED_MAVEN, command=["true"], framework="maven"\n    )
+    DockerCodeValidator(tmp_path, defaults, backend=backend)._run_tests(
+        project_path=".", image=PINNED_MAVEN, command=["true"], framework="maven"
+    )
     assert any(args[0] == "version" and limit == 60 for args, limit in backend.timeouts)
     assert any(args[0] == "create" and limit == 180 for args, limit in backend.timeouts)
     assert any(args[0] == "rm" and limit == 60 for args, limit in backend.timeouts)
