@@ -1741,3 +1741,47 @@ def test_maven_test_warmup_can_be_disabled(tmp_path: Path, monkeypatch) -> None:
     args = build_parser().parse_args(["prepare-maven", ".", "--skip-test-warmup"])
     assert args.skip_test_warmup is True
 
+
+
+def test_docker_maven_warmup_failure_keeps_ready_cache(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_java_prepare as java
+    from cli_agent_code_validator_mcp.docker_backend import DockerCommandResult
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>")
+    cache_root = tmp_path / "cache"
+    build_commands = []
+
+    class FakeDocker:
+        def __init__(self, **kwargs):
+            pass
+
+        def run(self, args, *, timeout, input_bytes=None):
+            return DockerCommandResult(0, "", "")
+
+        def stream_tar_directory(self, source, args, *, timeout):
+            return DockerCommandResult(0, "", "")
+
+    def run_build(backend, args, timeout, *, data=None, verbose=True):
+        build_commands.append(args)
+        if args[-1] == "test":
+            raise RuntimeError("test failure")
+
+    def export(backend, container, source, dest, timeout):
+        (dest / "provider.jar").write_bytes(b"provider")
+
+    monkeypatch.setattr(java, "DockerBackend", FakeDocker)
+    monkeypatch.setattr(java, "_image_policy", lambda *args: None)
+    monkeypatch.setattr(java, "_run_build_with_output", run_build)
+    monkeypatch.setattr(java, "_export_cache", export)
+    ready = java.prepare_java_in_docker(
+        "maven", project, cache_root, image="maven:test",
+        use_user_config=False, verbose=False,
+    )
+    assert ready.is_ready()
+    assert (ready.repository / "provider.jar").read_bytes() == b"provider"
+    assert [cmd[-1] for cmd in build_commands] == [
+        "dependency:go-offline", "package", "test"
+    ]
+    assert "-Dmaven.test.failure.ignore=true" in build_commands[-1]
