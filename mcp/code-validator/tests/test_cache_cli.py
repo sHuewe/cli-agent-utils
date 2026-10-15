@@ -1557,7 +1557,7 @@ def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Pa
     # is it promoted to the final, stable entry path.
     exported_path = exported[0][1]
     relative = exported_path.relative_to(cache_root)
-    assert relative.parts[0].startswith(f".{entry.key}-")
+    assert relative.parts[0].startswith(".prep-")
     assert relative.parts[1:] == ("gradle-home", "caches", "modules-2")
     assert not exported_path.exists()
     assert (entry.gradle_home / "caches" / "modules-2" / "artifact.jar").read_bytes() == b"jar"
@@ -1655,3 +1655,48 @@ def test_java_docker_quiet_forwarded_from_cli(tmp_path: Path, monkeypatch) -> No
         ("maven", False), ("gradle", False),
         ("maven", True), ("gradle", True),
     ]
+
+
+def test_windows_cache_promotion_retries_transient_denial(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_prepare
+    original = Path.rename
+    calls = []
+
+    src = tmp_path / "pending"
+    dst = tmp_path / "ready"
+    src.mkdir()
+    (src / "artifact.jar").write_bytes(b"jar")
+
+    def flaky_rename(self, target):
+        calls.append((self, target))
+        if self == src and len(calls) == 1:
+            error = PermissionError(13, "Access denied", str(self))
+            error.winerror = 5
+            raise error
+        return original(self, target)
+
+    monkeypatch.setattr(docker_prepare.os, "name", "nt")
+    monkeypatch.setattr(docker_prepare.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(Path, "rename", flaky_rename)
+    docker_prepare._promote_cache(src, dst)
+    assert len(calls) == 2
+    assert (dst / "artifact.jar").read_bytes() == b"jar"
+
+
+def test_windows_cache_promotion_does_not_retry_unrelated_errors(tmp_path: Path, monkeypatch) -> None:
+    import pytest
+    from cli_agent_code_validator_mcp import docker_prepare
+    src = tmp_path / "pending"
+    dst = tmp_path / "ready"
+    src.mkdir()
+
+    def failed_rename(self, target):
+        error = PermissionError(13, "Access denied", str(self))
+        error.winerror = 123
+        raise error
+
+    monkeypatch.setattr(docker_prepare.os, "name", "nt")
+    monkeypatch.setattr(Path, "rename", failed_rename)
+    with pytest.raises(PermissionError):
+        docker_prepare._promote_cache(src, dst)
+    assert src.exists()
