@@ -1539,7 +1539,17 @@ def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Pa
     build_cmd = build_calls[0]
     assert "--env" in build_cmd
     assert "JAVA_TOOL_OPTIONS=-Duser.home=/tmp/home" not in build_cmd
-    assert 'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }-Duser.home=/tmp/home"' in build_cmd
+    # The JVM options assignment is part of the shell script argument,
+    # together with the export and exec statements, not a standalone argv item.
+    assert build_cmd[build_cmd.index("-c") - 1] == "sh"
+    shell_script = build_cmd[build_cmd.index("-c") + 1]
+    assert shell_script.startswith(
+        'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }'
+        '-Duser.home=/tmp/home"'
+    )
+    assert 'export JAVA_TOOL_OPTIONS; exec "$@"' in shell_script
+    assert build_cmd[build_cmd.index("-c") + 2] == "sh"
+    assert build_cmd[-1] == "_cliAgentResolveRuntimeDependencies"
     assert len(exported) == 1
     assert exported[0][0] == "/tmp/prepared/gradle-home/caches/modules-2"
     # Export first lands in a temporary cache directory. Only after validation
