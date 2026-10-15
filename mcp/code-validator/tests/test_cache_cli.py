@@ -1399,3 +1399,69 @@ def test_maven_metadata_disappears_during_readonly_retry(tmp_path: Path, monkeyp
     maven_cache.sanitize_repository_for_offline_use(repo)
     assert calls == 2
     assert not metadata.exists()
+
+
+def test_java_docker_cli_options_and_host_guard() -> None:
+    import pytest
+    parser = build_parser()
+    for command in ("prepare-maven", "prepare-gradle"):
+        args = parser.parse_args([
+            command, ".", "--executor", "docker", "--image", "example:latest", "--wsl"
+        ])
+        assert args.executor == "docker"
+        assert args.image == "example:latest"
+        assert args.wsl is True
+
+
+def test_java_docker_archive_rejects_windows_drive_and_links(tmp_path: Path) -> None:
+    import io
+    import tarfile
+    import pytest
+    from cli_agent_code_validator_mcp.docker_java_prepare import _extract_cache_archive
+    for malicious in ("C:/outside.jar", "../outside.jar", "/absolute.jar", "nested\\outside.jar"):
+        archive_data = io.BytesIO()
+        with tarfile.open(fileobj=archive_data, mode="w") as tar:
+            info = tarfile.TarInfo(malicious)
+            info.size = 1
+            tar.addfile(info, io.BytesIO(b"x"))
+        archive_data.seek(0)
+        with pytest.raises(ValueError):
+            _extract_cache_archive(archive_data, tmp_path)
+    link_data = io.BytesIO()
+    with tarfile.open(fileobj=link_data, mode="w") as tar:
+        info = tarfile.TarInfo("link.jar")
+        info.type = tarfile.SYMTYPE
+        info.linkname = "real.jar"
+        tar.addfile(info)
+    link_data.seek(0)
+    with pytest.raises(ValueError):
+        _extract_cache_archive(link_data, tmp_path)
+
+
+def test_java_docker_archive_extracts_dependency_tree(tmp_path: Path) -> None:
+    import io
+    import tarfile
+    from cli_agent_code_validator_mcp.docker_java_prepare import _extract_cache_archive
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode="w") as tar:
+        info = tarfile.TarInfo("org/demo/artifact.jar")
+        info.size = 3
+        tar.addfile(info, io.BytesIO(b"jar"))
+    stream.seek(0)
+    _extract_cache_archive(stream, tmp_path)
+    assert (tmp_path / "org" / "demo" / "artifact.jar").read_bytes() == b"jar"
+
+
+def test_docker_maven_settings_are_selective(tmp_path: Path, monkeypatch) -> None:
+    import io
+    import tarfile
+    from cli_agent_code_validator_mcp import docker_java_prepare
+    home = tmp_path / "home"
+    (home / ".m2").mkdir(parents=True)
+    (home / ".m2" / "settings.xml").write_text("<settings/>")
+    (home / ".m2" / "settings-security.xml").write_text("<settingsSecurity/>")
+    (home / ".m2" / "repository").mkdir()
+    monkeypatch.setattr(docker_java_prepare.Path, "home", lambda: home)
+    archive = docker_java_prepare._config_archive("maven", enabled=True)
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        assert set(tar.getnames()) == {".m2/settings.xml", ".m2/settings-security.xml"}
