@@ -208,10 +208,16 @@ def prepare_java_in_docker(
                 "assemble", "testClasses", "_cliAgentResolveRuntimeDependencies",
             ],)
         for cmd in commands:
+            # Preserve JAVA_TOOL_OPTIONS supplied by the selected image (CA,
+            # proxy, agents, etc.). Docker exec --env would replace it; the
+            # shell instead appends our home setting without re-evaluating
+            # or interpolating the image-provided value as shell code.
             result = backend.run([
                 "exec", "--workdir", "/work/project", "--env", "HOME=/tmp/home",
-                "--env", "JAVA_TOOL_OPTIONS=-Duser.home=/tmp/home",
-                name, *cmd,
+                name, "sh", "-c",
+                'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }'
+                '-Duser.home=/tmp/home"; export JAVA_TOOL_OPTIONS; exec "$@"',
+                "sh", *cmd,
             ], timeout=timeout)
             _check(result, f"{kind} build")
         if kind == "maven":
