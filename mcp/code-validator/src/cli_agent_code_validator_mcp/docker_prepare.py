@@ -37,6 +37,7 @@ _MAX_REQUIREMENTS_FILES = 256
 _MAX_WHEEL_ARCHIVE_BYTES = 1024 * 1024 * 1024
 _MAX_WHEEL_FILES = 10000
 _TRANSFER_TIMEOUT = 300
+_WINDOWS = os.name == "nt"
 
 
 def _pip_user_config() -> Path | None:
@@ -300,7 +301,7 @@ def _rename_with_windows_retry(source: Path, destination: Path) -> None:
             source.rename(destination)
             return
         except PermissionError as exc:
-            if os.name != "nt" or getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 4:
+            if not _WINDOWS or getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 4:
                 raise
             time.sleep(0.2 * (attempt + 1))
 
