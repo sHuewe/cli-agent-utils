@@ -1509,6 +1509,7 @@ def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Pa
     (user_home / "gradle.properties").write_text("repoPassword=SECRET")
     exported = []
     executed = []
+    payloads = []
 
     class FakeDocker:
         def __init__(self, **kwargs):
@@ -1516,6 +1517,7 @@ def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Pa
 
         def run(self, arguments, *, timeout, input_bytes=None):
             executed.append(arguments)
+            payloads.append(input_bytes)
             return DockerCommandResult(0, "", "")
 
         def stream_tar_directory(self, source, arguments, *, timeout):
@@ -1533,23 +1535,22 @@ def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Pa
         gradle_user_home=user_home,
     )
     build_calls = [
-        cmd for cmd in executed if cmd[:2] == ["exec", "--workdir"]
+        cmd for cmd in executed
+        if cmd[:3] == ["exec", "--interactive", "--workdir"]
     ]
     assert len(build_calls) == 1
     build_cmd = build_calls[0]
     assert "--env" in build_cmd
     assert "JAVA_TOOL_OPTIONS=-Duser.home=/tmp/home" not in build_cmd
-    # The JVM options assignment is part of the shell script argument,
-    # together with the export and exec statements, not a standalone argv item.
-    assert build_cmd[build_cmd.index("-c") - 1] == "sh"
-    shell_script = build_cmd[build_cmd.index("-c") + 1]
-    assert shell_script.startswith(
-        'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }'
-        '-Duser.home=/tmp/home"'
-    )
-    assert 'export JAVA_TOOL_OPTIONS; exec "$@"' in shell_script
-    assert build_cmd[build_cmd.index("-c") + 2] == "sh"
+    assert "--interactive" in build_cmd
+    assert build_cmd[build_cmd.index("sh") + 1:build_cmd.index("sh") + 3] == ["-s", "--"]
+    assert "-c" not in build_cmd
     assert build_cmd[-1] == "_cliAgentResolveRuntimeDependencies"
+    build_payload = payloads[executed.index(build_cmd)]
+    assert build_payload is not None
+    assert b'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }' in build_payload
+    assert b'-Duser.home=/tmp/home"' in build_payload
+    assert b'exec "$@"' in build_payload
     assert len(exported) == 1
     assert exported[0][0] == "/tmp/prepared/gradle-home/caches/modules-2"
     # Export first lands in a temporary cache directory. Only after validation
