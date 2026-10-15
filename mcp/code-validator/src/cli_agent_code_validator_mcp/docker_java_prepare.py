@@ -241,18 +241,16 @@ def prepare_java_in_docker(
                 "--env", "HOME=/tmp/home", name, "sh", "-s", "--",
                 *commands[1][:-2], *MAVEN_TEST_WARMUP_ARGS,
             ]
-            try:
-                _run_build_with_output(
-                    backend, warmup_args, timeout,
-                    data=(
-                        b'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }'
-                        b'-Duser.home=/tmp/home"; export JAVA_TOOL_OPTIONS; exec "$@"\n'
-                    ),
-                    verbose=verbose,
-                )
-            except RuntimeError as exc:
-                if verbose:
-                    print(f"[prepare-maven] Warnung: Test-Warm-up fehlgeschlagen: {exc}", flush=True)
+            # Maven's test-failure-ignore option handles assertion failures.
+            # Missing providers or plugin failures must prevent cache promotion.
+            _run_build_with_output(
+                backend, warmup_args, timeout,
+                data=(
+                    b'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }'
+                    b'-Duser.home=/tmp/home"; export JAVA_TOOL_OPTIONS; exec "$@"\n'
+                ),
+                verbose=verbose,
+            )
         if verbose:
             print(f"[prepare-{kind}] Dependency-Cache exportieren ...", flush=True)
         if kind == "maven":
