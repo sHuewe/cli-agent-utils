@@ -46,9 +46,10 @@ def test_prepare_maven_builds_isolated_repository_and_marks_ready(
 
     assert entry.is_ready()
     assert (entry.repository / "artifact.jar").is_file()
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert calls[0][-1] == "dependency:go-offline"
     assert calls[1][-2:] == ["-DskipTests", "package"]
+    assert calls[2][-5:] == ["-DskipTests=false", "-Dmaven.test.skip=false", "-Dmaven.test.skip.exec=false", "-Dmaven.test.failure.ignore=true", "test"]
 
 
 def test_prepare_maven_rebuilds_ready_cache(
@@ -81,7 +82,7 @@ def test_prepare_maven_rebuilds_ready_cache(
     second = prepare_maven(project, cache_root)
 
     assert first.key == second.key
-    assert calls == 4
+    assert calls == 6
 
 
 def test_cache_key_matches_validator_lookup(tmp_path: Path) -> None:
@@ -856,7 +857,7 @@ def test_prepare_maven_accepts_operator_maven_semantics(
     entry = prepare_maven(project, cache_root)
 
     assert entry.is_ready()
-    assert len(calls) == 2
+    assert len(calls) == 3
 
 def test_python_interpreter_probe_rejects_windows_python(
     monkeypatch,
@@ -910,7 +911,7 @@ def test_prepare_maven_allows_fail_at_end_option(
 
     prepare_maven(project, tmp_path / "cache")
 
-    assert len(calls) == 2
+    assert len(calls) == 3
 
 
 
@@ -1020,9 +1021,9 @@ def test_prepare_maven_rebuilds_existing_project_cache(
     second_marker = (second.repository / "marker.txt").read_text(encoding="utf-8")
 
     assert first.key == second.key
-    assert first_marker == "2"
-    assert second_marker == "4"
-    assert len(calls) == 4
+    assert first_marker == "3"
+    assert second_marker == "6"
+    assert len(calls) == 6
 
 
 
@@ -1700,3 +1701,98 @@ def test_windows_cache_promotion_does_not_retry_unrelated_errors(tmp_path: Path,
     with pytest.raises(PermissionError):
         docker_prepare._promote_cache(src, dst)
     assert src.exists()
+
+def test_maven_failed_test_warmup_preserves_previous_cache(tmp_path: Path, monkeypatch) -> None:
+    import pytest
+    from cli_agent_code_validator_mcp import cache_cli
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>")
+    calls = []
+
+    def runner(command, *, cwd, timeout):
+        calls.append(command)
+        if command[-1] == "test":
+            raise RuntimeError("Maven-Vorbereitung endete mit Code 1.")
+
+    monkeypatch.setattr(cache_cli, "_run", runner)
+    with pytest.raises(RuntimeError, match="Code 1"):
+        cache_cli.prepare_maven(project, tmp_path / "cache")
+    assert [c[-1] for c in calls] == ["dependency:go-offline", "package", "test"]
+
+
+def test_maven_test_warmup_can_be_disabled(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import cache_cli
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>")
+    calls = []
+
+    def runner(command, *, cwd, timeout):
+        calls.append(command[-1])
+        Path(next(x.split("=", 1)[1] for x in command if x.startswith("-Dmaven.repo.local="))).mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(cache_cli, "_run", runner)
+    cache_cli.prepare_maven(project, tmp_path / "cache", test_warmup=False)
+    assert calls == ["dependency:go-offline", "package"]
+    args = build_parser().parse_args(["prepare-maven", ".", "--skip-test-warmup"])
+    assert args.skip_test_warmup is True
+
+
+
+def test_docker_maven_warmup_failure_rejects_cache(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_java_prepare as java
+    from cli_agent_code_validator_mcp.docker_backend import DockerCommandResult
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>")
+    cache_root = tmp_path / "cache"
+    build_commands = []
+
+    class FakeDocker:
+        def __init__(self, **kwargs):
+            pass
+
+        def run(self, args, *, timeout, input_bytes=None):
+            return DockerCommandResult(0, "", "")
+
+        def stream_tar_directory(self, source, args, *, timeout):
+            return DockerCommandResult(0, "", "")
+
+    def run_build(backend, args, timeout, *, data=None, verbose=True):
+        build_commands.append(args)
+        if args[-1] == "test":
+            raise RuntimeError("test failure")
+
+    def export(backend, container, source, dest, timeout):
+        (dest / "provider.jar").write_bytes(b"provider")
+
+    monkeypatch.setattr(java, "DockerBackend", FakeDocker)
+    monkeypatch.setattr(java, "_image_policy", lambda *args: None)
+    monkeypatch.setattr(java, "_run_build_with_output", run_build)
+    monkeypatch.setattr(java, "_export_cache", export)
+    import pytest
+    with pytest.raises(RuntimeError, match="test failure"):
+        java.prepare_java_in_docker(
+            "maven", project, cache_root, image="maven:test",
+            use_user_config=False, verbose=False,
+        )
+    assert not list(cache_root.glob("maven-*"))
+    assert [cmd[-1] for cmd in build_commands] == [
+        "dependency:go-offline", "package", "test"
+    ]
+    assert "-Dmaven.test.failure.ignore=true" in build_commands[-1]
+    assert "-DskipTests=false" in build_commands[-1]
+    assert "-Dmaven.test.skip=false" in build_commands[-1]
+    assert "-Dmaven.test.skip.exec=false" in build_commands[-1]
+
+def test_maven_warmup_overrides_skip_properties() -> None:
+    from cli_agent_code_validator_mcp.maven_cache import MAVEN_TEST_WARMUP_ARGS
+    assert MAVEN_TEST_WARMUP_ARGS == (
+        "-DskipTests=false",
+        "-Dmaven.test.skip=false",
+        "-Dmaven.test.skip.exec=false",
+        "-Dmaven.test.failure.ignore=true",
+        "test",
+    )

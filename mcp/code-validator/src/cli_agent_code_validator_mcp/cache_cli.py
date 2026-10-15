@@ -20,6 +20,7 @@ from .gradle_cache import (
     write_gradle_ready_metadata,
 )
 from .maven_cache import (
+    MAVEN_TEST_WARMUP_ARGS,
     MavenCacheEntry,
     default_maven_cache_root,
     maven_dependency_key,
@@ -77,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="mvn",
         help="Maven executable used for preparation (default: mvn).",
     )
+    prepare.add_argument("--skip-test-warmup", action="store_true", help="Skip Maven test cache warm-up.")
     prepare.add_argument(
         "--timeout",
         type=int,
@@ -292,6 +294,7 @@ def prepare_maven(
     maven_command: str = "mvn",
     timeout: int = 1800,
     project_identity: str | None = None,
+    test_warmup: bool = True,
 ) -> MavenCacheEntry:
     project = project.expanduser().resolve()
     if not project.is_dir():
@@ -327,6 +330,14 @@ def prepare_maven(
             cwd=project,
             timeout=timeout,
         )
+        if test_warmup:
+            # Test assertions may fail; dependency resolution and execution
+            # still warm up dynamically selected Surefire providers.
+            print("Maven-Test-Warm-up: Tests werden ausgeführt ...", flush=True)
+            # The Surefire ignore flag makes failed test assertions exit 0.
+            # Other nonzero Maven exits indicate missing dependencies/plugins,
+            # broken test infrastructure, etc., and must abort promotion.
+            _run([*common, *MAVEN_TEST_WARMUP_ARGS], cwd=project, timeout=timeout)
         sanitize_repository_for_offline_use(repository)
         write_ready_metadata(temporary, key)
 
@@ -660,6 +671,7 @@ def main() -> None:
                     ),
                     wsl=args.wsl, wsl_distribution=args.wsl_distribution,
                     verbose=args.verbose,
+                    test_warmup=not args.skip_test_warmup if kind == "maven" else False,
                 )
                 print(f"{kind.capitalize()} dependency key: {entry.key}")
                 if kind == "maven":
@@ -686,6 +698,7 @@ def main() -> None:
                 maven_command=args.maven_command,
                 timeout=args.timeout,
                 project_identity=project_identity,
+                test_warmup=not args.skip_test_warmup,
             )
             print(f"Maven dependency key: {entry.key}")
             print(f"Cache repository: {entry.repository}")
