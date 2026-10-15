@@ -15,7 +15,13 @@ _MAVEN_TRANSIENT_FILES = {"_remote.repositories", "resolver-status.properties"}
 
 # Test execution resolves providers loaded dynamically by Maven Surefire that
 # dependency:go-offline and package -DskipTests may leave unprepared.
-MAVEN_TEST_WARMUP_ARGS = ("-Dmaven.test.failure.ignore=true", "test")
+# Explicitly override ambient Maven skip properties for the warm-up only.
+MAVEN_TEST_WARMUP_ARGS = (
+    "-DskipTests=false",
+    "-Dmaven.test.skip=false",
+    "-Dmaven.test.failure.ignore=true",
+    "test",
+)
 _WINDOWS = os.name == "nt"
 
 
