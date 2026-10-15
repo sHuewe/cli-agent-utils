@@ -48,9 +48,9 @@ from cli_agent_code_validator_mcp.code_validator_types import (
     CodeValidatorSettings as ValidatorSettings,
 )
 
-PINNED_PYTHON = "registry.internal/python-tests@sha256:" + "a" * 64
-PINNED_MAVEN = "registry.internal/maven-tests@sha256:" + "b" * 64
-PINNED_GRADLE = "registry.internal/gradle-tests@sha256:" + "c" * 64
+PINNED_PYTHON = "sha256:" + "a" * 64
+PINNED_MAVEN = "sha256:" + "b" * 64
+PINNED_GRADLE = "sha256:" + "c" * 64
 
 
 def _wire_tool_result(result) -> dict:
@@ -544,7 +544,7 @@ def test_code_validator_settings_accept_local_image_ids() -> None:
     local_id = "sha256:" + "a" * 64
     assert is_pinned_image(local_id)
     assert is_pinned_image(PINNED_MAVEN)
-    for invalid in ("python:latest", "sha256:abc", "sha256:" + "g" * 64):
+    for invalid in ("python:latest", "sha256:abc", "sha256:" + "g" * 64, "registry/image@sha256:" + "a" * 64):
         assert not is_pinned_image(invalid)
     options = ValidatorSettings(
         python_image=local_id, maven_image=local_id, gradle_image=local_id
