@@ -16,6 +16,7 @@ import subprocess  # nosec B404
 import sys
 import tarfile
 import tempfile
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -292,6 +293,18 @@ def _copy_wheels(
         _extract_wheel_archive(output, destination)
 
 
+def _rename_with_windows_retry(source: Path, destination: Path) -> None:
+    """Retry transient Windows filesystem sharing/AV locks on promotion."""
+    for attempt in range(5):
+        try:
+            source.rename(destination)
+            return
+        except PermissionError as exc:
+            if os.name != "nt" or getattr(exc, "winerror", None) not in (5, 32, 33) or attempt == 4:
+                raise
+            time.sleep(0.2 * (attempt + 1))
+
+
 def _promote_cache(temporary: Path, final: Path) -> None:
     """Retain previous ready cache if replacing it fails."""
     backup = final.parent / f".{final.name}-backup-{uuid.uuid4().hex}"
@@ -299,12 +312,12 @@ def _promote_cache(temporary: Path, final: Path) -> None:
     if final.is_symlink():
         raise ValueError("Cache-Ziel darf kein Symlink sein.")
     if old_exists:
-        final.rename(backup)
+        _rename_with_windows_retry(final, backup)
     try:
-        temporary.rename(final)
+        _rename_with_windows_retry(temporary, final)
     except BaseException:
         if old_exists:
-            backup.rename(final)
+            _rename_with_windows_retry(backup, final)
         raise
     if old_exists:
         shutil.rmtree(backup)
