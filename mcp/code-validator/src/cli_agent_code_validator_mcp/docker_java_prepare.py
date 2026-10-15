@@ -149,6 +149,10 @@ def prepare_java_in_docker(
     if entry.directory.is_symlink():
         raise ValueError("Cache-Eintrag darf kein Symlink sein.")
     config = _config_archive(kind, enabled=use_user_config, gradle_user_home=gradle_user_home)
+    _config_members = set()
+    if config is not None:
+        with tarfile.open(fileobj=io.BytesIO(config)) as package:
+            _config_members = {Path(m.name).name for m in package.getmembers()}
     backend = DockerBackend(wsl=wsl, wsl_distribution=wsl_distribution)
     name = "cli-agent-prepare-" + uuid.uuid4().hex
     temp = Path(tempfile.mkdtemp(dir=root, prefix=f".{entry.key}-"))
@@ -178,8 +182,14 @@ def prepare_java_in_docker(
                         _TRANSFER_TIMEOUT, data=config)
         if kind == "maven":
             commands = (
-                ["mvn", "-B", "-Dmaven.repo.local=/tmp/prepared/repository", "dependency:go-offline"],
-                ["mvn", "-B", "-Dmaven.repo.local=/tmp/prepared/repository", "-DskipTests", "package"],
+                ["mvn", "-B", "-Dmaven.repo.local=/tmp/prepared/repository",
+                 *(["-s", "/tmp/home/.m2/settings.xml"] if config is not None
+                   and "settings.xml" in _config_members else []),
+                 "dependency:go-offline"],
+                ["mvn", "-B", "-Dmaven.repo.local=/tmp/prepared/repository",
+                 *(["-s", "/tmp/home/.m2/settings.xml"] if config is not None
+                   and "settings.xml" in _config_members else []),
+                 "-DskipTests", "package"],
             )
             # Maven's default ~/.m2 settings live below /tmp/home/.m2
             _docker_run(backend, ["exec", name, "mkdir", "-p", "/tmp/prepared/repository"], 30)
@@ -187,8 +197,10 @@ def prepare_java_in_docker(
             # Config is staged in /tmp/home/gradle to avoid exporting it.
             # A custom resolution task ensures resolvable runtime configurations.
             init = b'gradle.projectsEvaluated { gradle.rootProject.tasks.register("_cliAgentResolveRuntimeDependencies") { doLast { gradle.rootProject.allprojects.each { p -> p.configurations.findAll { c -> c.canBeResolved && (c.name == "runtimeClasspath" || c.name == "testRuntimeClasspath" || c.name.endsWith("RuntimeClasspath")) }.each { c -> c.resolve() } } } } }\n'
-            _docker_run(backend, ["exec", "-i", name, "sh", "-c",
-                                  "cat > /tmp/prepared/runtime.init.gradle"], 30, data=init)
+            _docker_run(
+                backend, ["exec", "-i", name, "tar", "-C", "/tmp/prepared", "-xf", "-"],
+                30, data=_files_tar({"runtime.init.gradle": init}),
+            )
             commands = ([
                 "gradle", "--no-daemon", "--refresh-dependencies",
                 "--gradle-user-home", "/tmp/prepared/gradle-home",
@@ -198,6 +210,7 @@ def prepare_java_in_docker(
         for cmd in commands:
             result = backend.run([
                 "exec", "--workdir", "/work/project", "--env", "HOME=/tmp/home",
+                "--env", "JAVA_TOOL_OPTIONS=-Duser.home=/tmp/home",
                 name, *cmd,
             ], timeout=timeout)
             _check(result, f"{kind} build")
