@@ -911,7 +911,7 @@ def test_prepare_maven_allows_fail_at_end_option(
 
     prepare_maven(project, tmp_path / "cache")
 
-    assert len(calls) == 2
+    assert len(calls) == 3
 
 
 
