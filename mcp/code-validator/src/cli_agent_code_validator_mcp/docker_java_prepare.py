@@ -213,12 +213,12 @@ def prepare_java_in_docker(
             # shell instead appends our home setting without re-evaluating
             # or interpolating the image-provided value as shell code.
             result = backend.run([
-                "exec", "--workdir", "/work/project", "--env", "HOME=/tmp/home",
-                name, "sh", "-c",
-                'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }'
-                '-Duser.home=/tmp/home"; export JAVA_TOOL_OPTIONS; exec "$@"',
-                "sh", *cmd,
-            ], timeout=timeout)
+                "exec", "--interactive", "--workdir", "/work/project",
+                "--env", "HOME=/tmp/home", name, "sh", "-s", "--", *cmd,
+            ], timeout=timeout, input_bytes=(
+                b'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }'
+                b'-Duser.home=/tmp/home"; export JAVA_TOOL_OPTIONS; exec "$@"\n'
+            ))
             _check(result, f"{kind} build")
         if kind == "maven":
             repository = temp / "repository"
