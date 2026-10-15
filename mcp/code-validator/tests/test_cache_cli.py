@@ -1535,7 +1535,8 @@ def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Pa
         gradle_user_home=user_home,
     )
     build_calls = [
-        cmd for cmd in executed if cmd[:2] == ["exec", "--workdir"]
+        cmd for cmd in executed
+        if cmd[:3] == ["exec", "--interactive", "--workdir"]
     ]
     assert len(build_calls) == 1
     build_cmd = build_calls[0]
