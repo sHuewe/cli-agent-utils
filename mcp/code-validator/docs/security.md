@@ -269,6 +269,7 @@ Preparation intentionally runs outside the MCP sandbox. Maven may use its normal
 ```text
 mvn -B -Dmaven.repo.local=<cache>/repository dependency:go-offline
 mvn -B -Dmaven.repo.local=<cache>/repository -DskipTests package
+mvn -B -Dmaven.repo.local=<cache>/repository -Dmaven.test.failure.ignore=true test
 ```
 
 Before promotion, the preparer removes Maven resolver-only provenance/state files such as `_remote.repositories`, `resolver-status.properties` and `*.lastUpdated`. The isolated local repository itself is the only Maven payload promoted; user/global `settings.xml`, credentials and other host configuration are not copied into the cache. The preparation command then stores only that sanitized generated repository and a small readiness marker under `maven-<sha256>`.
@@ -516,7 +517,7 @@ bind mounts are created. Project symlinks, reparse points, and special
 filesystem entries are rejected. Only selected user configuration is copied
 when present (Maven `settings.xml` and `settings-security.xml`; Gradle
 `gradle.properties` and init scripts). `--no-user-config` disables copying.
-Maven runs `dependency:go-offline` and `package -DskipTests`; Gradle
+Maven runs `dependency:go-offline`, `package -DskipTests`, and a test dependency warm-up; test assertions are allowed to fail and `--skip-test-warmup` disables the warm-up. Gradle
 resolves runtime classpaths in addition to assembling and compiling tests.
 Only the Maven local artifact repository or Gradle `modules-2` dependency
 cache is exported. Before promotion, strict archive extraction rejects
