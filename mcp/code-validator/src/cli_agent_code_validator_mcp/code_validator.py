@@ -425,7 +425,7 @@ class DockerCodeValidator:
             try:
                 available = self._docker(
                     ["version", "--format", "{{.Server.Version}}"],
-                    timeout=10,
+                    timeout=min(60, self.settings.setup_timeout_seconds),
                 )
             except subprocess.TimeoutExpired:
                 result_payload = self._failure(
@@ -834,7 +834,7 @@ class DockerCodeValidator:
                     "cat",
                     "/output/test.log",
                 ],
-                timeout=min(30, self.settings.setup_timeout_seconds),
+                timeout=min(90, self.settings.setup_timeout_seconds),
             )
             output = (
                 captured.stdout
@@ -942,7 +942,7 @@ class DockerCodeValidator:
                 try:
                     cleanup = self._docker(
                         ["rm", "--force", container_name],
-                        timeout=20,
+                        timeout=min(60, self.settings.setup_timeout_seconds),
                     )
                     removed = cleanup.returncode == 0
                 except (FileNotFoundError, subprocess.TimeoutExpired):
