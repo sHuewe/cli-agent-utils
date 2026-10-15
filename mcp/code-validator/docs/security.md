@@ -98,9 +98,9 @@ Docker is a strong practical isolation layer but not a virtual-machine security 
 
 ## Images and dependencies
 
-All images must be referenced by an immutable repository digest or full local Docker image ID (`sha256:<64 hex>`), and already present locally. `--pull never` is mandatory. The images must also provide a POSIX `sh`, `tar`, `cat`, `cp`, `mkdir` and `sleep`, which the fixed sandbox runner uses for lifecycle, keepalive, snapshot extraction, bounded output capture and offline-cache preparation.
+All images must be referenced exclusively by their complete local Docker image ID (`sha256:<64 hex>`) and already present locally. Repository digests and tags are not accepted. `--pull never` is mandatory. The images must also provide a POSIX `sh`, `tar`, `cat`, `cp`, `mkdir` and `sleep`, which the fixed sandbox runner uses for lifecycle, keepalive, snapshot extraction, bounded output capture and offline-cache preparation.
 
-Concrete administrator-facing image examples and the configurable Gradle Dockerfile live in [Validator Docker images](images.md). Those examples do not weaken this security contract: the final configured image must still be digest-pinned, present locally, and free of declared image volumes. In particular, the official Gradle image declares a Gradle-home volume, so the provided multi-stage Dockerfile copies only the Gradle installation into a clean final JDK image instead of using the official image directly.
+Concrete administrator-facing image examples and the configurable Gradle Dockerfile live in [Validator Docker images](images.md). Those examples do not weaken this security contract: the final configured image must still be image-ID-pinned, present locally, and free of declared image volumes. In particular, the official Gradle image declares a Gradle-home volume, so the provided multi-stage Dockerfile copies only the Gradle installation into a clean final JDK image instead of using the official image directly.
 
 ### Dependency-cache contract
 
@@ -383,9 +383,9 @@ command = "C:/absolute/path/to/cli-agent-code-validator-mcp.exe"
 required_workspace_access = "read"
 trust_instructions = false
 args = [
-    "--python-image", "registry.internal/python-tests@sha256:<digest>",
-    "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
-    "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
+    "--python-image", "sha256:<python-image-id>",
+    "--maven-image", "sha256:<maven-image-id>",
+    "--gradle-image", "sha256:<gradle-image-id>",
 ]
 ```
 
@@ -408,9 +408,9 @@ Add `--wsl`. Optionally select the distribution:
 
 ```toml
 args = [
-    "--python-image", "registry.internal/python-tests@sha256:<digest>",
-    "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
-    "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
+    "--python-image", "sha256:<python-image-id>",
+    "--maven-image", "sha256:<maven-image-id>",
+    "--gradle-image", "sha256:<gradle-image-id>",
     "--wsl",
     "--wsl-distribution", "Ubuntu",
 ]
@@ -501,7 +501,7 @@ and `prepare-python`, support
 `--executor docker --image <image-tag-or-digest>`; their existing host modes
 remain the default. This is **trusted, operator-invoked execution**, never an
 MCP tool or an action initiated by the LLM. The administrator-configured
-validator images remain digest-pinned, and MCP validation remains offline
+validator images remain pinned by full local image ID, and MCP validation remains offline
 with `--network none`.
 
 Preparation requires a locally available image (`--pull never`) and uses
