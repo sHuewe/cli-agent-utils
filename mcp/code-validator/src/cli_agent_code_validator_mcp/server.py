@@ -168,8 +168,12 @@ def create_server(validator: DockerCodeValidator) -> FastMCP:
         Do not use this tool as a generic validation step after ordinary Python
         programming changes. Use it when creating, modifying, debugging or
         explicitly verifying Python tests. project_path must be relative to the
-        cli-agent workspace. test_selector may be a normal pytest node id such
-        as tests/test_config.py::test_load.
+        cli-agent workspace. Omit test_selector to run the whole test suite.
+        To select a test file, use "tests/test_config.py"; to select a test
+        class, use "tests/test_config.py::TestConfig"; to run one test method,
+        use "tests/test_config.py::TestConfig::test_load". A standalone test
+        function can be selected as "tests/test_config.py::test_load".
+        The selector follows pytest node-id syntax, not shell options.
         """
         return _safe_tool_call(
             lambda: validator.run_python_tests(
@@ -214,8 +218,14 @@ def create_server(validator: DockerCodeValidator) -> FastMCP:
         a successful build is sufficient validation unless tests are part of
         the task. Use this tool when creating, modifying, debugging or
         explicitly verifying Java tests. Auto detection uses pom.xml or
-        build.gradle/build.gradle.kts. A Java selector is translated to Maven
-        -Dtest or Gradle --tests without exposing an arbitrary shell command.
+        build.gradle/build.gradle.kts.
+
+        Omit test_selector to run the whole test suite. To run a whole test
+        class, use "com.example.UserServiceTest"; to run one test method, use
+        "com.example.UserServiceTest#testCreate". Prefer the fully qualified
+        class name. The Java selector is passed to Maven as -Dtest=<selector>
+        or converted to Gradle --tests (the # separator becomes a dot).
+        No arbitrary Maven goals, Gradle tasks, or shell options are accepted.
         """
         return _safe_tool_call(
             lambda: validator.run_java_tests(
