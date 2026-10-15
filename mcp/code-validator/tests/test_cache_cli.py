@@ -1062,14 +1062,12 @@ def test_dependency_cache_cli_program_name() -> None:
         assert parser.parse_args([command, "."]).command == command
 
 
-def test_docker_prepare_python_only_cli() -> None:
-    import pytest
+def test_docker_prepare_cli_accepts_supported_build_systems() -> None:
     parser = build_parser()
-    for command in ("prepare-maven", "prepare-gradle"):
-        with pytest.raises(SystemExit):
-            parser.parse_args([command, ".", "--executor", "docker"])
-    args = parser.parse_args(["prepare-python", ".", "--executor", "docker", "--image", "python:3.12"])
-    assert args.image == "python:3.12"
+    for command in ("prepare-maven", "prepare-gradle", "prepare-python"):
+        args = parser.parse_args([command, ".", "--executor", "docker", "--image", "example:latest"])
+        assert args.executor == "docker"
+        assert args.image == "example:latest"
 
 
 def test_docker_requirements_snapshot_selective_and_recursive(tmp_path: Path) -> None:
