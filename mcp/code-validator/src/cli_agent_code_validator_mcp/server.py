@@ -245,17 +245,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--python-image",
         required=True,
-        help="Immutable pytest image: name@sha256:<digest> or local sha256:<image-id>",
+        help="Local pytest Docker image ID: sha256:<64 hex>",
     )
     parser.add_argument(
         "--maven-image",
         required=True,
-        help="Immutable Maven image: name@sha256:<digest> or local sha256:<image-id>",
+        help="Local Maven Docker image ID: sha256:<64 hex>",
     )
     parser.add_argument(
         "--gradle-image",
         required=True,
-        help="Immutable Gradle image: name@sha256:<digest> or local sha256:<image-id>",
+        help="Local Gradle Docker image ID: sha256:<64 hex>",
     )
     parser.add_argument("--wsl", action="store_true")
     parser.add_argument(
