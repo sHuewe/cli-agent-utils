@@ -53,7 +53,7 @@ For every test run the validator:
 - never bind-mounts the real workspace into the test container,
 - creates disposable `/work`, `/tmp` and bounded `/output` tmpfs mounts,
 - always uses Docker `--network none`,
-- requires digest-pinned images and uses `--pull never`,
+- requires immutable repository digests or full local image IDs and uses `--pull never`,
 - runs as UID/GID `65532:65532`,
 - uses a read-only container root filesystem,
 - drops all capabilities and enables `no-new-privileges`,
@@ -73,13 +73,16 @@ Three immutable image references are configured administratively. Each image mus
 - a Maven image containing Maven; project dependencies can be supplied from a separately prepared per-dependency cache,
 - a Gradle image containing Gradle; project dependencies can be supplied from a separately prepared per-dependency Gradle user home.
 
-Every reference must include a complete SHA-256 digest:
+Each reference must be an immutable repository digest or a complete local Docker image ID:
 
 ```text
 registry.internal/python-tests@sha256:<64-hex-digest>
 registry.internal/maven-tests@sha256:<64-hex-digest>
 registry.internal/gradle-tests@sha256:<64-hex-digest>
+sha256:<64-hex-local-image-id>
 ```
+
+For a locally built image, get its ID with `docker image inspect <tag> --format '{{.Id}}'` and configure that full ID instead of a mutable tag. No registry push is required.
 
 The validator never downloads packages during a test. Python installs only from a prepared local wheel cache with `--no-index`; Maven runs with `-o`; Gradle runs with `--offline`.
 
@@ -233,7 +236,7 @@ cli-agent-dependency-cache prepare-gradle . --target windows
 
 For a cli-agent/MCP installation that itself runs inside WSL, omit `--target windows`; the default `--target native` correctly uses the WSL user's own cache.
 
-The images must already exist in the Docker daemon because the validator uses `--pull never`. The pinned images must provide a POSIX `sh` plus `tar`, `cat`, `cp`, `mkdir`, and `sleep`; `sleep` is used by the fixed container keepalive entrypoint while validation commands run via `docker exec`.
+The images must already exist in the Docker daemon because the validator uses `--pull never`. The immutable images must provide a POSIX `sh` plus `tar`, `cat`, `cp`, `mkdir`, and `sleep`; `sleep` is used by the fixed container keepalive entrypoint while validation commands run via `docker exec`.
 
 ### cli-agent admin configuration
 
