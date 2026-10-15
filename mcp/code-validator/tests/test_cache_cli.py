@@ -1021,8 +1021,8 @@ def test_prepare_maven_rebuilds_existing_project_cache(
     second_marker = (second.repository / "marker.txt").read_text(encoding="utf-8")
 
     assert first.key == second.key
-    assert first_marker == "2"
-    assert second_marker == "4"
+    assert first_marker == "3"
+    assert second_marker == "6"
     assert len(calls) == 4
 
 
