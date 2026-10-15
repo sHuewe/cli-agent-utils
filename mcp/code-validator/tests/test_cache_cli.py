@@ -46,9 +46,10 @@ def test_prepare_maven_builds_isolated_repository_and_marks_ready(
 
     assert entry.is_ready()
     assert (entry.repository / "artifact.jar").is_file()
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert calls[0][-1] == "dependency:go-offline"
     assert calls[1][-2:] == ["-DskipTests", "package"]
+    assert calls[2][-2:] == ["-Dmaven.test.failure.ignore=true", "test"]
 
 
 def test_prepare_maven_rebuilds_ready_cache(
@@ -81,7 +82,7 @@ def test_prepare_maven_rebuilds_ready_cache(
     second = prepare_maven(project, cache_root)
 
     assert first.key == second.key
-    assert calls == 4
+    assert calls == 6
 
 
 def test_cache_key_matches_validator_lookup(tmp_path: Path) -> None:
@@ -1700,3 +1701,42 @@ def test_windows_cache_promotion_does_not_retry_unrelated_errors(tmp_path: Path,
     with pytest.raises(PermissionError):
         docker_prepare._promote_cache(src, dst)
     assert src.exists()
+
+def test_maven_failed_test_warmup_promotes_cache(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import cache_cli
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>")
+    commands = []
+
+    def runner(command, *, cwd, timeout):
+        commands.append(command)
+        repo = Path(next(x.split("=", 1)[1] for x in command if x.startswith("-Dmaven.repo.local=")))
+        repo.mkdir(parents=True, exist_ok=True)
+        (repo / "provider.jar").write_bytes(b"provider")
+        if command[-1] == "test":
+            raise RuntimeError("Maven-Vorbereitung endete mit Code 1.")
+
+    monkeypatch.setattr(cache_cli, "_run", runner)
+    entry = cache_cli.prepare_maven(project, tmp_path / "cache")
+    assert entry.is_ready()
+    assert (entry.repository / "provider.jar").exists()
+    assert [c[-1] for c in commands] == ["dependency:go-offline", "package", "test"]
+
+
+def test_maven_test_warmup_can_be_disabled(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import cache_cli
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>")
+    calls = []
+
+    def runner(command, *, cwd, timeout):
+        calls.append(command[-1])
+        Path(next(x.split("=", 1)[1] for x in command if x.startswith("-Dmaven.repo.local="))).mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(cache_cli, "_run", runner)
+    cache_cli.prepare_maven(project, tmp_path / "cache", test_warmup=False)
+    assert calls == ["dependency:go-offline", "package"]
+    args = build_parser().parse_args(["prepare-maven", ".", "--skip-test-warmup"])
+    assert args.skip_test_warmup is True
