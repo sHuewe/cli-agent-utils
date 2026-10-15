@@ -857,7 +857,7 @@ def test_prepare_maven_accepts_operator_maven_semantics(
     entry = prepare_maven(project, cache_root)
 
     assert entry.is_ready()
-    assert len(calls) == 2
+    assert len(calls) == 3
 
 def test_python_interpreter_probe_rejects_windows_python(
     monkeypatch,
