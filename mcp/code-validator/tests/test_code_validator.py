@@ -2284,3 +2284,40 @@ def test_validator_streams_fixed_runner_script_through_stdin(tmp_path: Path) -> 
     assert "--interactive" in args
     assert payload == b'exec "$@" > /output/test.log 2>&1' + bytes([10])
     assert "-c" not in args
+
+
+def test_validator_timeout_defaults_and_docker_probe_budget(tmp_path: Path) -> None:
+    from cli_agent_code_validator_mcp.code_validator_types import CodeValidatorSettings
+    from cli_agent_code_validator_mcp.server import parse_args
+    from unittest.mock import patch
+
+    defaults = settings()
+    assert defaults.setup_timeout_seconds == 180
+    assert defaults.test_timeout_seconds == 600
+
+    with patch("sys.argv", [
+        "cli-agent-code-validator-mcp",
+        "--python-image", PINNED_PYTHON,
+        "--maven-image", PINNED_MAVEN,
+        "--gradle-image", PINNED_GRADLE,
+    ]):
+        cli = parse_args()
+    assert cli.setup_timeout == defaults.setup_timeout_seconds
+    assert cli.test_timeout == defaults.test_timeout_seconds
+
+    class TimedBackend(FakeBackend):
+        def __init__(self):
+            super().__init__()
+            self.timeouts = []
+
+        def run(self, arguments, *, timeout, input_bytes=None):
+            self.timeouts.append((list(arguments), timeout))
+            return super().run(arguments, timeout=timeout, input_bytes=input_bytes)
+
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    backend = TimedBackend()
+    DockerCodeValidator(tmp_path, defaults, backend=backend).run_java_build(".")
+    assert any(args[0] == "version" and limit == 60 for args, limit in backend.timeouts)
+    assert any(args[0] == "create" and limit == 180 for args, limit in backend.timeouts)
+    assert any(args[0] == "rm" and limit == 60 for args, limit in backend.timeouts)
+    assert any(args[0] == "exec" and limit == 600 for args, limit in backend.timeouts)
