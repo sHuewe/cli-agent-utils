@@ -1702,26 +1702,23 @@ def test_windows_cache_promotion_does_not_retry_unrelated_errors(tmp_path: Path,
         docker_prepare._promote_cache(src, dst)
     assert src.exists()
 
-def test_maven_failed_test_warmup_promotes_cache(tmp_path: Path, monkeypatch) -> None:
+def test_maven_failed_test_warmup_preserves_previous_cache(tmp_path: Path, monkeypatch) -> None:
+    import pytest
     from cli_agent_code_validator_mcp import cache_cli
     project = tmp_path / "project"
     project.mkdir()
     (project / "pom.xml").write_text("<project/>")
-    commands = []
+    calls = []
 
     def runner(command, *, cwd, timeout):
-        commands.append(command)
-        repo = Path(next(x.split("=", 1)[1] for x in command if x.startswith("-Dmaven.repo.local=")))
-        repo.mkdir(parents=True, exist_ok=True)
-        (repo / "provider.jar").write_bytes(b"provider")
+        calls.append(command)
         if command[-1] == "test":
             raise RuntimeError("Maven-Vorbereitung endete mit Code 1.")
 
     monkeypatch.setattr(cache_cli, "_run", runner)
-    entry = cache_cli.prepare_maven(project, tmp_path / "cache")
-    assert entry.is_ready()
-    assert (entry.repository / "provider.jar").exists()
-    assert [c[-1] for c in commands] == ["dependency:go-offline", "package", "test"]
+    with pytest.raises(RuntimeError, match="Code 1"):
+        cache_cli.prepare_maven(project, tmp_path / "cache")
+    assert [c[-1] for c in calls] == ["dependency:go-offline", "package", "test"]
 
 
 def test_maven_test_warmup_can_be_disabled(tmp_path: Path, monkeypatch) -> None:
@@ -1743,7 +1740,7 @@ def test_maven_test_warmup_can_be_disabled(tmp_path: Path, monkeypatch) -> None:
 
 
 
-def test_docker_maven_warmup_failure_keeps_ready_cache(tmp_path: Path, monkeypatch) -> None:
+def test_docker_maven_warmup_failure_rejects_cache(tmp_path: Path, monkeypatch) -> None:
     from cli_agent_code_validator_mcp import docker_java_prepare as java
     from cli_agent_code_validator_mcp.docker_backend import DockerCommandResult
 
@@ -1775,12 +1772,13 @@ def test_docker_maven_warmup_failure_keeps_ready_cache(tmp_path: Path, monkeypat
     monkeypatch.setattr(java, "_image_policy", lambda *args: None)
     monkeypatch.setattr(java, "_run_build_with_output", run_build)
     monkeypatch.setattr(java, "_export_cache", export)
-    ready = java.prepare_java_in_docker(
-        "maven", project, cache_root, image="maven:test",
-        use_user_config=False, verbose=False,
-    )
-    assert ready.is_ready()
-    assert (ready.repository / "provider.jar").read_bytes() == b"provider"
+    import pytest
+    with pytest.raises(RuntimeError, match="test failure"):
+        java.prepare_java_in_docker(
+            "maven", project, cache_root, image="maven:test",
+            use_user_config=False, verbose=False,
+        )
+    assert not list(cache_root.glob("maven-*"))
     assert [cmd[-1] for cmd in build_commands] == [
         "dependency:go-offline", "package", "test"
     ]
