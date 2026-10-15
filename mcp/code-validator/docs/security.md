@@ -98,7 +98,7 @@ Docker is a strong practical isolation layer but not a virtual-machine security 
 
 ## Images and dependencies
 
-All images must be digest-pinned and already present locally. `--pull never` is mandatory. The images must also provide a POSIX `sh`, `tar`, `cat`, `cp`, `mkdir` and `sleep`, which the fixed sandbox runner uses for lifecycle, keepalive, snapshot extraction, bounded output capture and offline-cache preparation.
+All images must be referenced by an immutable repository digest or full local Docker image ID (`sha256:<64 hex>`), and already present locally. `--pull never` is mandatory. The images must also provide a POSIX `sh`, `tar`, `cat`, `cp`, `mkdir` and `sleep`, which the fixed sandbox runner uses for lifecycle, keepalive, snapshot extraction, bounded output capture and offline-cache preparation.
 
 Concrete administrator-facing image examples and the configurable Gradle Dockerfile live in [Validator Docker images](images.md). Those examples do not weaken this security contract: the final configured image must still be digest-pinned, present locally, and free of declared image volumes. In particular, the official Gradle image declares a Gradle-home volume, so the provided multi-stage Dockerfile copies only the Gradle installation into a clean final JDK image instead of using the official image directly.
 
