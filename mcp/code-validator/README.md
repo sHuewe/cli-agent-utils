@@ -53,7 +53,7 @@ For every test run the validator:
 - never bind-mounts the real workspace into the test container,
 - creates disposable `/work`, `/tmp` and bounded `/output` tmpfs mounts,
 - always uses Docker `--network none`,
-- requires digest-pinned images and uses `--pull never`,
+- requires full local Docker image IDs and uses `--pull never`,
 - runs as UID/GID `65532:65532`,
 - uses a read-only container root filesystem,
 - drops all capabilities and enables `no-new-privileges`,
@@ -73,17 +73,19 @@ Three immutable image references are configured administratively. Each image mus
 - a Maven image containing Maven; project dependencies can be supplied from a separately prepared per-dependency cache,
 - a Gradle image containing Gradle; project dependencies can be supplied from a separately prepared per-dependency Gradle user home.
 
-Every reference must include a complete SHA-256 digest:
+Each reference must be a complete local Docker image ID (repository digests and tags are not accepted):
 
 ```text
-registry.internal/python-tests@sha256:<64-hex-digest>
-registry.internal/maven-tests@sha256:<64-hex-digest>
-registry.internal/gradle-tests@sha256:<64-hex-digest>
+sha256:<64-hex-local-python-image-id>
+sha256:<64-hex-local-maven-image-id>
+sha256:<64-hex-local-gradle-image-id>
 ```
+
+For a locally built image, get its ID with `docker image inspect <tag> --format '{{.Id}}'` and configure that full ID instead of a mutable tag. No registry push is required.
 
 The validator never downloads packages during a test. Python installs only from a prepared local wheel cache with `--no-index`; Maven runs with `-o`; Gradle runs with `--offline`.
 
-For concrete image recommendations, Java/JDK compatibility examples, local digest-pinning guidance, and the repository's configurable Gradle image Dockerfile, see [Validator Docker images](docs/images.md). The official Gradle image is intentionally treated only as a build source there because its declared Gradle-home volume conflicts with the validator's no-image-volumes policy.
+For concrete image recommendations, Java/JDK compatibility examples, local image-ID guidance, and the repository's configurable Gradle image Dockerfile, see [Validator Docker images](docs/images.md). The official Gradle image is intentionally treated only as a build source there because its declared Gradle-home volume conflicts with the validator's no-image-volumes policy.
 
 ### Optional Docker dependency preparation for Java
 
@@ -131,7 +133,7 @@ Maven provenance files (`_remote.repositories`, `resolver-status.properties`,
 `*.lastUpdated`) are stripped. Gradle prepared script and user configuration
 caches are discarded. Existing successful cache snapshots are retained if
 preparation or export fails. The normal MCP validator still uses its distinct
-digest-pinned images, `--network none`, and sees no transferred credentials.
+image-ID-pinned images, `--network none`, and sees no transferred credentials.
 
 Do not use Docker-prepare for untrusted project build scripts or untrusted
 images. A malicious build can access credentials during preparation, and
@@ -161,7 +163,7 @@ A single selected pip user configuration file is transferred when available;
 `--no-user-config` disables that. Explicit `PIP_CONFIG_FILE=/dev/null` is
 honored. The temporary container needs `sh`, `tar`, `mkdir`, `sleep`,
 Python and pip. Only generated wheel files are exported to the host and used by
-the unchanged, offline, digest-pinned MCP validator.
+the unchanged, offline, image-ID-pinned MCP validator.
 
 Docker prepare is a *trusted, manually invoked CLI operation*, never an MCP
 tool or an LLM-exposed action. pip build backends may run project-controlled
@@ -233,7 +235,7 @@ cli-agent-dependency-cache prepare-gradle . --target windows
 
 For a cli-agent/MCP installation that itself runs inside WSL, omit `--target windows`; the default `--target native` correctly uses the WSL user's own cache.
 
-The images must already exist in the Docker daemon because the validator uses `--pull never`. The pinned images must provide a POSIX `sh` plus `tar`, `cat`, `cp`, `mkdir`, and `sleep`; `sleep` is used by the fixed container keepalive entrypoint while validation commands run via `docker exec`.
+The images must already exist in the Docker daemon because the validator uses `--pull never`. The immutable images must provide a POSIX `sh` plus `tar`, `cat`, `cp`, `mkdir`, and `sleep`; `sleep` is used by the fixed container keepalive entrypoint while validation commands run via `docker exec`.
 
 ### cli-agent admin configuration
 
@@ -253,9 +255,9 @@ command = "C:/absolute/path/to/cli-agent-code-validator-mcp.exe"
 required_workspace_access = "read"
 trust_instructions = false
 args = [
-    "--python-image", "registry.internal/python-tests@sha256:<digest>",
-    "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
-    "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
+    "--python-image", "sha256:<python-image-id>",
+    "--maven-image", "sha256:<maven-image-id>",
+    "--gradle-image", "sha256:<gradle-image-id>",
 ]
 ```
 
@@ -263,9 +265,9 @@ For Docker through WSL, add:
 
 ```toml
 args = [
-    "--python-image", "registry.internal/python-tests@sha256:<digest>",
-    "--maven-image", "registry.internal/maven-tests@sha256:<digest>",
-    "--gradle-image", "registry.internal/gradle-tests@sha256:<digest>",
+    "--python-image", "sha256:<python-image-id>",
+    "--maven-image", "sha256:<maven-image-id>",
+    "--gradle-image", "sha256:<gradle-image-id>",
     "--wsl",
     "--wsl-distribution", "Ubuntu",
 ]

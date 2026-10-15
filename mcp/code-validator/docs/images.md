@@ -8,7 +8,7 @@ The Code-Validator does not download or modify its execution images at runtime. 
 
 All validator images must also contain a POSIX `sh` and the utilities `tar`, `cat`, `cp`, `mkdir`, and `sleep`. Images are started with a read-only root filesystem and with writable tmpfs mounts only at `/tmp`, `/work`, and `/output`.
 
-The examples below are starting points for building or selecting images. Production/admin configuration must still use a complete `@sha256:<digest>` reference, not a mutable tag.
+The examples below are starting points for building or selecting images. Production/admin configuration must use exclusively the full local Docker image ID (`sha256:<64 hex>`), never a registry digest or mutable tag.
 
 ## Python
 
@@ -53,7 +53,7 @@ For local evaluation, a normal pull is sufficient:
 docker pull maven:3.9.16-eclipse-temurin-21
 ```
 
-Before configuring the MCP, resolve and approve the immutable digest and configure the resulting `maven@sha256:...` reference.
+Before configuring the MCP, resolve and approve the full local Docker image ID (`sha256:...`).
 
 ## Gradle / Java
 
@@ -123,23 +123,21 @@ docker run --rm --entrypoint sh <maven-image> -c 'java -version && mvn --version
 docker run --rm --entrypoint sh <gradle-image> -c 'java -version && gradle --version'
 ```
 
-## Digest pinning and local testing
+## Immutable image pinning and local testing
 
-The Code-Validator accepts only references of the form:
+The Code-Validator accepts only complete local Docker image IDs:
 
 ```text
-registry.example/image@sha256:<64-hex-digest>
+sha256:<64-hex-local-image-id>
 ```
 
-A mutable tag such as `cli-agent-gradle:9.8.0-jdk21` is useful while building, but it cannot be passed to the MCP.
+A mutable tag such as `cli-agent-gradle:9.8.0-jdk21` is useful while building, but it cannot be passed to the MCP. For locally built images, obtain the full ID using `docker image inspect cli-agent-gradle:9.8.0-jdk21 --format '{{.Id}}'` and configure that ID directly. There is no need to push a custom image to a registry.
 
-For upstream images, pull the chosen tag and use its approved repository digest. For custom images, the most reproducible local workflow is to push the image to a local/private registry and configure the resulting repository digest. For example:
+For upstream or custom images, pull or build the image in the Docker daemon used by the validator, then retrieve its full local ID:
 
 ```bash
-docker tag cli-agent-gradle:9.8.0-jdk21 localhost:5000/cli-agent-gradle:9.8.0-jdk21
-docker push localhost:5000/cli-agent-gradle:9.8.0-jdk21
-docker image inspect localhost:5000/cli-agent-gradle:9.8.0-jdk21 \
-  --format '{{json .RepoDigests}}'
+docker image inspect cli-agent-gradle:9.8.0-jdk21 \
+  --format '{{.Id}}'
 ```
 
-Then use the returned `localhost:5000/cli-agent-gradle@sha256:...` reference in the administrator configuration. The image must already be present in the Docker daemon used by the validator because runtime execution uses `--pull never`.
+Then use that exact `sha256:...` ID in the administrator configuration. The image must already be present in the Docker daemon used by the validator because runtime execution uses `--pull never`.
