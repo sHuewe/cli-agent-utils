@@ -269,7 +269,7 @@ Preparation intentionally runs outside the MCP sandbox. Maven may use its normal
 ```text
 mvn -B -Dmaven.repo.local=<cache>/repository dependency:go-offline
 mvn -B -Dmaven.repo.local=<cache>/repository -DskipTests package
-mvn -B -Dmaven.repo.local=<cache>/repository -DskipTests=false -Dmaven.test.skip=false -Dmaven.test.failure.ignore=true test
+mvn -B -Dmaven.repo.local=<cache>/repository -DskipTests=false -Dmaven.test.skip=false -Dmaven.test.skip.exec=false -Dmaven.test.failure.ignore=true test
 ```
 
 Before promotion, the preparer removes Maven resolver-only provenance/state files such as `_remote.repositories`, `resolver-status.properties` and `*.lastUpdated`. The isolated local repository itself is the only Maven payload promoted; user/global `settings.xml`, credentials and other host configuration are not copied into the cache. The preparation command then stores only that sanitized generated repository and a small readiness marker under `maven-<sha256>`.
