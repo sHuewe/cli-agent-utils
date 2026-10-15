@@ -1508,12 +1508,14 @@ def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Pa
     user_home.mkdir()
     (user_home / "gradle.properties").write_text("repoPassword=SECRET")
     exported = []
+    executed = []
 
     class FakeDocker:
         def __init__(self, **kwargs):
             pass
 
         def run(self, arguments, *, timeout, input_bytes=None):
+            executed.append(arguments)
             return DockerCommandResult(0, "", "")
 
         def stream_tar_directory(self, source, arguments, *, timeout):
@@ -1530,6 +1532,14 @@ def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Pa
         "gradle", project, cache_root, image="gradle:test",
         gradle_user_home=user_home,
     )
+    build_calls = [
+        cmd for cmd in executed if cmd[:2] == ["exec", "--workdir"]
+    ]
+    assert len(build_calls) == 1
+    build_cmd = build_calls[0]
+    assert "--env" in build_cmd
+    assert "JAVA_TOOL_OPTIONS=-Duser.home=/tmp/home" not in build_cmd
+    assert 'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }-Duser.home=/tmp/home"' in build_cmd
     assert len(exported) == 1
     assert exported[0][0] == "/tmp/prepared/gradle-home/caches/modules-2"
     # Export first lands in a temporary cache directory. Only after validation
