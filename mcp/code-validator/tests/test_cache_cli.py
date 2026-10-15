@@ -1675,7 +1675,7 @@ def test_windows_cache_promotion_retries_transient_denial(tmp_path: Path, monkey
             raise error
         return original(self, target)
 
-    monkeypatch.setattr(docker_prepare.os, "name", "nt")
+    monkeypatch.setattr(docker_prepare, "_WINDOWS", True)
     monkeypatch.setattr(docker_prepare.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(Path, "rename", flaky_rename)
     docker_prepare._promote_cache(src, dst)
