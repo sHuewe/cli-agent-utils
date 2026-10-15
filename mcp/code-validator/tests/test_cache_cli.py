@@ -1621,3 +1621,37 @@ def test_docker_prepare_live_output_failure_and_quiet(monkeypatch) -> None:
         _run_build_with_output(Backend(), ["exec", "container", "mvn"], 120)
     with pytest.raises(RuntimeError, match="Exit 126"):
         _run_build_with_output(Backend(), ["exec", "container", "mvn"], 120, verbose=False)
+
+
+def test_java_docker_quiet_forwarded_from_cli(tmp_path: Path, monkeypatch) -> None:
+    import sys
+    from types import SimpleNamespace
+    from cli_agent_code_validator_mcp import cache_cli, docker_java_prepare
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>")
+    (project / "build.gradle").write_text("plugins { id 'java' }")
+    calls = []
+
+    def fake_prepare(kind, path, root, **kwargs):
+        calls.append((kind, kwargs["verbose"]))
+        return SimpleNamespace(key="test", repository=root / "repository",
+                               gradle_home=root / "gradle-home")
+
+    monkeypatch.setattr(docker_java_prepare, "prepare_java_in_docker", fake_prepare)
+    for cmd, expected in (
+        ("prepare-maven", False), ("prepare-gradle", False),
+        ("prepare-maven", True), ("prepare-gradle", True),
+    ):
+        argv = ["cli-agent-dependency-cache", cmd, str(project),
+                "--executor", "docker", "--image", "test:local",
+                "--cache-root", str(tmp_path / "cache")]
+        if not expected:
+            argv.append("--quiet")
+        monkeypatch.setattr(sys, "argv", argv)
+        cache_cli.main()
+    assert calls == [
+        ("maven", False), ("gradle", False),
+        ("maven", True), ("gradle", True),
+    ]
