@@ -151,6 +151,34 @@ def _docker_run(
     _check(backend.run(args, timeout=timeout, input_bytes=data), args[0])
 
 
+def _run_build_with_output(
+    backend: DockerBackend,
+    args: list[str],
+    timeout: int,
+    *,
+    data: bytes | None = None,
+    verbose: bool = True,
+) -> None:
+    """Operator-only build output. Never send this output to an MCP result.
+
+    When verbose, inherit terminal stdout/stderr (no buffering, log capture or
+    persistence). subprocess.run also enforces a timeout for WSL/docker.
+    """
+    if not verbose:
+        _docker_run(backend, args, timeout, data=data)
+        return
+    completed = subprocess.run(  # nosec B603
+        backend.command(*args),
+        input=data,
+        timeout=timeout,
+        check=False,
+    )
+    if completed.returncode:
+        raise RuntimeError(
+            f"Docker-Prepare fehlgeschlagen: Build (Exit {completed.returncode})."
+        )
+
+
 def _image_policy(backend: DockerBackend, name: str) -> None:
     result = backend.run(["inspect", name], timeout=30)
     _check(result, "inspect")
@@ -292,6 +320,7 @@ def prepare_python_in_docker(
     use_user_config: bool = True,
     wsl: bool = False,
     wsl_distribution: str | None = None,
+    verbose: bool = True,
 ) -> PythonCacheEntry:
     """Explicit operator action; never exposed through MCP."""
     if not image or image.strip() != image or image.startswith("-") or any(ch.isspace() for ch in image):
@@ -312,6 +341,8 @@ def prepare_python_in_docker(
     temporary = Path(tempfile.mkdtemp(prefix=f".{entry.key}-", dir=root))
     try:
         # Even after a CLI timeout Docker may already have created the container.
+        if verbose:
+            print("[prepare-python] Docker-Container erstellen ...", flush=True)
         _docker_run(backend, [
             "create", "--name", name, "--pull", "never",
             "--user", "65532:65532", "--read-only",
@@ -340,9 +371,13 @@ def prepare_python_in_docker(
             )
             command = ["exec", "-e", "PIP_CONFIG_FILE=/tmp/config/pip/pip.conf",
                        "-w", "/work", name, *command[4:]]
-        _docker_run(backend, command, timeout)
+        if verbose:
+            print("[prepare-python] pip wheel ausführen ...", flush=True)
+        _run_build_with_output(backend, command, timeout, verbose=verbose)
         wheels = temporary / "wheels"
         wheels.mkdir()
+        if verbose:
+            print("[prepare-python] Wheel-Cache exportieren ...", flush=True)
         _copy_wheels(backend, name, wheels, timeout=timeout)
         info = backend.run([
             "exec", name, "python", "-c",
