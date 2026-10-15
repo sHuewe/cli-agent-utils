@@ -181,6 +181,16 @@ def build_parser() -> argparse.ArgumentParser:
                                 help="Run Docker CLI in WSL (Docker executor only).")
     prepare_python.add_argument("--wsl-distribution", default=None,
                                 help="WSL distribution for Docker; requires --wsl.")
+    for prepare_parser in (prepare, prepare_gradle, prepare_python):
+        output = prepare_parser.add_mutually_exclusive_group()
+        output.add_argument(
+            "--verbose", dest="verbose", action="store_true", default=True,
+            help="Show Docker build output live in the terminal (default).",
+        )
+        output.add_argument(
+            "--quiet", dest="verbose", action="store_false",
+            help="Suppress Docker build output; show only summary/errors.",
+        )
     for prepare_parser in (prepare, prepare_gradle):
         prepare_parser.add_argument(
             "--executor", choices=("host", "docker"), default="host",
@@ -619,6 +629,7 @@ def main() -> None:
                     timeout=args.timeout, project_identity=identity,
                     use_user_config=not args.no_user_config,
                     wsl=args.wsl, wsl_distribution=args.wsl_distribution,
+                    verbose=args.verbose,
                 )
                 print(f"Python dependency key: {entry.key}")
                 print(f"Wheel cache: {entry.wheels}")
