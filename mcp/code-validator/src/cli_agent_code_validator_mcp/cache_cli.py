@@ -334,10 +334,10 @@ def prepare_maven(
             # Test assertions may fail; dependency resolution and execution
             # still warm up dynamically selected Surefire providers.
             print("Maven-Test-Warm-up: Tests werden ausgeführt ...", flush=True)
-            try:
-                _run([*common, *MAVEN_TEST_WARMUP_ARGS], cwd=project, timeout=timeout)
-            except RuntimeError as exc:
-                print(f"Warnung: Maven-Test-Warm-up fehlgeschlagen: {exc}", file=sys.stderr)
+            # The Surefire ignore flag makes failed test assertions exit 0.
+            # Other nonzero Maven exits indicate missing dependencies/plugins,
+            # broken test infrastructure, etc., and must abort promotion.
+            _run([*common, *MAVEN_TEST_WARMUP_ARGS], cwd=project, timeout=timeout)
         sanitize_repository_for_offline_use(repository)
         write_ready_metadata(temporary, key)
 
