@@ -1532,7 +1532,14 @@ def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Pa
     )
     assert len(exported) == 1
     assert exported[0][0] == "/tmp/prepared/gradle-home/caches/modules-2"
-    assert exported[0][1] == entry.gradle_home / "caches" / "modules-2"
-    assert (entry.gradle_home / "caches" / "modules-2" / "artifact.jar").exists()
+    # Export first lands in a temporary cache directory. Only after validation
+    # is it promoted to the final, stable entry path.
+    exported_path = exported[0][1]
+    relative = exported_path.relative_to(cache_root)
+    assert relative.parts[0].startswith(f".{entry.key}-")
+    assert relative.parts[1:] == ("gradle-home", "caches", "modules-2")
+    assert not exported_path.exists()
+    assert (entry.gradle_home / "caches" / "modules-2" / "artifact.jar").read_bytes() == b"jar"
     assert not (entry.gradle_home / "gradle.properties").exists()
+    assert not (entry.gradle_home / "init.gradle").exists()
     assert "SECRET" not in str(list(entry.directory.rglob("*")))
