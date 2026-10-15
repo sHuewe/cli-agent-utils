@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .docker_backend import DockerBackend
-from .docker_prepare import _check, _docker_run, _files_tar, _image_policy, _promote_cache, _regular_file_bytes
+from .docker_prepare import _check, _docker_run, _run_build_with_output, _files_tar, _image_policy, _promote_cache, _regular_file_bytes
 from .gradle_cache import (
     GradleCacheEntry, default_source_gradle_user_home, gradle_cache_entry,
     sanitize_gradle_home_for_promotion, seed_gradle_user_configuration,
@@ -133,6 +133,7 @@ def prepare_java_in_docker(
     timeout: int = 1800, project_identity: str | None = None,
     use_user_config: bool = True, gradle_user_home: Path | None = None,
     wsl: bool = False, wsl_distribution: str | None = None,
+    verbose: bool = True,
 ) -> MavenCacheEntry | GradleCacheEntry:
     """Explicit trusted CLI operation; never callable through MCP."""
     if kind not in ("maven", "gradle"):
@@ -157,6 +158,8 @@ def prepare_java_in_docker(
     name = "cli-agent-prepare-" + uuid.uuid4().hex
     temp = Path(tempfile.mkdtemp(dir=root, prefix=f".{entry.key}-"))
     try:
+        if verbose:
+            print(f"[prepare-{kind}] Docker-Container erstellen ...", flush=True)
         _docker_run(backend, [
             "create", "--name", name, "--pull", "never",
             "--user", "65532:65532", "--read-only",
@@ -173,6 +176,8 @@ def prepare_java_in_docker(
         _docker_run(backend, ["start", name], 60)
         # The trusted project is copied, never bind-mounted. The streaming
         # backend rejects symlinks, reparse points and other special entries.
+        if verbose:
+            print(f"[prepare-{kind}] Projekt übertragen ...", flush=True)
         result = backend.stream_tar_directory(project, [
             "exec", "-i", name, "tar", "-C", "/work/project", "-xf", "-"
         ], timeout=_TRANSFER_TIMEOUT)
@@ -208,18 +213,26 @@ def prepare_java_in_docker(
                 "assemble", "testClasses", "_cliAgentResolveRuntimeDependencies",
             ],)
         for cmd in commands:
+            if verbose:
+                print(f"[prepare-{kind}] Build: {cmd[-1]} ...", flush=True)
             # Preserve JAVA_TOOL_OPTIONS supplied by the selected image (CA,
             # proxy, agents, etc.). Docker exec --env would replace it; the
             # shell instead appends our home setting without re-evaluating
             # or interpolating the image-provided value as shell code.
-            result = backend.run([
+            build_args = [
                 "exec", "--interactive", "--workdir", "/work/project",
                 "--env", "HOME=/tmp/home", name, "sh", "-s", "--", *cmd,
-            ], timeout=timeout, input_bytes=(
-                b'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }'
-                b'-Duser.home=/tmp/home"; export JAVA_TOOL_OPTIONS; exec "$@"\n'
-            ))
-            _check(result, f"{kind} build")
+            ]
+            _run_build_with_output(
+                backend, build_args, timeout,
+                data=(
+                    b'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }'
+                    b'-Duser.home=/tmp/home"; export JAVA_TOOL_OPTIONS; exec "$@"\n'
+                ),
+                verbose=verbose,
+            )
+        if verbose:
+            print(f"[prepare-{kind}] Dependency-Cache exportieren ...", flush=True)
         if kind == "maven":
             repository = temp / "repository"
             repository.mkdir()

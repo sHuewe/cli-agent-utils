@@ -1532,7 +1532,7 @@ def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Pa
     monkeypatch.setattr(java, "_export_cache", export)
     entry = java.prepare_java_in_docker(
         "gradle", project, cache_root, image="gradle:test",
-        gradle_user_home=user_home,
+        gradle_user_home=user_home, verbose=False,
     )
     build_calls = [
         cmd for cmd in executed
@@ -1564,3 +1564,94 @@ def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Pa
     assert not (entry.gradle_home / "gradle.properties").exists()
     assert not (entry.gradle_home / "init.gradle").exists()
     assert "SECRET" not in str(list(entry.directory.rglob("*")))
+
+def test_docker_prepare_output_mode_default_and_quiet() -> None:
+    parser = build_parser()
+    for command in ("prepare-maven", "prepare-gradle", "prepare-python"):
+        normal = parser.parse_args([command, ".", "--executor", "docker", "--image", "local:test"])
+        quiet = parser.parse_args([command, ".", "--executor", "docker", "--image", "local:test", "--quiet"])
+        verbose = parser.parse_args([command, ".", "--executor", "docker", "--image", "local:test", "--verbose"])
+        assert normal.verbose is True
+        assert quiet.verbose is False
+        assert verbose.verbose is True
+
+
+def test_docker_prepare_build_output_streams_to_terminal(monkeypatch) -> None:
+    import subprocess
+    from cli_agent_code_validator_mcp.docker_prepare import _run_build_with_output
+    from cli_agent_code_validator_mcp.docker_backend import DockerCommandResult
+
+    class Backend:
+        def command(self, *args):
+            return ["docker", *args]
+
+        def run(self, args, *, timeout, input_bytes=None):
+            return DockerCommandResult(0, "", "")
+
+    invocations = []
+
+    def fake_run(cmd, *, input, timeout, check):
+        invocations.append((cmd, input, timeout, check))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    runner = ["exec", "-i", "container", "sh", "-s", "--", "mvn", "package"]
+    _run_build_with_output(Backend(), runner, 123, data=b'exec "$@"\n')
+    assert invocations == [(["docker", *runner], b'exec "$@"\n', 123, False)]
+
+
+def test_docker_prepare_live_output_failure_and_quiet(monkeypatch) -> None:
+    import subprocess
+    import pytest
+    from cli_agent_code_validator_mcp.docker_prepare import _run_build_with_output
+    from cli_agent_code_validator_mcp.docker_backend import DockerCommandResult
+
+    class Backend:
+        def command(self, *args):
+            return ["docker", *args]
+
+        def run(self, args, *, timeout, input_bytes=None):
+            return DockerCommandResult(126, "", "")
+
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda cmd, *, input, timeout, check: subprocess.CompletedProcess(cmd, 126),
+    )
+    with pytest.raises(RuntimeError, match="Exit 126"):
+        _run_build_with_output(Backend(), ["exec", "container", "mvn"], 120)
+    with pytest.raises(RuntimeError, match="Exit 126"):
+        _run_build_with_output(Backend(), ["exec", "container", "mvn"], 120, verbose=False)
+
+
+def test_java_docker_quiet_forwarded_from_cli(tmp_path: Path, monkeypatch) -> None:
+    import sys
+    from types import SimpleNamespace
+    from cli_agent_code_validator_mcp import cache_cli, docker_java_prepare
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pom.xml").write_text("<project/>")
+    (project / "build.gradle").write_text("plugins { id 'java' }")
+    calls = []
+
+    def fake_prepare(kind, path, root, **kwargs):
+        calls.append((kind, kwargs["verbose"]))
+        return SimpleNamespace(key="test", repository=root / "repository",
+                               gradle_home=root / "gradle-home")
+
+    monkeypatch.setattr(docker_java_prepare, "prepare_java_in_docker", fake_prepare)
+    for cmd, expected in (
+        ("prepare-maven", False), ("prepare-gradle", False),
+        ("prepare-maven", True), ("prepare-gradle", True),
+    ):
+        argv = ["cli-agent-dependency-cache", cmd, str(project),
+                "--executor", "docker", "--image", "test:local",
+                "--cache-root", str(tmp_path / "cache")]
+        if not expected:
+            argv.append("--quiet")
+        monkeypatch.setattr(sys, "argv", argv)
+        cache_cli.main()
+    assert calls == [
+        ("maven", False), ("gradle", False),
+        ("maven", True), ("gradle", True),
+    ]

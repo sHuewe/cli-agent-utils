@@ -98,6 +98,15 @@ cli-agent-dependency-cache prepare-maven . --executor docker --image company/mav
 cli-agent-dependency-cache prepare-gradle . --executor docker --image company/gradle:8 --wsl
 ```
 
+By default, Docker prepare streams Maven, Gradle, and Python/pip build output
+live to the invoking operator terminal. `--verbose` makes this explicit;
+`--quiet` suppresses build output. Transfer/setup stages print progress
+messages in the default mode. This output is **not** returned by MCP tools,
+recorded as a persistent log by the preparer, or passed to an LLM. However,
+build tools may print repository credentials or secrets themselves; use a
+trusted terminal and avoid redirecting verbose output into shared logs.
+The existing execution timeout remains enforced.
+
 Docker images must already be present locally, may use tags, and are the
 operator's responsibility: matching Java/build tool versions, company CAs,
 network/proxy settings and other build dependencies. Docker uses bridge
