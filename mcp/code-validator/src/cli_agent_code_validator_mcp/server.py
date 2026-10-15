@@ -253,8 +253,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional WSL distribution used for the Docker CLI",
     )
-    parser.add_argument("--test-timeout", type=int, default=180)
-    parser.add_argument("--setup-timeout", type=int, default=60)
+    parser.add_argument("--test-timeout", type=int, default=600)
+    parser.add_argument("--setup-timeout", type=int, default=180)
     parser.add_argument("--memory-limit", default="2g")
     parser.add_argument("--cpu-limit", default="2.0")
     parser.add_argument("--pids-limit", type=int, default=256)
