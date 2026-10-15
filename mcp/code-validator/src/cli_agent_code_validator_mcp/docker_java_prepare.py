@@ -221,10 +221,24 @@ def prepare_java_in_docker(
             sanitize_repository_for_offline_use(repository)
             write_ready_metadata(temp, entry.key)
         else:
-            home = temp / "gradle-home"
-            home.mkdir()
-            _export_cache(backend, name, "/tmp/prepared/gradle-home", home, timeout)
-            sanitize_gradle_home_for_promotion(home)
+            # User-provided gradle.properties and init scripts reside in the
+            # container's Gradle home. Never copy that home to the host:
+            # a crash before sanitization could leave plaintext credentials.
+            # Export only downloaded modules, then apply the existing cache
+            # validation and repository-metadata checks before promotion.
+            modules = temp / "gradle-home" / "caches" / "modules-2"
+            modules.mkdir(parents=True)
+            _docker_run(
+                backend,
+                ["exec", name, "mkdir", "-p",
+                 "/tmp/prepared/gradle-home/caches/modules-2"],
+                30,
+            )
+            _export_cache(
+                backend, name, "/tmp/prepared/gradle-home/caches/modules-2",
+                modules, timeout,
+            )
+            sanitize_gradle_home_for_promotion(temp / "gradle-home")
             write_gradle_ready_metadata(temp, entry.key)
         _promote_cache(temp, entry.directory)
         return entry
