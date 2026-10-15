@@ -1494,3 +1494,45 @@ def test_docker_maven_settings_disabled(tmp_path: Path, monkeypatch) -> None:
     from cli_agent_code_validator_mcp import docker_java_prepare
     monkeypatch.setattr(docker_java_prepare.Path, "home", lambda: tmp_path)
     assert docker_java_prepare._config_archive("maven", enabled=False) is None
+
+
+def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_java_prepare as java
+    from cli_agent_code_validator_mcp.docker_backend import DockerCommandResult
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "build.gradle").write_text("plugins { id 'java' }")
+    cache_root = tmp_path / "cache"
+    user_home = tmp_path / "user-gradle"
+    user_home.mkdir()
+    (user_home / "gradle.properties").write_text("repoPassword=SECRET")
+    exported = []
+
+    class FakeDocker:
+        def __init__(self, **kwargs):
+            pass
+
+        def run(self, arguments, *, timeout, input_bytes=None):
+            return DockerCommandResult(0, "", "")
+
+        def stream_tar_directory(self, source, arguments, *, timeout):
+            return DockerCommandResult(0, "", "")
+
+    def export(_backend, _name, source, destination, timeout):
+        exported.append((source, destination))
+        (destination / "artifact.jar").write_bytes(b"jar")
+
+    monkeypatch.setattr(java, "DockerBackend", FakeDocker)
+    monkeypatch.setattr(java, "_image_policy", lambda *args: None)
+    monkeypatch.setattr(java, "_export_cache", export)
+    entry = java.prepare_java_in_docker(
+        "gradle", project, cache_root, image="gradle:test",
+        gradle_user_home=user_home,
+    )
+    assert len(exported) == 1
+    assert exported[0][0] == "/tmp/prepared/gradle-home/caches/modules-2"
+    assert exported[0][1] == entry.gradle_home / "caches" / "modules-2"
+    assert (entry.gradle_home / "caches" / "modules-2" / "artifact.jar").exists()
+    assert not (entry.gradle_home / "gradle.properties").exists()
+    assert "SECRET" not in str(list(entry.directory.rglob("*")))
