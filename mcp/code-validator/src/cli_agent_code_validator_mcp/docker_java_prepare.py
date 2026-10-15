@@ -156,7 +156,7 @@ def prepare_java_in_docker(
             _config_members = {Path(m.name).name for m in package.getmembers()}
     backend = DockerBackend(wsl=wsl, wsl_distribution=wsl_distribution)
     name = "cli-agent-prepare-" + uuid.uuid4().hex
-    temp = Path(tempfile.mkdtemp(dir=root, prefix=f".{entry.key}-"))
+    temp = Path(tempfile.mkdtemp(dir=root, prefix=".prep-"))
     try:
         if verbose:
             print(f"[prepare-{kind}] Docker-Container erstellen ...", flush=True)
