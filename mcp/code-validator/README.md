@@ -130,10 +130,11 @@ arbitrary plugins can potentially write secrets into generated artifacts.
 The cache allowlists and metadata checks reduce, but cannot completely
 eliminate, that risk.
 
-### Optional Python-only Docker wheel preparation
+### Optional Python Docker wheel preparation
 
-Maven and Gradle preparation continue to run on the host. Only
-`prepare-python` supports an optional Docker executor:
+In addition to Maven and Gradle, `prepare-python` supports Docker execution.
+Unlike the Java preparation commands above, Python Docker preparation copies
+only its selected requirements and constraints files:
 
 ```bash
 cli-agent-dependency-cache prepare-python . --executor docker --image python:3.12
