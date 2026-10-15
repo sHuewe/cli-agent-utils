@@ -29,8 +29,8 @@ class CodeValidatorSettings:
     python_image: str
     maven_image: str
     gradle_image: str
-    test_timeout_seconds: int = 180
-    setup_timeout_seconds: int = 60
+    test_timeout_seconds: int = 600
+    setup_timeout_seconds: int = 180
     memory_limit: str = "2g"
     cpu_limit: str = "2.0"
     pids_limit: int = 256

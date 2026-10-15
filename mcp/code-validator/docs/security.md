@@ -422,8 +422,8 @@ The MCP process remains a normal stdio child of `cli-agent`; only Docker CLI cal
 The server supports administrator-controlled settings:
 
 ```text
---test-timeout 180
---setup-timeout 60
+--test-timeout 600
+--setup-timeout 180
 --memory-limit 2g
 --cpu-limit 2.0
 --pids-limit 256
