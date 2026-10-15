@@ -12,6 +12,10 @@ from .code_validator_types import CodeValidationError
 
 _CACHE_SCHEMA = "cli-agent-maven-cache-v5"
 _MAVEN_TRANSIENT_FILES = {"_remote.repositories", "resolver-status.properties"}
+
+# Test execution resolves providers loaded dynamically by Maven Surefire that
+# dependency:go-offline and package -DskipTests may leave unprepared.
+MAVEN_TEST_WARMUP_ARGS = ("-Dmaven.test.failure.ignore=true", "test")
 _WINDOWS = os.name == "nt"
 
 
