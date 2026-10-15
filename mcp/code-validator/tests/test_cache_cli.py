@@ -1463,3 +1463,34 @@ def test_docker_maven_settings_are_selective(tmp_path: Path, monkeypatch) -> Non
     archive = docker_java_prepare._config_archive("maven", enabled=True)
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         assert set(tar.getnames()) == {".m2/settings.xml", ".m2/settings-security.xml"}
+
+
+def test_docker_gradle_user_config_selective(tmp_path: Path) -> None:
+    import io
+    import tarfile
+    from cli_agent_code_validator_mcp.docker_java_prepare import _config_archive
+
+    home = tmp_path / ".gradle"
+    home.mkdir()
+    (home / "gradle.properties").write_text("repoUser=alice\n")
+    (home / "init.gradle").write_text("println 'hello'\n")
+    (home / "caches").mkdir()
+    (home / "caches" / "secret").write_text("not exported")
+    (home / "init.d").mkdir()
+    (home / "init.d" / "internal.gradle").write_text("println 'test'\n")
+
+    archive = _config_archive("gradle", enabled=True, gradle_user_home=home)
+    assert archive is not None
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        assert set(tar.getnames()) == {
+            "gradle-home/gradle.properties",
+            "gradle-home/init.gradle",
+            "gradle-home/init.d/internal.gradle",
+        }
+    assert _config_archive("gradle", enabled=False, gradle_user_home=home) is None
+
+
+def test_docker_maven_settings_disabled(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_java_prepare
+    monkeypatch.setattr(docker_java_prepare.Path, "home", lambda: tmp_path)
+    assert docker_java_prepare._config_archive("maven", enabled=False) is None
