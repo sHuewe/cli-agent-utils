@@ -659,6 +659,7 @@ def main() -> None:
                         args.source_gradle_user_home if kind == "gradle" else None
                     ),
                     wsl=args.wsl, wsl_distribution=args.wsl_distribution,
+                    verbose=args.verbose,
                 )
                 print(f"{kind.capitalize()} dependency key: {entry.key}")
                 if kind == "maven":
