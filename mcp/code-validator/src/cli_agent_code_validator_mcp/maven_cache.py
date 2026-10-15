@@ -19,6 +19,7 @@ _MAVEN_TRANSIENT_FILES = {"_remote.repositories", "resolver-status.properties"}
 MAVEN_TEST_WARMUP_ARGS = (
     "-DskipTests=false",
     "-Dmaven.test.skip=false",
+    "-Dmaven.test.skip.exec=false",
     "-Dmaven.test.failure.ignore=true",
     "test",
 )
