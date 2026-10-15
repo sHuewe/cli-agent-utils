@@ -1062,14 +1062,12 @@ def test_dependency_cache_cli_program_name() -> None:
         assert parser.parse_args([command, "."]).command == command
 
 
-def test_docker_prepare_python_only_cli() -> None:
-    import pytest
+def test_docker_prepare_cli_accepts_supported_build_systems() -> None:
     parser = build_parser()
-    for command in ("prepare-maven", "prepare-gradle"):
-        with pytest.raises(SystemExit):
-            parser.parse_args([command, ".", "--executor", "docker"])
-    args = parser.parse_args(["prepare-python", ".", "--executor", "docker", "--image", "python:3.12"])
-    assert args.image == "python:3.12"
+    for command in ("prepare-maven", "prepare-gradle", "prepare-python"):
+        args = parser.parse_args([command, ".", "--executor", "docker", "--image", "example:latest"])
+        assert args.executor == "docker"
+        assert args.image == "example:latest"
 
 
 def test_docker_requirements_snapshot_selective_and_recursive(tmp_path: Path) -> None:
@@ -1399,3 +1397,169 @@ def test_maven_metadata_disappears_during_readonly_retry(tmp_path: Path, monkeyp
     maven_cache.sanitize_repository_for_offline_use(repo)
     assert calls == 2
     assert not metadata.exists()
+
+
+def test_java_docker_cli_options_and_host_guard() -> None:
+    import pytest
+    parser = build_parser()
+    for command in ("prepare-maven", "prepare-gradle"):
+        args = parser.parse_args([
+            command, ".", "--executor", "docker", "--image", "example:latest", "--wsl"
+        ])
+        assert args.executor == "docker"
+        assert args.image == "example:latest"
+        assert args.wsl is True
+
+
+def test_java_docker_archive_rejects_windows_drive_and_links(tmp_path: Path) -> None:
+    import io
+    import tarfile
+    import pytest
+    from cli_agent_code_validator_mcp.docker_java_prepare import _extract_cache_archive
+    for malicious in ("C:/outside.jar", "../outside.jar", "/absolute.jar", "nested\\outside.jar"):
+        archive_data = io.BytesIO()
+        with tarfile.open(fileobj=archive_data, mode="w") as tar:
+            info = tarfile.TarInfo(malicious)
+            info.size = 1
+            tar.addfile(info, io.BytesIO(b"x"))
+        archive_data.seek(0)
+        with pytest.raises(ValueError):
+            _extract_cache_archive(archive_data, tmp_path)
+    link_data = io.BytesIO()
+    with tarfile.open(fileobj=link_data, mode="w") as tar:
+        info = tarfile.TarInfo("link.jar")
+        info.type = tarfile.SYMTYPE
+        info.linkname = "real.jar"
+        tar.addfile(info)
+    link_data.seek(0)
+    with pytest.raises(ValueError):
+        _extract_cache_archive(link_data, tmp_path)
+
+
+def test_java_docker_archive_extracts_dependency_tree(tmp_path: Path) -> None:
+    import io
+    import tarfile
+    from cli_agent_code_validator_mcp.docker_java_prepare import _extract_cache_archive
+    stream = io.BytesIO()
+    with tarfile.open(fileobj=stream, mode="w") as tar:
+        info = tarfile.TarInfo("org/demo/artifact.jar")
+        info.size = 3
+        tar.addfile(info, io.BytesIO(b"jar"))
+    stream.seek(0)
+    _extract_cache_archive(stream, tmp_path)
+    assert (tmp_path / "org" / "demo" / "artifact.jar").read_bytes() == b"jar"
+
+
+def test_docker_maven_settings_are_selective(tmp_path: Path, monkeypatch) -> None:
+    import io
+    import tarfile
+    from cli_agent_code_validator_mcp import docker_java_prepare
+    home = tmp_path / "home"
+    (home / ".m2").mkdir(parents=True)
+    (home / ".m2" / "settings.xml").write_text("<settings/>")
+    (home / ".m2" / "settings-security.xml").write_text("<settingsSecurity/>")
+    (home / ".m2" / "repository").mkdir()
+    monkeypatch.setattr(docker_java_prepare.Path, "home", lambda: home)
+    archive = docker_java_prepare._config_archive("maven", enabled=True)
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        assert set(tar.getnames()) == {".m2/settings.xml", ".m2/settings-security.xml"}
+
+
+def test_docker_gradle_user_config_selective(tmp_path: Path) -> None:
+    import io
+    import tarfile
+    from cli_agent_code_validator_mcp.docker_java_prepare import _config_archive
+
+    home = tmp_path / ".gradle"
+    home.mkdir()
+    (home / "gradle.properties").write_text("repoUser=alice\n")
+    (home / "init.gradle").write_text("println 'hello'\n")
+    (home / "caches").mkdir()
+    (home / "caches" / "secret").write_text("not exported")
+    (home / "init.d").mkdir()
+    (home / "init.d" / "internal.gradle").write_text("println 'test'\n")
+
+    archive = _config_archive("gradle", enabled=True, gradle_user_home=home)
+    assert archive is not None
+    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+        assert set(tar.getnames()) == {
+            "gradle-home/gradle.properties",
+            "gradle-home/init.gradle",
+            "gradle-home/init.d/internal.gradle",
+        }
+    assert _config_archive("gradle", enabled=False, gradle_user_home=home) is None
+
+
+def test_docker_maven_settings_disabled(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_java_prepare
+    monkeypatch.setattr(docker_java_prepare.Path, "home", lambda: tmp_path)
+    assert docker_java_prepare._config_archive("maven", enabled=False) is None
+
+
+def test_docker_gradle_exports_only_modules_and_never_user_settings(tmp_path: Path, monkeypatch) -> None:
+    from cli_agent_code_validator_mcp import docker_java_prepare as java
+    from cli_agent_code_validator_mcp.docker_backend import DockerCommandResult
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "build.gradle").write_text("plugins { id 'java' }")
+    cache_root = tmp_path / "cache"
+    user_home = tmp_path / "user-gradle"
+    user_home.mkdir()
+    (user_home / "gradle.properties").write_text("repoPassword=SECRET")
+    exported = []
+    executed = []
+
+    class FakeDocker:
+        def __init__(self, **kwargs):
+            pass
+
+        def run(self, arguments, *, timeout, input_bytes=None):
+            executed.append(arguments)
+            return DockerCommandResult(0, "", "")
+
+        def stream_tar_directory(self, source, arguments, *, timeout):
+            return DockerCommandResult(0, "", "")
+
+    def export(_backend, _name, source, destination, timeout):
+        exported.append((source, destination))
+        (destination / "artifact.jar").write_bytes(b"jar")
+
+    monkeypatch.setattr(java, "DockerBackend", FakeDocker)
+    monkeypatch.setattr(java, "_image_policy", lambda *args: None)
+    monkeypatch.setattr(java, "_export_cache", export)
+    entry = java.prepare_java_in_docker(
+        "gradle", project, cache_root, image="gradle:test",
+        gradle_user_home=user_home,
+    )
+    build_calls = [
+        cmd for cmd in executed if cmd[:2] == ["exec", "--workdir"]
+    ]
+    assert len(build_calls) == 1
+    build_cmd = build_calls[0]
+    assert "--env" in build_cmd
+    assert "JAVA_TOOL_OPTIONS=-Duser.home=/tmp/home" not in build_cmd
+    # The JVM options assignment is part of the shell script argument,
+    # together with the export and exec statements, not a standalone argv item.
+    assert build_cmd[build_cmd.index("-c") - 1] == "sh"
+    shell_script = build_cmd[build_cmd.index("-c") + 1]
+    assert shell_script.startswith(
+        'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }'
+        '-Duser.home=/tmp/home"'
+    )
+    assert 'export JAVA_TOOL_OPTIONS; exec "$@"' in shell_script
+    assert build_cmd[build_cmd.index("-c") + 2] == "sh"
+    assert build_cmd[-1] == "_cliAgentResolveRuntimeDependencies"
+    assert len(exported) == 1
+    assert exported[0][0] == "/tmp/prepared/gradle-home/caches/modules-2"
+    # Export first lands in a temporary cache directory. Only after validation
+    # is it promoted to the final, stable entry path.
+    exported_path = exported[0][1]
+    relative = exported_path.relative_to(cache_root)
+    assert relative.parts[0].startswith(f".{entry.key}-")
+    assert relative.parts[1:] == ("gradle-home", "caches", "modules-2")
+    assert not exported_path.exists()
+    assert (entry.gradle_home / "caches" / "modules-2" / "artifact.jar").read_bytes() == b"jar"
+    assert not (entry.gradle_home / "gradle.properties").exists()
+    assert not (entry.gradle_home / "init.gradle").exists()
+    assert "SECRET" not in str(list(entry.directory.rglob("*")))

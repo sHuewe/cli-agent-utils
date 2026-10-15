@@ -493,20 +493,42 @@ before any output masking. The output redactor therefore matches canonical
 host paths rather than short relative names or punctuation. Regression tests
 cover all three cache root settings and both relative forms.
 
-## Optional Python-only Docker wheel preparation (trusted operator CLI)
+## Optional Docker dependency preparation (trusted operator CLI)
 
-Only `cli-agent-dependency-cache prepare-python` supports
-`--executor docker --image <image-tag-or-digest>`. Maven and Gradle always
-use their existing host preparation paths. The administrator-configured MCP
-validator images remain digest-pinned and the validator remains offline.
+All three explicit preparation commands, `prepare-maven`, `prepare-gradle`,
+and `prepare-python`, support
+`--executor docker --image <image-tag-or-digest>`; their existing host modes
+remain the default. This is **trusted, operator-invoked execution**, never an
+MCP tool or an action initiated by the LLM. The administrator-configured
+validator images remain digest-pinned, and MCP validation remains offline
+with `--network none`.
 
-Docker preparation is an explicitly user-invoked operation, never an MCP tool.
-The selected image is not pulled automatically. Bridge networking is used to
-resolve Python wheels; build backends are trusted code and can read the
-selectively transferred pip configuration. Only the root `requirements.txt`
-and recursively included `-r` / `-c` files are sent from the project.
-No project directory or home directory is mounted. The generated wheel archive
-is constrained to wheel files and size-checked during transfer before being
-promoted to the project cache. A failed replacement attempts to restore the
-previous ready cache. The normal MCP validation sandbox receives neither
-credentials nor package index access.
+Preparation requires a locally available image (`--pull never`) and uses
+Docker bridge networking. The operator is responsible for the selected
+image's toolchain, company CA certificates, proxy configuration, and trust.
+Project build scripts/plugins and Python build backends may execute arbitrary
+code and can access selectively transferred credentials. Never prepare
+untrusted project code or images with sensitive repository settings.
+
+For Maven and Gradle the **entire selected project directory** is copied to a
+temporary container using verified TAR streaming; no project or user-home
+bind mounts are created. Project symlinks, reparse points, and special
+filesystem entries are rejected. Only selected user configuration is copied
+when present (Maven `settings.xml` and `settings-security.xml`; Gradle
+`gradle.properties` and init scripts). `--no-user-config` disables copying.
+Maven runs `dependency:go-offline` and `package -DskipTests`; Gradle
+resolves runtime classpaths in addition to assembling and compiling tests.
+Only the Maven local artifact repository or Gradle `modules-2` dependency
+cache is exported. Before promotion, strict archive extraction rejects
+traversal, Windows drive paths, symlinks, and special entries; Maven resolver
+provenance files and Gradle script/configuration caches are removed.
+
+Python Docker preparation deliberately sends only the root
+`requirements.txt` and recursively included `-r` / `-c` files, plus an
+optional selected pip user configuration. Only generated wheel files are
+exported under strict path and size checks. Neither Docker path supports
+host project/home bind mounts. Cache promotion preserves a previously ready
+cache if preparation or transfer fails; the normal MCP validation sandbox
+receives neither user credentials nor network access. These export controls
+cannot guarantee the absence of secrets deliberately embedded in artifacts
+by trusted build scripts.

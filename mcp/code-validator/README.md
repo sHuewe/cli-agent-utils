@@ -85,10 +85,56 @@ The validator never downloads packages during a test. Python installs only from 
 
 For concrete image recommendations, Java/JDK compatibility examples, local digest-pinning guidance, and the repository's configurable Gradle image Dockerfile, see [Validator Docker images](docs/images.md). The official Gradle image is intentionally treated only as a build source there because its declared Gradle-home volume conflicts with the validator's no-image-volumes policy.
 
-### Optional Python-only Docker wheel preparation
+### Optional Docker dependency preparation for Java
 
-Maven and Gradle preparation continue to run on the host. Only
-`prepare-python` supports an optional Docker executor:
+The explicitly invoked `cli-agent-dependency-cache` CLI supports an optional
+Docker executor for Maven and Gradle, in addition to the existing Python wheel
+executor. This is a **trusted, network-enabled prepare operation**, never an
+MCP tool or a way for the LLM to start arbitrary builds. Host preparation
+remains the default.
+
+```powershell
+cli-agent-dependency-cache prepare-maven . --executor docker --image company/maven:3.9 --cache-root C:\mc --wsl
+cli-agent-dependency-cache prepare-gradle . --executor docker --image company/gradle:8 --wsl
+```
+
+Docker images must already be present locally, may use tags, and are the
+operator's responsibility: matching Java/build tool versions, company CAs,
+network/proxy settings and other build dependencies. Docker uses bridge
+networking. The *whole selected project tree*, including `.git` when present,
+is safely TAR-streamed into a temporary container without host bind mounts.
+Symlinks, reparse points and special filesystem objects are rejected; projects
+with such entries must be adjusted before preparation. Build scripts run with
+network access and can execute arbitrary code. The temporary project snapshot
+is not published back to the host.
+
+User settings are transferred selectively by default: Maven
+`~/.m2/settings.xml` and `settings-security.xml`; Gradle's
+`gradle.properties`, init scripts and `init.d` files from the selected
+Gradle user home. Use `--no-user-config` to disable the transfer.
+The image's system-wide configuration and required certificates are not
+automatically imported from the host.
+
+Only Maven's prepared `repository` or Gradle's
+`gradle-home/caches/modules-2` is exported, through size-bounded TAR transfer
+with path traversal, symlinks, special entries and Windows drive paths rejected.
+Maven provenance files (`_remote.repositories`, `resolver-status.properties`,
+`*.lastUpdated`) are stripped. Gradle prepared script and user configuration
+caches are discarded. Existing successful cache snapshots are retained if
+preparation or export fails. The normal MCP validator still uses its distinct
+digest-pinned images, `--network none`, and sees no transferred credentials.
+
+Do not use Docker-prepare for untrusted project build scripts or untrusted
+images. A malicious build can access credentials during preparation, and
+arbitrary plugins can potentially write secrets into generated artifacts.
+The cache allowlists and metadata checks reduce, but cannot completely
+eliminate, that risk.
+
+### Optional Python Docker wheel preparation
+
+In addition to Maven and Gradle, `prepare-python` supports Docker execution.
+Unlike the Java preparation commands above, Python Docker preparation copies
+only its selected requirements and constraints files:
 
 ```bash
 cli-agent-dependency-cache prepare-python . --executor docker --image python:3.12

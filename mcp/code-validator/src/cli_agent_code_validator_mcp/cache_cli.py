@@ -181,6 +181,19 @@ def build_parser() -> argparse.ArgumentParser:
                                 help="Run Docker CLI in WSL (Docker executor only).")
     prepare_python.add_argument("--wsl-distribution", default=None,
                                 help="WSL distribution for Docker; requires --wsl.")
+    for prepare_parser in (prepare, prepare_gradle):
+        prepare_parser.add_argument(
+            "--executor", choices=("host", "docker"), default="host",
+            help="Dependency preparation backend (default: host).",
+        )
+        prepare_parser.add_argument("--image",
+            help="Local Docker image tag or digest (required for Docker executor).")
+        prepare_parser.add_argument("--no-user-config", action="store_true",
+            help="Do not transfer selected user Maven/Gradle configuration.")
+        prepare_parser.add_argument("--wsl", action="store_true",
+            help="Run Docker CLI via WSL (Docker executor only).")
+        prepare_parser.add_argument("--wsl-distribution", default=None,
+            help="Optional WSL distribution, requires --wsl.")
     return parser
 
 
@@ -609,6 +622,38 @@ def main() -> None:
                 )
                 print(f"Python dependency key: {entry.key}")
                 print(f"Wheel cache: {entry.wheels}")
+                print("Cache ready for offline validator use.")
+                return
+            if args.image or args.no_user_config or args.wsl or args.wsl_distribution:
+                raise ValueError("Docker-Optionen benötigen --executor docker.")
+        if args.command in ("prepare-maven", "prepare-gradle"):
+            if args.executor == "docker":
+                if args.wsl_distribution and not args.wsl:
+                    raise ValueError("--wsl-distribution benötigt --wsl.")
+                if not args.image:
+                    raise ValueError("--executor docker benötigt --image.")
+                if args.command == "prepare-maven" and args.maven_command != "mvn":
+                    raise ValueError("--maven-command ist nur für Host-Prepare verfügbar.")
+                if args.command == "prepare-gradle" and args.gradle_command is not None:
+                    raise ValueError("--gradle-command ist nur für Host-Prepare verfügbar.")
+                from .docker_java_prepare import prepare_java_in_docker
+                kind = "maven" if args.command == "prepare-maven" else "gradle"
+                root = _resolve_cache_root(kind, explicit=args.cache_root, target=args.target)
+                identity = _project_identity_for_target(args.project, args.target)
+                entry = prepare_java_in_docker(
+                    kind, args.project, root, image=args.image,
+                    timeout=args.timeout, project_identity=identity,
+                    use_user_config=not args.no_user_config,
+                    gradle_user_home=(
+                        args.source_gradle_user_home if kind == "gradle" else None
+                    ),
+                    wsl=args.wsl, wsl_distribution=args.wsl_distribution,
+                )
+                print(f"{kind.capitalize()} dependency key: {entry.key}")
+                if kind == "maven":
+                    print(f"Cache repository: {entry.repository}")
+                else:
+                    print(f"Cache Gradle user home: {entry.gradle_home}")
                 print("Cache ready for offline validator use.")
                 return
             if args.image or args.no_user_config or args.wsl or args.wsl_distribution:
