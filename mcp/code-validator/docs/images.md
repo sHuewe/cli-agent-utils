@@ -128,7 +128,7 @@ docker run --rm --entrypoint sh <gradle-image> -c 'java -version && gradle --ver
 The Code-Validator accepts only complete local Docker image IDs:
 
 ```text
- sha256:<64-hex-local-image-id>
+sha256:<64-hex-local-image-id>
 ```
 
 A mutable tag such as `cli-agent-gradle:9.8.0-jdk21` is useful while building, but it cannot be passed to the MCP. For locally built images, obtain the full ID using `docker image inspect cli-agent-gradle:9.8.0-jdk21 --format '{{.Id}}'` and configure that ID directly. There is no need to push a custom image to a registry.
@@ -136,7 +136,6 @@ A mutable tag such as `cli-agent-gradle:9.8.0-jdk21` is useful while building, b
 For upstream or custom images, pull or build the image in the Docker daemon used by the validator, then retrieve its full local ID:
 
 ```bash
- docker push localhost:5000/cli-agent-gradle:9.8.0-jdk21
 docker image inspect cli-agent-gradle:9.8.0-jdk21 \
   --format '{{.Id}}'
 ```
