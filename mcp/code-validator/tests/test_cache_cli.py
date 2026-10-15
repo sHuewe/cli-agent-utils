@@ -49,7 +49,7 @@ def test_prepare_maven_builds_isolated_repository_and_marks_ready(
     assert len(calls) == 3
     assert calls[0][-1] == "dependency:go-offline"
     assert calls[1][-2:] == ["-DskipTests", "package"]
-    assert calls[2][-2:] == ["-Dmaven.test.failure.ignore=true", "test"]
+    assert calls[2][-4:] == ["-DskipTests=false", "-Dmaven.test.skip=false", "-Dmaven.test.failure.ignore=true", "test"]
 
 
 def test_prepare_maven_rebuilds_ready_cache(
@@ -1783,3 +1783,14 @@ def test_docker_maven_warmup_failure_rejects_cache(tmp_path: Path, monkeypatch) 
         "dependency:go-offline", "package", "test"
     ]
     assert "-Dmaven.test.failure.ignore=true" in build_commands[-1]
+    assert "-DskipTests=false" in build_commands[-1]
+    assert "-Dmaven.test.skip=false" in build_commands[-1]
+
+def test_maven_warmup_overrides_skip_properties() -> None:
+    from cli_agent_code_validator_mcp.maven_cache import MAVEN_TEST_WARMUP_ARGS
+    assert MAVEN_TEST_WARMUP_ARGS == (
+        "-DskipTests=false",
+        "-Dmaven.test.skip=false",
+        "-Dmaven.test.failure.ignore=true",
+        "test",
+    )
