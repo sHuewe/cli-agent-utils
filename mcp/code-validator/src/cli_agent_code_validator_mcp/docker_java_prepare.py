@@ -42,13 +42,13 @@ def _config_archive(kind: str, *, enabled: bool, gradle_user_home: Path | None =
             if src.is_symlink():
                 raise ValueError("Maven-Konfiguration darf kein Symlink sein.")
             if src.is_file():
-                files[f"m2/{name}"] = _regular_file_bytes(src, limit=1024 * 1024)
+                files[f".m2/{name}"] = _regular_file_bytes(src, limit=1024 * 1024)
     else:
         home = gradle_user_home or default_source_gradle_user_home()
         with tempfile.TemporaryDirectory() as temp:
             copied = seed_gradle_user_configuration(home, Path(temp))
             for path in copied:
-                files["gradle/" + path.relative_to(temp).as_posix()] = _regular_file_bytes(
+                files["gradle-home/" + path.relative_to(temp).as_posix()] = _regular_file_bytes(
                     path, limit=1024 * 1024
                 )
     return _files_tar(files) if files else None
@@ -174,7 +174,7 @@ def prepare_java_in_docker(
         ], timeout=_TRANSFER_TIMEOUT)
         _check(result, "project transfer")
         if config is not None:
-            _docker_run(backend, ["exec", "-i", name, "tar", "-C", "/tmp/home", "-xf", "-"],
+            _docker_run(backend, ["exec", "-i", name, "tar", "-C", "/tmp/home" if kind == "maven" else "/tmp/prepared", "-xf", "-"],
                         _TRANSFER_TIMEOUT, data=config)
         if kind == "maven":
             commands = (
