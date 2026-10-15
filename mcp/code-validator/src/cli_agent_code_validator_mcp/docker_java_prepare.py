@@ -24,7 +24,7 @@ from .gradle_cache import (
     sanitize_gradle_home_for_promotion, seed_gradle_user_configuration,
     write_gradle_ready_metadata,
 )
-from .maven_cache import MavenCacheEntry, cache_entry, sanitize_repository_for_offline_use, write_ready_metadata
+from .maven_cache import MAVEN_TEST_WARMUP_ARGS, MavenCacheEntry, cache_entry, sanitize_repository_for_offline_use, write_ready_metadata
 
 _MAX_EXPORTED_BYTES = 3 * 1024**3
 _MAX_EXPORTED_FILES = 100_000
@@ -133,7 +133,7 @@ def prepare_java_in_docker(
     timeout: int = 1800, project_identity: str | None = None,
     use_user_config: bool = True, gradle_user_home: Path | None = None,
     wsl: bool = False, wsl_distribution: str | None = None,
-    verbose: bool = True,
+    verbose: bool = True, test_warmup: bool = True,
 ) -> MavenCacheEntry | GradleCacheEntry:
     """Explicit trusted CLI operation; never callable through MCP."""
     if kind not in ("maven", "gradle"):
@@ -231,6 +231,28 @@ def prepare_java_in_docker(
                 ),
                 verbose=verbose,
             )
+        if kind == "maven" and test_warmup:
+            # Warm dynamically resolved Surefire/JUnit providers without
+            # making test failures fatal to cache promotion.
+            if verbose:
+                print("[prepare-maven] Test-Warm-up (Testfehler erlaubt) ...", flush=True)
+            warmup_args = [
+                "exec", "--interactive", "--workdir", "/work/project",
+                "--env", "HOME=/tmp/home", name, "sh", "-s", "--",
+                *commands[1][:-2], *MAVEN_TEST_WARMUP_ARGS,
+            ]
+            try:
+                _run_build_with_output(
+                    backend, warmup_args, timeout,
+                    data=(
+                        b'JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+${JAVA_TOOL_OPTIONS} }'
+                        b'-Duser.home=/tmp/home"; export JAVA_TOOL_OPTIONS; exec "$@"\n'
+                    ),
+                    verbose=verbose,
+                )
+            except RuntimeError as exc:
+                if verbose:
+                    print(f"[prepare-maven] Warnung: Test-Warm-up fehlgeschlagen: {exc}", flush=True)
         if verbose:
             print(f"[prepare-{kind}] Dependency-Cache exportieren ...", flush=True)
         if kind == "maven":
