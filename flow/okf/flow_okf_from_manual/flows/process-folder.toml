@@ -1,6 +1,6 @@
 version = 1
 # exclude_paths = []  # inherited from the parent flow
-inputs = ["folder", "structure", "manuals", "manual_path", "okf_root"]
+inputs = ["folder", "structure", "manuals", "scans", "manual_path", "okf_root"]
 result = "steps.finalize.output"
 
 [retry]
@@ -22,6 +22,7 @@ response_format = "json"
 folder = "${input.folder}"
 structure = "${input.structure}"
 manuals = "${input.manuals}"
+scans = "${input.scans}"
 okf_root = "${input.okf_root}"
 
 [[steps]]

@@ -21,29 +21,12 @@ response_format = "json"
 
 [[steps]]
 id = "scan_manuals"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/02_scan_manual.md"
+flow = "flow/okf/flow_okf_from_manual/flows/scan-manual.toml"
 foreach = "steps.discover_manuals.output.manuals"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_manual/state/scan-${iteration.id}.json"
-overwrite_output = false
-workspace_access = "read"
-response_format = "json"
 
-[steps.vars]
+[steps.input]
 manual = "${item}"
-
-[[steps]]
-id = "summarize_scans"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/03_summarize_scan.md"
-foreach = "steps.scan_manuals.output.iterations"
-iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_manual/state/profile-${iteration.id}.json"
-overwrite_output = false
-workspace_access = "none"
-response_format = "json"
-
-[steps.vars]
-scan = "${item.output}"
 
 [[steps]]
 id = "design_structure"
@@ -57,7 +40,7 @@ response_format = "json"
 [steps.vars]
 source_kind = "manuals"
 project = "${steps.discover_manuals.output.project}"
-analysis_profiles = "${steps.summarize_scans.output.iterations}"
+analysis_profiles = "${steps.scan_manuals.output.iterations}"
 
 [[steps]]
 id = "route_manuals"
@@ -79,6 +62,7 @@ iteration_id = "${item.id}"
 folder = "${item}"
 structure = "${steps.design_structure.output}"
 manuals = "${steps.discover_manuals.output.manuals}"
+scans = "${steps.scan_manuals.output.iterations}"
 manual_path = "${steps.discover_manuals.output.manual_path}"
 okf_root = "${steps.design_structure.output.okf_root}"
 
