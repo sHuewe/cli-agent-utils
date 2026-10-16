@@ -1,34 +1,23 @@
 version = 1
-# exclude_paths = []  # inherited from the parent flow
 inputs = ["scan", "structure"]
 result = "steps.finalize.output"
 
-[retry]
-max_attempts = 3
-initial_delay_seconds = 1
-backoff_multiplier = 2
-max_delay_seconds = 10
-
 [[steps]]
-id = "folders"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/04_emit_folders.md"
+id = "chunks"
+prompt_file = "flow/okf/common/prompts/04_emit_chunks.md"
 response_format = "json"
 
 [steps.vars]
-structure = "${input.structure}"
+document = "${input.scan}"
 
 [[steps]]
-id = "route"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/05_route_scan.md"
-foreach = "steps.folders.output.folders"
+id = "route_chunks"
+flow = "flow/okf/flow_okf_from_manual/flows/route-chunk.toml"
+foreach = "steps.chunks.output.chunks"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_manual/state/routes/${input.scan.manual.id}-${iteration.id}.json"
-overwrite_output = false
-response_format = "json"
 
-[steps.vars]
-scan = "${input.scan}"
-folder = "${item}"
+[steps.input]
+chunk = "${item}"
 structure = "${input.structure}"
 
 [[steps]]
@@ -37,5 +26,5 @@ prompt_file = "flow/okf/flow_okf_from_manual/prompts/06_finalize_routing.md"
 response_format = "json"
 
 [steps.vars]
-manual = "${input.scan.manual}"
+manual = "${input.scan}"
 structure = "${input.structure}"

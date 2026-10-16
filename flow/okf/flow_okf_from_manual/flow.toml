@@ -21,35 +21,18 @@ response_format = "json"
 
 [[steps]]
 id = "scan_manuals"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/02_scan_manual.md"
+flow = "flow/okf/flow_okf_from_manual/flows/scan-manual.toml"
 foreach = "steps.discover_manuals.output.manuals"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_manual/state/scan-${iteration.id}.json"
-overwrite_output = false
-workspace_access = "read"
-response_format = "json"
 
-[steps.vars]
+[steps.input]
 manual = "${item}"
-
-[[steps]]
-id = "summarize_scans"
-prompt_file = "flow/okf/flow_okf_from_manual/prompts/03_summarize_scan.md"
-foreach = "steps.scan_manuals.output.iterations"
-iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_manual/state/profile-${iteration.id}.json"
-overwrite_output = false
-workspace_access = "none"
-response_format = "json"
-
-[steps.vars]
-scan = "${item.output}"
 
 [[steps]]
 id = "design_structure"
 prompt_file = "flow/okf/prompts/design_structure.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "flow/okf/flow_okf_from_manual/state/structure.json"
+output = "flow/okf/flow_okf_from_manual/state/structure-v2.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
@@ -57,7 +40,7 @@ response_format = "json"
 [steps.vars]
 source_kind = "manuals"
 project = "${steps.discover_manuals.output.project}"
-analysis_profiles = "${steps.summarize_scans.output.iterations}"
+analysis_profiles = "${steps.scan_manuals.output.iterations}"
 
 [[steps]]
 id = "route_manuals"
@@ -79,6 +62,7 @@ iteration_id = "${item.id}"
 folder = "${item}"
 structure = "${steps.design_structure.output}"
 manuals = "${steps.discover_manuals.output.manuals}"
+scans = "${steps.scan_manuals.output.iterations}"
 manual_path = "${steps.discover_manuals.output.manual_path}"
 okf_root = "${steps.design_structure.output.okf_root}"
 
@@ -86,7 +70,7 @@ okf_root = "${steps.design_structure.output.okf_root}"
 id = "additional_concepts"
 prompt_file = "flow/okf/prompts/additional_concepts.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "flow/okf/flow_okf_from_manual/state/additional-concepts.json"
+output = "flow/okf/flow_okf_from_manual/state/additional-concepts-v2.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -102,7 +86,7 @@ prompt_file = "flow/okf/flow_okf_from_manual/prompts/13_assess_additional_concep
 add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.additional_concepts.output.concepts"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_manual/state/assess-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/assess-v2-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -118,7 +102,7 @@ prompt_file = "flow/okf/flow_okf_from_manual/prompts/14_apply_additional_concept
 add_file_context = ["flow/okf/okf-format.md"]
 foreach = "steps.assess_additional_concepts.output.iterations"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_manual/state/apply-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/apply-v2-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "write"
 response_format = "json"
@@ -141,7 +125,7 @@ structure = "${steps.design_structure.output}"
 id = "create_root_index"
 prompt_file = "flow/okf/prompts/create_root_index.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "flow/okf/flow_okf_from_manual/state/root-index.json"
+output = "flow/okf/flow_okf_from_manual/state/root-index-v2.json"
 overwrite_output = false
 workspace_access = "write"
 response_format = "json"
@@ -166,7 +150,7 @@ structure = "${steps.design_structure.output}"
 id = "final_verify"
 prompt_file = "flow/okf/prompts/final_verify.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "flow/okf/flow_okf_from_manual/state/final-verification.json"
+output = "flow/okf/flow_okf_from_manual/state/final-verification-v2.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -200,7 +184,7 @@ structure = "${steps.design_structure.output}"
 id = "post_split_final_verify"
 prompt_file = "flow/okf/prompts/post_split_final_verify.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "flow/okf/flow_okf_from_manual/state/post-split-final-verification.json"
+output = "flow/okf/flow_okf_from_manual/state/post-split-final-verification-v2.json"
 overwrite_output = true
 workspace_access = "read"
 response_format = "json"

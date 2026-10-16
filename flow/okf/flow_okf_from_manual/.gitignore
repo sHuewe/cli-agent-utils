@@ -1,4 +1,5 @@
 state/*.json
+state/chunks/*.json
 state/routes/*.json
 state/concepts/*.json
 state/questions/*.json

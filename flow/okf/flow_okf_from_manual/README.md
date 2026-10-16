@@ -5,14 +5,14 @@ This flow generates an OKF repository from line-oriented text manuals while boun
 ## Pipeline
 
 1. `discover_manuals`: enumerate manuals.
-2. `scan_manuals`: independently scan each manual with bounded line reads and inventory every user-visible function/configuration option.
-3. `summarize_scans`: reduce each detailed scan to a compact semantic profile.
+2. `scan_manuals`: partition each manual into bounded, chapter-aware chunks (350-line target, 450-line hard maximum); inventory each chunk independently with its own JSON checkpoint, then create one compact per-manual profile.
+3. Compact chunk profiles are consolidated into a small per-manual semantic profile, retaining the authoritative chunk list.
 4. `design_structure`: let the LLM choose project-specific semantic top-level folders.
-5. `route_manuals`: nested flow per manual; split its detailed scan into persisted fragments, one per semantic folder.
-6. `process_folders`: nested flow per semantic folder; read only that folder's routed fragments, merge topics across manuals, plan concepts, and invoke a nested build -> verify -> repair flow per concept.
+5. `route_manuals`: nested flow per manual and per chunk; route chunk inventories into persisted fragments, one per chunk and semantic folder.
+6. `process_folders`: nested flow per semantic folder; read all expected chunk-route fragments for that folder, merge topics across manuals, plan concepts, and invoke a nested build -> verify -> repair flow per concept.
 7. Run additional-concept handling, navigation creation, per-folder structural verification and a compact final root check.
 
-The previous global planning step consumed all manual scans at once. The new folder-routing stage avoids that: no folder planner receives unrelated scan material, and each routing run sees only one manual scan. Detailed evidence remains in state files instead of being repeatedly injected into later parent prompts.
+The previous per-manual scan consumed entire long source files in one agent session. The new folder-routing stage avoids that: no folder planner receives unrelated scan material, and each routing run sees only one chunk inventory. Detailed evidence remains in state files instead of being repeatedly injected into later parent prompts.
 
 ## Folder structure
 
@@ -20,7 +20,7 @@ The folder taxonomy is chosen by the LLM before concept planning. Every normal c
 
 ## Coverage
 
-Functions use stable `fn...` IDs and configuration options `cfg...` IDs. Routed folder plans map every item to concepts and embed the exact coverage items in the concept plan. Build, verification and repair explicitly handle those items, and folder-level set checks verify that none disappeared.
+Functions use chunk-local `fn...` IDs and configuration options `cfg...` IDs. Routed item IDs are prefixed with the chunk ID, and global coverage IDs are prefixed with the manual ID, e.g. `m001:c002:fn003`. Routed folder plans map every item to concepts and embed the exact coverage items in the concept plan. Build, verification and repair explicitly handle those items, and folder-level set checks verify that none disappeared.
 
 ## Configure
 
@@ -42,7 +42,7 @@ cli-agent-flow run flow/okf/flow_okf_from_manual/flow.toml --workspace <workspac
 
 ## Resume/checkpoint behavior
 
-All generated JSON state outputs use `overwrite_output = false` by default. A valid state file that already exists at flow start is therefore used as a checkpoint instead of being regenerated. Delete the relevant state JSON when you intentionally want that analysis step to run again.
+Most generated JSON state outputs use `overwrite_output = false`. A valid checkpoint present at run start is reused. To prevent the chunk-based implementation from loading incompatible pre-chunk results, all schema-dependent manual pipeline outputs use **v2 filenames** (document profile, structure, folder planning, concepts, coverage, folder summaries and downstream verification). The discovery checkpoint `state/manuals.json` is unchanged; delete it if the source document list changes. New v2 checkpoints can be resumed normally.
 
 Every flow file also has a root-level `exclude_paths = []` entry so project-specific exclusions can be configured in one obvious place and are inherited by nested flows.
 
@@ -76,7 +76,7 @@ cli-agent-flow run flow/okf/flow_okf_from_manual/flow_questions.toml --workspace
 
 ## Post-generation concept granularity pass
 
-After the existing final verification, the flow now performs an additional split evaluation. The phase is appended after the previous steps so existing JSON checkpoints remain reusable and a completed older run can simply continue into this new phase.
+After the existing final verification, the flow now performs an additional split evaluation. The split phase remains after final verification. Pre-chunk planning and concept checkpoints deliberately cannot be reused by the chunk-based pipeline because their coverage IDs are incompatible.
 
 Each semantic folder is processed independently. Its direct concepts are listed, and every concept is evaluated in its own nested flow. Roughly 30-80 Markdown lines is only a soft orientation; semantic retrieval independence determines whether a split is useful.
 
@@ -84,3 +84,15 @@ A useful split keeps the original concept path as a concise overview and creates
 
 The question follow-up flow applies the same split evaluation to the concept touched by each question after the existing question assessment/evidence/apply/verify sequence. Existing question steps are unchanged.
 
+
+## Long manual chunks
+
+Chunk boundaries prefer Markdown chapter/section headings when appropriate (target about 350 lines, maximum 450 lines). When no suitable heading can be found, numeric 350-line boundaries are used. Partitioning searches for heading candidates and probes single lines without loading the whole file. Each chunk scan gets a fresh LLM context and its own `state/chunks/scan-<manual>-<chunk>.json` checkpoint; per-chunk routing files live in `state/routes/<manual>-<chunk>-<folder>.json`.
+
+**Resume warning:** if a source file or its line numbering changes, remove its partition/scan/profile/routing checkpoints and derived structure/plan/coverage checkpoints before rerunning. Reusing old valid JSON can otherwise silently preserve stale evidence.
+
+## Migration from the legacy manual flow
+
+The old `state/profile-<manual>.json`, `state/structure.json`, `state/folder-plan-<folder>.json`, `state/concepts/<folder>-<concept>-*.json` and other downstream JSON outputs are **not reused**. This flow now uses `profile-v2-*`, `structure-v2.json`, `folder-plan-v2-*`, `concepts/v2-*` and other correspondingly versioned paths throughout the dependent stages. Existing route files are distinct because the chunk-based variant includes the chunk ID in the filename. Migration therefore recomputes the incompatible stages once; later v2 runs retain resumability.
+
+**Generated OKF Markdown content is not automatically cleaned.** If you want a completely fresh output without orphaned old concepts, choose a new/empty `okf_root` (or back up and clean the existing output manually). Do not delete manually maintained content inadvertently. If source files or partition boundaries change, clear related v2 checkpoints before re-running.
