@@ -1,0 +1,52 @@
+version = 1
+inputs = ["doctrine"]
+result = "steps.summarize_document.output"
+
+[[steps]]
+id = "partition"
+prompt_file = "flow/okf/common/prompts/01_partition_document.md"
+output = "flow/okf/flow_okf_from_doctrine/state/partition-${input.doctrine.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+document = "${input.doctrine}"
+
+[[steps]]
+id = "scan_chunks"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/02_scan_chunk.md"
+foreach = "steps.partition.output.chunks"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine/state/chunks/scan-${input.doctrine.id}-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+chunk = "${item}"
+
+[[steps]]
+id = "chunk_profiles"
+prompt_file = "flow/okf/common/prompts/02_summarize_chunk.md"
+foreach = "steps.scan_chunks.output.iterations"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine/state/chunks/profile-${input.doctrine.id}-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+
+[steps.vars]
+scan = "${item.output}"
+
+[[steps]]
+id = "summarize_document"
+prompt_file = "flow/okf/common/prompts/03_summarize_document.md"
+output = "flow/okf/flow_okf_from_doctrine/state/profile-${input.doctrine.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+
+[steps.vars]
+partition = "${steps.partition.output}"
+profiles = "${steps.chunk_profiles.output.iterations}"

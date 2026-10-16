@@ -1,0 +1,30 @@
+version = 1
+inputs = ["scan", "structure"]
+result = "steps.finalize.output"
+
+[[steps]]
+id = "chunks"
+prompt_file = "flow/okf/common/prompts/04_emit_chunks.md"
+response_format = "json"
+
+[steps.vars]
+document = "${input.scan}"
+
+[[steps]]
+id = "route_chunks"
+flow = "flow/okf/flow_okf_from_doctrine/flows/route-chunk.toml"
+foreach = "steps.chunks.output.chunks"
+iteration_id = "${item.id}"
+
+[steps.input]
+chunk = "${item}"
+structure = "${input.structure}"
+
+[[steps]]
+id = "finalize"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/06_finalize_routing.md"
+response_format = "json"
+
+[steps.vars]
+doctrine = "${input.scan}"
+structure = "${input.structure}"

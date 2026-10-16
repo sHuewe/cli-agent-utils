@@ -1,0 +1,56 @@
+version = 1
+inputs = ["folder", "structure", "doctrines", "scans", "doctrine_path", "okf_root"]
+result = "steps.finalize.output"
+
+[[steps]]
+id = "plan"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/07_plan_folder.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_doctrine/state/folder-plan-${input.folder.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+folder = "${input.folder}"
+structure = "${input.structure}"
+doctrines = "${input.doctrines}"
+scans = "${input.scans}"
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "concepts"
+flow = "flow/okf/flow_okf_from_doctrine/flows/process-concept.toml"
+foreach = "steps.plan.output.concepts"
+iteration_id = "${item.id}"
+
+[steps.input]
+concept = "${item}"
+doctrine_path = "${input.doctrine_path}"
+okf_root = "${input.okf_root}"
+folder_id = "${input.folder.id}"
+
+[[steps]]
+id = "verify_coverage"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/11_verify_coverage.md"
+output = "flow/okf/flow_okf_from_doctrine/state/coverage-${input.folder.id}.json"
+overwrite_output = false
+response_format = "json"
+
+[steps.vars]
+folder = "${input.folder}"
+plan = "${steps.plan.output}"
+concept_results = "${steps.concepts.output}"
+
+[[steps]]
+id = "finalize"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/12_finalize_folder.md"
+output = "flow/okf/flow_okf_from_doctrine/state/folder-${input.folder.id}.json"
+overwrite_output = false
+response_format = "json"
+
+[steps.vars]
+folder = "${input.folder}"
+plan = "${steps.plan.output}"
+coverage = "${steps.verify_coverage.output}"
+concept_results = "${steps.concepts.output}"
