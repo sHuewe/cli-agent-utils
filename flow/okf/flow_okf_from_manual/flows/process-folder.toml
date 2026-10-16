@@ -13,7 +13,7 @@ max_delay_seconds = 10
 id = "plan"
 prompt_file = "flow/okf/flow_okf_from_manual/prompts/07_plan_folder.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "flow/okf/flow_okf_from_manual/state/folder-plan-${input.folder.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/folder-plan-v2-${input.folder.id}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -40,7 +40,7 @@ folder_id = "${input.folder.id}"
 [[steps]]
 id = "verify_coverage"
 prompt_file = "flow/okf/flow_okf_from_manual/prompts/11_verify_coverage.md"
-output = "flow/okf/flow_okf_from_manual/state/coverage-${input.folder.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/coverage-v2-${input.folder.id}.json"
 overwrite_output = false
 response_format = "json"
 
@@ -52,7 +52,7 @@ concept_results = "${steps.concepts.output}"
 [[steps]]
 id = "finalize"
 prompt_file = "flow/okf/flow_okf_from_manual/prompts/12_finalize_folder.md"
-output = "flow/okf/flow_okf_from_manual/state/folder-${input.folder.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/folder-v2-${input.folder.id}.json"
 overwrite_output = false
 response_format = "json"
 

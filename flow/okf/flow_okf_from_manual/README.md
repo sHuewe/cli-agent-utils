@@ -42,7 +42,7 @@ cli-agent-flow run flow/okf/flow_okf_from_manual/flow.toml --workspace <workspac
 
 ## Resume/checkpoint behavior
 
-All generated JSON state outputs use `overwrite_output = false` by default. A valid state file that already exists at flow start is therefore used as a checkpoint instead of being regenerated. Delete the relevant state JSON when you intentionally want that analysis step to run again.
+Most generated JSON state outputs use `overwrite_output = false`. A valid checkpoint present at run start is reused. To prevent the chunk-based implementation from loading incompatible pre-chunk results, all schema-dependent manual pipeline outputs use **v2 filenames** (document profile, structure, folder planning, concepts, coverage, folder summaries and downstream verification). The discovery checkpoint `state/manuals.json` is unchanged; delete it if the source document list changes. New v2 checkpoints can be resumed normally.
 
 Every flow file also has a root-level `exclude_paths = []` entry so project-specific exclusions can be configured in one obvious place and are inherited by nested flows.
 
@@ -76,7 +76,7 @@ cli-agent-flow run flow/okf/flow_okf_from_manual/flow_questions.toml --workspace
 
 ## Post-generation concept granularity pass
 
-After the existing final verification, the flow now performs an additional split evaluation. The phase is appended after the previous steps so existing JSON checkpoints remain reusable and a completed older run can simply continue into this new phase.
+After the existing final verification, the flow now performs an additional split evaluation. The split phase remains after final verification. Pre-chunk planning and concept checkpoints deliberately cannot be reused by the chunk-based pipeline because their coverage IDs are incompatible.
 
 Each semantic folder is processed independently. Its direct concepts are listed, and every concept is evaluated in its own nested flow. Roughly 30-80 Markdown lines is only a soft orientation; semantic retrieval independence determines whether a split is useful.
 
@@ -90,3 +90,9 @@ The question follow-up flow applies the same split evaluation to the concept tou
 Chunk boundaries prefer Markdown chapter/section headings when appropriate (target about 350 lines, maximum 450 lines). When no suitable heading can be found, numeric 350-line boundaries are used. Partitioning searches for heading candidates and probes single lines without loading the whole file. Each chunk scan gets a fresh LLM context and its own `state/chunks/scan-<manual>-<chunk>.json` checkpoint; per-chunk routing files live in `state/routes/<manual>-<chunk>-<folder>.json`.
 
 **Resume warning:** if a source file or its line numbering changes, remove its partition/scan/profile/routing checkpoints and derived structure/plan/coverage checkpoints before rerunning. Reusing old valid JSON can otherwise silently preserve stale evidence.
+
+## Migration from the legacy manual flow
+
+The old `state/profile-<manual>.json`, `state/structure.json`, `state/folder-plan-<folder>.json`, `state/concepts/<folder>-<concept>-*.json` and other downstream JSON outputs are **not reused**. This flow now uses `profile-v2-*`, `structure-v2.json`, `folder-plan-v2-*`, `concepts/v2-*` and other correspondingly versioned paths throughout the dependent stages. Existing route files are distinct because the chunk-based variant includes the chunk ID in the filename. Migration therefore recomputes the incompatible stages once; later v2 runs retain resumability.
+
+**Generated OKF Markdown content is not automatically cleaned.** If you want a completely fresh output without orphaned old concepts, choose a new/empty `okf_root` (or back up and clean the existing output manually). Do not delete manually maintained content inadvertently. If source files or partition boundaries change, clear related v2 checkpoints before re-running.
