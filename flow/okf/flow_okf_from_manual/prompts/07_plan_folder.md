@@ -16,7 +16,7 @@ Semantic structure:
 
 Rules:
 - Do not re-scan manuals.
-- For EVERY scan in scans.iterations, inspect scan.output.chunks. For EVERY listed chunk read exactly flow/okf/flow_okf_from_manual/state/routes/<chunk.document_id>-<chunk.id>-<folder.id>.json.
+- For EVERY scan in the supplied `scans` array, inspect scan.output.chunks. For EVERY listed chunk read exactly flow/okf/flow_okf_from_manual/state/routes/<chunk.document_id>-<chunk.id>-<folder.id>.json.
 - Read no route files for other folders and do not read original manuals.
 - Local routed item IDs already include the chunk prefix (e.g. c001:fn003). Prefix each final coverage item ID with document ID (e.g. m001:c001:fn003). Never strip the chunk ID: fn001/cfg001 repeat in separate chunks.
 - If a listed route file is missing or unreadable, flag the folder as incomplete instead of silently dropping coverage.
