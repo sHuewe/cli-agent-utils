@@ -5,14 +5,14 @@ This flow generates an OKF repository from line-oriented text manuals while boun
 ## Pipeline
 
 1. `discover_manuals`: enumerate manuals.
-2. `scan_manuals`: independently scan each manual with bounded line reads and inventory every user-visible function/configuration option.
-3. `summarize_scans`: reduce each detailed scan to a compact semantic profile.
+2. `scan_manuals`: partition each manual into bounded 350-line chunks; inventory each chunk independently with its own JSON checkpoint, then create one compact per-manual profile.
+3. Compact chunk profiles are consolidated into a small per-manual semantic profile, retaining the authoritative chunk list.
 4. `design_structure`: let the LLM choose project-specific semantic top-level folders.
-5. `route_manuals`: nested flow per manual; split its detailed scan into persisted fragments, one per semantic folder.
-6. `process_folders`: nested flow per semantic folder; read only that folder's routed fragments, merge topics across manuals, plan concepts, and invoke a nested build -> verify -> repair flow per concept.
+5. `route_manuals`: nested flow per manual and per chunk; route chunk inventories into persisted fragments, one per chunk and semantic folder.
+6. `process_folders`: nested flow per semantic folder; read all expected chunk-route fragments for that folder, merge topics across manuals, plan concepts, and invoke a nested build -> verify -> repair flow per concept.
 7. Run additional-concept handling, navigation creation, per-folder structural verification and a compact final root check.
 
-The previous global planning step consumed all manual scans at once. The new folder-routing stage avoids that: no folder planner receives unrelated scan material, and each routing run sees only one manual scan. Detailed evidence remains in state files instead of being repeatedly injected into later parent prompts.
+The previous per-manual scan consumed entire long source files in one agent session. The new folder-routing stage avoids that: no folder planner receives unrelated scan material, and each routing run sees only one chunk inventory. Detailed evidence remains in state files instead of being repeatedly injected into later parent prompts.
 
 ## Folder structure
 
@@ -20,7 +20,7 @@ The folder taxonomy is chosen by the LLM before concept planning. Every normal c
 
 ## Coverage
 
-Functions use stable `fn...` IDs and configuration options `cfg...` IDs. Routed folder plans map every item to concepts and embed the exact coverage items in the concept plan. Build, verification and repair explicitly handle those items, and folder-level set checks verify that none disappeared.
+Functions use chunk-local `fn...` IDs and configuration options `cfg...` IDs. Routed item IDs are prefixed with the chunk ID, and global coverage IDs are prefixed with the manual ID, e.g. `m001:c002:fn003`. Routed folder plans map every item to concepts and embed the exact coverage items in the concept plan. Build, verification and repair explicitly handle those items, and folder-level set checks verify that none disappeared.
 
 ## Configure
 
@@ -84,3 +84,9 @@ A useful split keeps the original concept path as a concise overview and creates
 
 The question follow-up flow applies the same split evaluation to the concept touched by each question after the existing question assessment/evidence/apply/verify sequence. Existing question steps are unchanged.
 
+
+## Long manual chunks
+
+Chunk boundaries are fixed intervals of at most 350 lines. Partitioning probes individual lines until EOF rather than loading the whole file. Each chunk scan gets a fresh LLM context and its own `state/chunks/scan-<manual>-<chunk>.json` checkpoint; per-chunk routing files live in `state/routes/<manual>-<chunk>-<folder>.json`.
+
+**Resume warning:** if a source file or its line numbering changes, remove its partition/scan/profile/routing checkpoints and derived structure/plan/coverage checkpoints before rerunning. Reusing old valid JSON can otherwise silently preserve stale evidence.
