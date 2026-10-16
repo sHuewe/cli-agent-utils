@@ -5,7 +5,7 @@ This flow generates an OKF repository from line-oriented text manuals while boun
 ## Pipeline
 
 1. `discover_manuals`: enumerate manuals.
-2. `scan_manuals`: partition each manual into bounded 350-line chunks; inventory each chunk independently with its own JSON checkpoint, then create one compact per-manual profile.
+2. `scan_manuals`: partition each manual into bounded, chapter-aware chunks (350-line target, 450-line hard maximum); inventory each chunk independently with its own JSON checkpoint, then create one compact per-manual profile.
 3. Compact chunk profiles are consolidated into a small per-manual semantic profile, retaining the authoritative chunk list.
 4. `design_structure`: let the LLM choose project-specific semantic top-level folders.
 5. `route_manuals`: nested flow per manual and per chunk; route chunk inventories into persisted fragments, one per chunk and semantic folder.
@@ -87,6 +87,6 @@ The question follow-up flow applies the same split evaluation to the concept tou
 
 ## Long manual chunks
 
-Chunk boundaries are fixed intervals of at most 350 lines. Partitioning probes individual lines until EOF rather than loading the whole file. Each chunk scan gets a fresh LLM context and its own `state/chunks/scan-<manual>-<chunk>.json` checkpoint; per-chunk routing files live in `state/routes/<manual>-<chunk>-<folder>.json`.
+Chunk boundaries prefer Markdown chapter/section headings when appropriate (target about 350 lines, maximum 450 lines). When no suitable heading can be found, numeric 350-line boundaries are used. Partitioning searches for heading candidates and probes single lines without loading the whole file. Each chunk scan gets a fresh LLM context and its own `state/chunks/scan-<manual>-<chunk>.json` checkpoint; per-chunk routing files live in `state/routes/<manual>-<chunk>-<folder>.json`.
 
 **Resume warning:** if a source file or its line numbering changes, remove its partition/scan/profile/routing checkpoints and derived structure/plan/coverage checkpoints before rerunning. Reusing old valid JSON can otherwise silently preserve stale evidence.
