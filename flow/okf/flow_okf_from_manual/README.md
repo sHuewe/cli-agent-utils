@@ -96,3 +96,11 @@ Chunk boundaries prefer Markdown chapter/section headings when appropriate (targ
 The old `state/profile-<manual>.json`, `state/structure.json`, `state/folder-plan-<folder>.json`, `state/concepts/<folder>-<concept>-*.json` and other downstream JSON outputs are **not reused**. This flow now uses `profile-v2-*`, `structure-v2.json`, `folder-plan-v2-*`, `concepts/v2-*` and other correspondingly versioned paths throughout the dependent stages. Existing route files are distinct because the chunk-based variant includes the chunk ID in the filename. Migration therefore recomputes the incompatible stages once; later v2 runs retain resumability.
 
 **Generated OKF Markdown content is not automatically cleaned.** If you want a completely fresh output without orphaned old concepts, choose a new/empty `okf_root` (or back up and clean the existing output manually). Do not delete manually maintained content inadvertently. If source files or partition boundaries change, clear related v2 checkpoints before re-running.
+
+## Fine-grained checkpoints
+
+Every model step, including short chunk/folder-routing and shared index/verification/split stages, now writes an individual JSON checkpoint. Shared steps use pipeline-, phase- and folder-scoped identifiers so pre/post split verification cannot reuse each other's data. Subflow invocation steps are orchestrator operations: their model steps are checkpointed individually, and their combined results are reconstructed on resume.
+
+The shared checkpoints are stored in `flow/okf/state/fine/`; routing-stage checkpoints are stored in this pipeline's `state/fine/`. Both locations are gitignored. The concept-split discovery returns short positional IDs (c001, c002, ...), reducing long filenames even when concept titles are long. When inputs or generated OKF content changes, invalidate dependent checkpoints before rerunning. Earlier stages may otherwise legitimately resume from stale JSON.
+
+If Windows reports a long-path error, note the **exact failing path**: a generated checkpoint file, an OKF concept output, or a `.cli-agent` diagnostic dump require different fixes. Shorter checkpoint filenames cannot by themselves guarantee Windows paths remain below system limits in a deeply nested workspace.
