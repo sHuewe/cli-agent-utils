@@ -68,6 +68,8 @@ id = "split_changed_concept"
 flow = "flow/okf/flows/split-concept.toml"
 
 [steps.input]
+scope_id = "question-${input.question_id}"
+concept_id = "${input.question_id}"
 concept_path = "${steps.apply.output.target_path}"
 okf_root = "${input.okf_root}"
 

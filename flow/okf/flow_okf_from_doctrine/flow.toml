@@ -118,6 +118,7 @@ foreach = "steps.design_structure.output.folders"
 iteration_id = "${item.id}"
 
 [steps.input]
+scope_id = "nav"
 folder = "${item}"
 structure = "${steps.design_structure.output}"
 
@@ -143,6 +144,7 @@ foreach = "steps.design_structure.output.folders"
 iteration_id = "${item.id}"
 
 [steps.input]
+scope_id = "pre"
 folder = "${item}"
 structure = "${steps.design_structure.output}"
 
@@ -167,6 +169,7 @@ foreach = "steps.design_structure.output.folders"
 iteration_id = "${item.id}"
 
 [steps.input]
+scope_id = "split"
 folder = "${item}"
 okf_root = "${steps.design_structure.output.okf_root}"
 
@@ -177,6 +180,7 @@ foreach = "steps.design_structure.output.folders"
 iteration_id = "${item.id}"
 
 [steps.input]
+scope_id = "post"
 folder = "${item}"
 structure = "${steps.design_structure.output}"
 
@@ -185,7 +189,7 @@ id = "post_split_final_verify"
 prompt_file = "flow/okf/prompts/post_split_final_verify.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_doctrine/state/post-split-final-verification.json"
-overwrite_output = true
+overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 
