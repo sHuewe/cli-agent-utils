@@ -67,6 +67,10 @@ Each question runs in its own nested child flow:
 
 Per-question state lives below `state/questions/` and is resumable. Question IDs are positional; after changing/reordering the question list, delete the corresponding per-question JSON checkpoints before rerunning.
 
+The shared concept-split subflow stores four additional per-question checkpoints in `flow/okf/state/fine/`, under the names `split-concept-<step>-manual-question-<id>-<id>.json` (steps: `assess`, `snapshot`, `apply`, `verify`). These filenames are pipeline-scoped: manual and source questions must never reuse each other's split results.
+
+If questions are modified or reordered, clear **both** this pipeline's affected `state/questions/*.json` files **and** the matching shared `flow/okf/state/fine/split-concept-*-manual-question-*.json` files for the affected positional question IDs. Deleting only pipeline-local state can otherwise retain obsolete splitting checkpoints. Keep unrelated pipeline checkpoints intact.
+
 Run it with:
 
 ```text
