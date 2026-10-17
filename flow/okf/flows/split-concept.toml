@@ -1,6 +1,6 @@
 version = 1
 # exclude_paths = []  # inherited from the parent flow
-inputs = ["concept_path", "okf_root"]
+inputs = ["concept_path", "okf_root", "scope_id", "concept_id"]
 result = "steps.verify.output"
 
 [retry]
@@ -14,6 +14,8 @@ id = "assess"
 prompt_file = "flow/okf/prompts/evaluate_concept_split.md"
 add_file_context = ["flow/okf/okf-format.md"]
 workspace_access = "read"
+output = "flow/okf/state/fine/split-concept-assess-${input.scope_id}-${input.concept_id}.json"
+overwrite_output = false
 response_format = "json"
 
 [steps.vars]
@@ -24,6 +26,8 @@ okf_root = "${input.okf_root}"
 id = "snapshot"
 prompt_file = "flow/okf/prompts/snapshot_concept_before_split.md"
 workspace_access = "read"
+output = "flow/okf/state/fine/split-concept-snapshot-${input.scope_id}-${input.concept_id}.json"
+overwrite_output = false
 response_format = "json"
 
 [steps.vars]
@@ -36,6 +40,8 @@ id = "apply"
 prompt_file = "flow/okf/prompts/apply_concept_split.md"
 add_file_context = ["flow/okf/okf-format.md"]
 workspace_access = "write"
+output = "flow/okf/state/fine/split-concept-apply-${input.scope_id}-${input.concept_id}.json"
+overwrite_output = false
 response_format = "json"
 approve_tools = ["os__write_file"]
 
@@ -50,6 +56,8 @@ id = "verify"
 prompt_file = "flow/okf/prompts/verify_concept_split.md"
 add_file_context = ["flow/okf/okf-format.md"]
 workspace_access = "read"
+output = "flow/okf/state/fine/split-concept-verify-${input.scope_id}-${input.concept_id}.json"
+overwrite_output = false
 response_format = "json"
 
 [steps.vars]

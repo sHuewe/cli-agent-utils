@@ -1,6 +1,6 @@
 version = 1
 # exclude_paths = []  # inherited from the parent flow
-inputs = ["folder", "structure"]
+inputs = ["folder", "structure", "scope_id"]
 result = "steps.verify.output"
 
 [retry]
@@ -14,6 +14,8 @@ id = "verify"
 prompt_file = "flow/okf/prompts/verify_folder.md"
 add_file_context = ["flow/okf/okf-format.md"]
 workspace_access = "read"
+output = "flow/okf/state/fine/verification-verify-${input.scope_id}-${input.folder.id}.json"
+overwrite_output = false
 response_format = "json"
 
 [steps.vars]
