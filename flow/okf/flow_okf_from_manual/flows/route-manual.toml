@@ -5,7 +5,7 @@ result = "steps.finalize.output"
 [[steps]]
 id = "chunks"
 prompt_file = "flow/okf/common/prompts/04_emit_chunks.md"
-output = "flow/okf/flow_okf_from_manual/state/fine/chunks-${input.scan.document.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/fine/chunks-${input.scan.document_id}.json"
 overwrite_output = false
 response_format = "json"
 
@@ -25,7 +25,7 @@ structure = "${input.structure}"
 [[steps]]
 id = "finalize"
 prompt_file = "flow/okf/flow_okf_from_manual/prompts/06_finalize_routing.md"
-output = "flow/okf/flow_okf_from_manual/state/fine/finalize-${input.scan.document.id}.json"
+output = "flow/okf/flow_okf_from_manual/state/fine/finalize-${input.scan.document_id}.json"
 overwrite_output = false
 response_format = "json"
 
