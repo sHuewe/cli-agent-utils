@@ -8,3 +8,7 @@ dist/
 build/
 .coverage
 coverage.xml
+
+# Generated OKF fine-grained checkpoints (never commit source extracts)
+flow/okf/state/
+flow/okf/**/state/fine/

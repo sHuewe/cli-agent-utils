@@ -5,6 +5,8 @@ result = "steps.finalize.output"
 [[steps]]
 id = "folders"
 prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/04_emit_folders.md"
+output = "flow/okf/flow_okf_from_doctrine/state/fine/folders-${input.chunk.document_id}-${input.chunk.id}.json"
+overwrite_output = false
 response_format = "json"
 
 [steps.vars]
@@ -28,6 +30,8 @@ structure = "${input.structure}"
 [[steps]]
 id = "finalize"
 prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/06_finalize_routing.md"
+output = "flow/okf/flow_okf_from_doctrine/state/fine/finalize-${input.chunk.document_id}-${input.chunk.id}.json"
+overwrite_output = false
 response_format = "json"
 
 [steps.vars]

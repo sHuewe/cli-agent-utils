@@ -1,6 +1,6 @@
 version = 1
 # exclude_paths = []  # inherited from the parent flow
-inputs = ["folder", "okf_root"]
+inputs = ["folder", "okf_root", "scope_id"]
 result = "steps.split.output"
 
 [retry]
@@ -13,6 +13,8 @@ max_delay_seconds = 10
 id = "discover"
 prompt_file = "flow/okf/prompts/discover_concepts_for_split.md"
 workspace_access = "read"
+output = "flow/okf/state/fine/split-folder-discover-${input.scope_id}-${input.folder.id}.json"
+overwrite_output = false
 response_format = "json"
 
 [steps.vars]
@@ -27,4 +29,6 @@ iteration_id = "${item.id}"
 
 [steps.input]
 concept_path = "${item.path}"
+concept_id = "${item.id}"
+scope_id = "${input.scope_id}-${input.folder.id}"
 okf_root = "${input.okf_root}"

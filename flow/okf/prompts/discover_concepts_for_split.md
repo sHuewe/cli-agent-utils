@@ -12,7 +12,7 @@ Rules:
 - Exclude `index.md` and `log.md`.
 - Do not read concept bodies in this step.
 - Sort deterministically by relative path.
-- Derive a stable filesystem-safe `id` from the filename without `.md`. It must match `[A-Za-z0-9_-]+`.
+- Assign short stable positional IDs `c001`, `c002`, ... in the sorted list. Do not use the filename as an ID: long concept names can exceed Windows output-path limits. Keep the complete original concept filename in `path`.
 - Do not modify files.
 
 Return exactly one JSON object:

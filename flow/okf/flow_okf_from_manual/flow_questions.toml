@@ -25,6 +25,8 @@ source_kind = "manuals"
 [[steps]]
 id = "settings"
 prompt_file = "flow/okf/flow_okf_from_manual/prompts/16_question_settings.md"
+output = "flow/okf/flow_okf_from_manual/state/questions-settings.json"
+overwrite_output = false
 workspace_access = "none"
 response_format = "json"
 
