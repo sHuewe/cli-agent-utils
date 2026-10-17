@@ -8,8 +8,12 @@ prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/07_plan_folder.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_doctrine/state/folder-plan-${input.folder.id}.json"
 overwrite_output = false
-workspace_access = "read"
+workspace_access = "none"
 response_format = "json"
+
+[steps.json_inputs.routes]
+iterate = "input.scans[].output.chunks[]"
+path = "flow/okf/flow_okf_from_doctrine/state/routes/${each.document_id}-${each.id}-${input.folder.id}.json"
 
 [steps.vars]
 folder = "${input.folder}"

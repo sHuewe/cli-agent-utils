@@ -19,8 +19,11 @@ foreach = "steps.folders.output.folders"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_doctrine/state/routes/${input.chunk.document_id}-${input.chunk.id}-${iteration.id}.json"
 overwrite_output = false
-workspace_access = "read"
+workspace_access = "none"
 response_format = "json"
+
+[steps.json_inputs.scan]
+path = "flow/okf/flow_okf_from_doctrine/state/chunks/scan-${input.chunk.document_id}-${input.chunk.id}.json"
 
 [steps.vars]
 chunk = "${input.chunk}"

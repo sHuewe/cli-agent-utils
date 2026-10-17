@@ -5,8 +5,9 @@ Structure: {{var:structure}}
 All documents: {{var:doctrines}}
 Document scan profiles (contain authoritative chunk lists): {{var:scans}}
 OKF root: {{var:okf_root}}
+Routed inventories for this folder (JSON array supplied by runner): {{var:routes}}
 
-For every profile in the supplied `scans` array, process every chunk in profile.output.chunks by reading exactly flow/okf/flow_okf_from_doctrine/state/routes/<document_id>-<chunk_id>-<folder.id>.json. Never read other folders or original doctrines. Explicitly report missing/unreadable route files; never claim full coverage if any are missing.
+Use only the supplied `routes` array. For each chunk in each profile.output.chunks, require exactly one matching route (document_id, chunk_id, folder_id). Do not read flow state files, other folders, or original doctrines. Flag missing, duplicate, or inconsistent entries and never claim full coverage in such cases. Missing/unreadable JSON artifacts cause the runner to fail before prompting.
 Merge related topics into coherent concepts, not a one-file-one-concept transcription. Preserve contradictions with source attribution. Every normative AND descriptive knowledge item must be assigned to at least one concept, including exceptions and qualifiers. Prefix each routed local ID with document ID, yielding m001:c001:rule001. Include full assigned objects in coverage_items and enumerate every item in top-level coverage. Each planned concept resides directly in <folder.path>/<kebab-case-name>.md; use folder-local concept IDs c001...; mark unassigned items explicitly. No source modifications.
 
 Return JSON only:
