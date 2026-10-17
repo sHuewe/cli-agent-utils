@@ -5,6 +5,8 @@ result = "steps.finalize.output"
 [[steps]]
 id = "chunks"
 prompt_file = "flow/okf/common/prompts/04_emit_chunks.md"
+output = "flow/okf/flow_okf_from_doctrine/state/fine/chunks-${input.scan.document.id}.json"
+overwrite_output = false
 response_format = "json"
 
 [steps.vars]
@@ -23,6 +25,8 @@ structure = "${input.structure}"
 [[steps]]
 id = "finalize"
 prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/06_finalize_routing.md"
+output = "flow/okf/flow_okf_from_doctrine/state/fine/finalize-${input.scan.document.id}.json"
+overwrite_output = false
 response_format = "json"
 
 [steps.vars]
