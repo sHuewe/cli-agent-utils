@@ -30,5 +30,5 @@ iteration_id = "${item.id}"
 [steps.input]
 concept_path = "${item.path}"
 concept_id = "${item.id}"
-scope_id = "${input.scope_id}"
+scope_id = "${input.scope_id}-${input.folder.id}"
 okf_root = "${input.okf_root}"

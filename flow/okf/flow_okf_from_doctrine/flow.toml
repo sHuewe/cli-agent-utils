@@ -118,7 +118,7 @@ foreach = "steps.design_structure.output.folders"
 iteration_id = "${item.id}"
 
 [steps.input]
-scope_id = "nav"
+scope_id = "doctrine-nav"
 folder = "${item}"
 structure = "${steps.design_structure.output}"
 
@@ -144,7 +144,7 @@ foreach = "steps.design_structure.output.folders"
 iteration_id = "${item.id}"
 
 [steps.input]
-scope_id = "pre"
+scope_id = "doctrine-pre"
 folder = "${item}"
 structure = "${steps.design_structure.output}"
 
@@ -169,7 +169,7 @@ foreach = "steps.design_structure.output.folders"
 iteration_id = "${item.id}"
 
 [steps.input]
-scope_id = "split"
+scope_id = "doctrine-split"
 folder = "${item}"
 okf_root = "${steps.design_structure.output.okf_root}"
 
@@ -180,7 +180,7 @@ foreach = "steps.design_structure.output.folders"
 iteration_id = "${item.id}"
 
 [steps.input]
-scope_id = "post"
+scope_id = "doctrine-post"
 folder = "${item}"
 structure = "${steps.design_structure.output}"
 
