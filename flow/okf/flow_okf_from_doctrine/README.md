@@ -53,7 +53,7 @@ with bounded deterministic batches and a global compact topic registry.
    `verify_coverage` compares the planned IDs to completed repair results.
    Finalization receives compact concept summaries and coverage counts only.
 
-**Minimum cli-agent runner:** Git commit [`69d39478957f9b39d6bf23d1de289e946ad1fc62`](https://github.com/sHuewe/cli-agent/commit/69d39478957f9b39d6bf23d1de289e946ad1fc62) (merge of [cli-agent PR #222](https://github.com/sHuewe/cli-agent/pull/222)), or a newer commit on `main` that includes it.
+**Minimum cli-agent runner:** Git commit [`d507ca3448c1541f3870c5dea50ba3c8fc71ad46`](https://github.com/sHuewe/cli-agent/commit/d507ca3448c1541f3870c5dea50ba3c8fc71ad46) (merge of [cli-agent PR #223](https://github.com/sHuewe/cli-agent/pull/223)), or a newer commit on `main` that includes it. This revision adds `foreach = "input.<path>"` support, used directly for the doctrine's chunk and folder routing; older runners fail validation.
 This flow requires all five deterministic JSON operations: `batch`, `flatten`,
 `group_items`, `verify_coverage`, **and `batch_routes`**. PRs #220 and #221
 alone do not provide `batch_routes`; versions preceding PR #222 will fail
