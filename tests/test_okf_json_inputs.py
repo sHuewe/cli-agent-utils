@@ -43,7 +43,7 @@ def test_persisted_scan_and_route_checkpoint_contracts() -> None:
         assert scan_step["response_format"] == "json"
         assert route_step["response_format"] == "json"
         if kind == "doctrine":
-            assert plan_step["json_operation"]["kind"] == "batch"
+            assert plan_step["json_operation"]["kind"] == "batch_routes"
             assert plan_step["json_operation"]["batch_size"] > 0
             assert plan_step["json_operation"]["max_batch_bytes"] > 0
         else:
