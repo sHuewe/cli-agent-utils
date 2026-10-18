@@ -29,6 +29,9 @@ path = "flow/okf/flow_okf_from_doctrine/state/chunks/scan-${input.chunk.document
 chunk = "${input.chunk}"
 folder = "${item}"
 structure = "${input.structure}"
+document_id = "${input.chunk.document_id}"
+chunk_id = "${input.chunk.id}"
+folder_id = "${item.id}"
 
 [[steps]]
 id = "finalize"
