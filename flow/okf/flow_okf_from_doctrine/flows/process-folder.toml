@@ -8,7 +8,7 @@ output = "flow/okf/flow_okf_from_doctrine/state/folder-routes-batches-v3-${input
 overwrite_output = false
 
 [steps.json_operation]
-kind = "batch"
+kind = "batch_routes"
 input = "routes"
 batch_size = 3
 max_batch_bytes = 60000
