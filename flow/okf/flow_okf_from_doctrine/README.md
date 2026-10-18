@@ -30,3 +30,40 @@ Every model step, including short chunk/folder-routing and shared index/verifica
 The shared checkpoints are stored in `flow/okf/state/fine/`; routing-stage checkpoints are stored in this pipeline's `state/fine/`. Both locations are gitignored. The concept-split discovery returns short positional IDs (c001, c002, ...), reducing long filenames even when concept titles are long. When inputs or generated OKF content changes, invalidate dependent checkpoints before rerunning. Earlier stages may otherwise legitimately resume from stale JSON.
 
 If Windows reports a long-path error, note the **exact failing path**: a generated checkpoint file, an OKF concept output, or a `.cli-agent` diagnostic dump require different fixes. Shorter checkpoint filenames cannot by themselves guarantee Windows paths remain below system limits in a deeply nested workspace.
+
+## Dynamic folder planning (v3)
+
+The former monolithic `process_folders.<folder>.plan` step has been replaced
+with bounded deterministic batches and a global compact topic registry.
+
+1. `batch_routes` reads **the existing verified routing artifacts**, splits them
+   into batches of at most 3 route records and 60,000 UTF-8 bytes per batch.
+   Batch count is dynamic (one for a small folder, many for a large folder).
+2. `suggest_topics` analyzes each bounded batch, producing *short* topic hints
+   without copying evidence. `consolidate_topics` merges topic hints globally,
+   so related knowledge from different batches can share one OKF concept.
+3. `assign_topics` assigns each original, globally prefixed knowledge-item ID
+   to precisely one global topic; it never copies the full item objects.
+4. A deterministic `group_items` JSON operation reads the original route
+   checkpoints and the assignments, rejects unknown/missing/duplicate item IDs,
+   and constructs source-grounded concept plans. Oversized topics are split
+   into parts at **whole-item** boundaries, capped at 60,000 bytes per concept.
+5. Each concept uses the existing build/verify/repair subflow. Deterministic
+   `verify_coverage` compares the planned IDs to completed repair results.
+   Finalization receives compact concept summaries and coverage counts only.
+
+This implementation requires a cli-agent version containing the
+`group_items` and `verify_coverage` JSON operations (in addition to
+`batch` and `flatten`); the initial feature in cli-agent PR #220 alone
+does not suffice. Run the two companion branches together until merged.
+
+**Resume:** Routing, scanning and partitioning artifacts retain their names.
+The new batching, topic, group-plan, coverage and folder-finalization checkpoints
+are all `v3`-scoped. Do not reuse the earlier `folder-plan-<id>.json` as the
+new plan. A changed source or route still requires invalidating its dependent
+checkpoints; a checkpoint is not a live dependency tracker.
+
+**Limits:** An individually oversized route record or knowledge item fails
+closed rather than being truncated. A very high number of distinct topic
+suggestions can still exceed a single consolidation context; that stage
+handles compact hints, not the full doctrine inventory.
