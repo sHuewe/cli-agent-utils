@@ -36,8 +36,9 @@ If Windows reports a long-path error, note the **exact failing path**: a generat
 The former monolithic `process_folders.<folder>.plan` step has been replaced
 with bounded deterministic batches and a global compact topic registry.
 
-1. `batch_routes` reads **the existing verified routing artifacts**, splits them
-   into batches of at most 3 route records and 60,000 UTF-8 bytes per batch.
+1. `batch_routes` reads **the existing verified routing artifacts**, splits oversized route records at complete `candidate_concepts`,
+   `knowledge_items` and `warnings` boundaries and then groups the fragments
+   into batches with at most 3 records and 60,000 UTF-8 bytes per batch.
    Batch count is dynamic (one for a small folder, many for a large folder).
 2. `suggest_topics` analyzes each bounded batch, producing *short* topic hints
    without copying evidence. `consolidate_topics` merges topic hints globally,
@@ -63,7 +64,7 @@ are all `v3`-scoped. Do not reuse the earlier `folder-plan-<id>.json` as the
 new plan. A changed source or route still requires invalidating its dependent
 checkpoints; a checkpoint is not a live dependency tracker.
 
-**Limits:** An individually oversized route record or knowledge item fails
+**Limits:** An individually oversized knowledge item or required route metadata fails
 closed rather than being truncated. A very high number of distinct topic
 suggestions can still exceed a single consolidation context; that stage
 handles compact hints, not the full doctrine inventory.
