@@ -43,6 +43,8 @@ def test_persisted_scan_and_route_checkpoint_contracts() -> None:
         assert scan_step["response_format"] == "json"
         assert route_step["response_format"] == "json"
         if kind == "doctrine":
+            assert [step["id"] for step in router["steps"]] == ["route", "finalize"]
+            assert route_step["foreach"] == "input.structure.folders"
             assert plan_step["json_operation"]["kind"] == "batch_routes"
             assert plan_step["json_operation"]["batch_size"] > 0
             assert plan_step["json_operation"]["max_batch_bytes"] > 0
@@ -54,7 +56,7 @@ def test_persisted_scan_and_route_checkpoint_contracts() -> None:
         scan_path = scan_step["output"].replace(
             "${input." + kind + ".id}", "${input.chunk.document_id}"
         ).replace("${iteration.id}", "${input.chunk.id}")
-        assert router["steps"][1]["json_inputs"]["scan"]["path"] == scan_path
+        assert route_step["json_inputs"]["scan"]["path"] == scan_path
 
         route_path = route_step["output"].replace(
             "${input.chunk.document_id}", "${each.document_id}"
