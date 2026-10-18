@@ -3,19 +3,9 @@ inputs = ["scan", "structure"]
 result = "steps.finalize.output"
 
 [[steps]]
-id = "chunks"
-prompt_file = "flow/okf/common/prompts/04_emit_chunks.md"
-output = "flow/okf/flow_okf_from_manual/state/fine/chunks-${input.scan.document_id}.json"
-overwrite_output = false
-response_format = "json"
-
-[steps.vars]
-document = "${input.scan}"
-
-[[steps]]
 id = "route_chunks"
 flow = "flow/okf/flow_okf_from_manual/flows/route-chunk.toml"
-foreach = "steps.chunks.output.chunks"
+foreach = "input.scan.chunks"
 iteration_id = "${item.id}"
 
 [steps.input]

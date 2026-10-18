@@ -40,6 +40,8 @@ cli-agent-flow run flow/okf/flow_okf_from_manual/flow.toml --workspace <workspac
 ```
 
 
+**Minimum cli-agent runner:** Git commit [`d507ca3448c1541f3870c5dea50ba3c8fc71ad46`](https://github.com/sHuewe/cli-agent/commit/d507ca3448c1541f3870c5dea50ba3c8fc71ad46) (merge of [cli-agent PR #223](https://github.com/sHuewe/cli-agent/pull/223)), or a newer commit on `main` that includes it. The chunk and folder routing subflows iterate directly over `input.scan.chunks` and `input.structure.folders`; an older runner rejects these selectors during validation. Make sure the installed `cli-agent-flow` executable uses the updated runner, not just updated `cli-agent-utils` files.
+
 ## Resume/checkpoint behavior
 
 Most generated JSON state outputs use `overwrite_output = false`. A valid checkpoint present at run start is reused. To prevent the chunk-based implementation from loading incompatible pre-chunk results, all schema-dependent manual pipeline outputs use **v2 filenames** (document profile, structure, folder planning, concepts, coverage, folder summaries and downstream verification). The discovery checkpoint `state/manuals.json` is unchanged; delete it if the source document list changes. New v2 checkpoints can be resumed normally.
