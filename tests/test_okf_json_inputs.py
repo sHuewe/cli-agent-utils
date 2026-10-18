@@ -52,6 +52,16 @@ def test_persisted_scan_and_route_checkpoint_contracts() -> None:
             assert plan_step["response_format"] == "json"
             assert plan_step["workspace_access"] == "none"
         assert route_step["workspace_access"] == "none"
+        parent_router = _load(f"{base}/flows/route-{kind}.toml")
+        assert [step["id"] for step in parent_router["steps"]] == [
+            "route_chunks", "finalize",
+        ]
+        assert parent_router["steps"][0]["foreach"] == "input.scan.chunks"
+        if kind == "manual":
+            assert [step["id"] for step in router["steps"]] == [
+                "route", "finalize",
+            ]
+            assert route_step["foreach"] == "input.structure.folders"
 
         scan_path = scan_step["output"].replace(
             "${input." + kind + ".id}", "${input.chunk.document_id}"
