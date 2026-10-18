@@ -9,8 +9,11 @@ Target folder:
 Complete structure:
 {{var:structure}}
 
+Completed scan inventory supplied by the runner:
+{{var:scan}}
+
 Rules:
-- Read exactly the scan JSON at flow/okf/flow_okf_from_manual/state/chunks/scan-<chunk.document_id>-<chunk.id>.json, with IDs substituted from the descriptor. Do not read original manuals or other scans.
+- Use only the supplied scan JSON. Do not read flow state files, original manuals, or other scans. Check document_id and chunk_id against the descriptor; report discrepancies.
 - For EVERY candidate concept, function and configuration option in that chunk, choose its single best folder from the complete semantic structure.
 - Include an item only if that folder is the target folder. Break ties by structure.folders order.
 - Preserve evidence and local IDs, but prefix EVERY item ID with the chunk ID (e.g. c001:fn001, c001:cfg001, c001:topic001). Downstream uses document_id:chunk_id:local-id for global uniqueness.

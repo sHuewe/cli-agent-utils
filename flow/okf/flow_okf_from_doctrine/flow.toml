@@ -1,5 +1,5 @@
 version = 1
-exclude_paths = []
+exclude_paths = ["flow"]
 
 [vars]
 doctrine_path = "doctrines"
