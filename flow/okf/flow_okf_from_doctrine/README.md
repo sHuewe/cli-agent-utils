@@ -53,10 +53,13 @@ with bounded deterministic batches and a global compact topic registry.
    `verify_coverage` compares the planned IDs to completed repair results.
    Finalization receives compact concept summaries and coverage counts only.
 
-This implementation requires a cli-agent version containing the
-`group_items` and `verify_coverage` JSON operations (in addition to
-`batch` and `flatten`); the initial feature in cli-agent PR #220 alone
-does not suffice. Run the two companion branches together until merged.
+**Minimum cli-agent runner:** Git commit [`69d39478957f9b39d6bf23d1de289e946ad1fc62`](https://github.com/sHuewe/cli-agent/commit/69d39478957f9b39d6bf23d1de289e946ad1fc62) (merge of [cli-agent PR #222](https://github.com/sHuewe/cli-agent/pull/222)), or a newer commit on `main` that includes it.
+This flow requires all five deterministic JSON operations: `batch`, `flatten`,
+`group_items`, `verify_coverage`, **and `batch_routes`**. PRs #220 and #221
+alone do not provide `batch_routes`; versions preceding PR #222 will fail
+validation with an unsupported JSON operation. Ensure your installed
+`cli-agent-flow` executable uses the updated cli-agent package before running
+`validate` or `run`; updating only cli-agent-utils is insufficient.
 
 **Resume:** Routing, scanning and partitioning artifacts retain their names.
 The new batching, topic, group-plan, coverage and folder-finalization checkpoints
