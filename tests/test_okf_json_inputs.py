@@ -34,15 +34,22 @@ def test_persisted_scan_and_route_checkpoint_contracts() -> None:
         folder = _load(f"{base}/flows/process-folder.toml")
         scan_step = next(s for s in scanner["steps"] if s["id"] == "scan_chunks")
         route_step = next(s for s in router["steps"] if s["id"] == "route")
-        plan_step = next(s for s in folder["steps"] if s["id"] == "plan")
+        plan_step = next(s for s in folder["steps"] if s["id"] == (
+            "batch_routes" if kind == "doctrine" else "plan"
+        ))
         assert scan_step["overwrite_output"] is False
         assert route_step["overwrite_output"] is False
         assert plan_step["overwrite_output"] is False
         assert scan_step["response_format"] == "json"
         assert route_step["response_format"] == "json"
-        assert plan_step["response_format"] == "json"
+        if kind == "doctrine":
+            assert plan_step["json_operation"]["kind"] == "batch"
+            assert plan_step["json_operation"]["batch_size"] > 0
+            assert plan_step["json_operation"]["max_batch_bytes"] > 0
+        else:
+            assert plan_step["response_format"] == "json"
+            assert plan_step["workspace_access"] == "none"
         assert route_step["workspace_access"] == "none"
-        assert plan_step["workspace_access"] == "none"
 
         scan_path = scan_step["output"].replace(
             "${input." + kind + ".id}", "${input.chunk.document_id}"
@@ -70,5 +77,28 @@ def test_all_configured_json_inputs_have_prompt_variables() -> None:
                 for variable, value in step.get("json_inputs", {}).items():
                     assert set(value) <= {"path", "iterate"}
                     assert "state/" in value["path"]
-                    prompt = (ROOT / step["prompt_file"]).read_text(encoding="utf-8")
-                    assert "{{var:" + variable + "}}" in prompt
+                    if "json_operation" in step:
+                        assert variable == step["json_operation"]["input"]
+                    else:
+                        prompt = (ROOT / step["prompt_file"]).read_text(encoding="utf-8")
+                        assert "{{var:" + variable + "}}" in prompt
+
+
+def test_doctrine_batch_global_consolidation_contract() -> None:
+    base = "flow/okf/flow_okf_from_doctrine"
+    folder = _load(f"{base}/flows/process-folder.toml")
+    by_id = {step["id"]: step for step in folder["steps"]}
+    assert by_id["suggest_topics"]["foreach"] == "steps.batch_routes.output.batches"
+    assert by_id["assign_topics"]["foreach"] == "steps.batch_routes.output.batches"
+    assert by_id["group_plan"]["flow"].endswith("group-folder-plan.toml")
+    assert by_id["concepts"]["foreach"] == "steps.group_plan.output.concepts"
+
+    grouping = _load(f"{base}/flows/group-folder-plan.toml")
+    group = grouping["steps"][0]
+    assert group["json_operation"]["kind"] == "group_items"
+    assert set(group["json_inputs"]) == {"routes", "assignments", "topics"}
+
+    coverage = _load(f"{base}/flows/verify-folder-coverage.toml")
+    verify = coverage["steps"][0]
+    assert verify["json_operation"]["kind"] == "verify_coverage"
+    assert set(verify["json_inputs"]) == {"plan", "results"}
