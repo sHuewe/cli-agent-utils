@@ -1,22 +1,21 @@
-Independently verify the cross-links added to exactly ONE doctrine-derived OKF concept. This is a read-only step.
+Independently verify INLINE cross-links added to exactly ONE doctrine-derived OKF concept. This step is read-only.
 
 Target OKF root: {{var:okf_root}}
 Expected source (OKF-root-relative): {{var:concept_path}}
 Source folder ID: {{var:folder_id}}
 Link-step result: {{var:link_result}}
-Authoritative pre-link snapshot: {{var:snapshot}}
+Authoritative complete pre-link snapshot: {{var:snapshot}}
 
 Rules:
-- Do not modify any files or read original doctrine sources.
-- Require link_result.source_path to equal the expected source and link_result.status to be "ok"; mismatches and partial/failed writes are errors.
-- Require link_result.changed to match whether links_added is nonempty.
-- REQUIRE snapshot.status == "captured", snapshot.concept_path == the expected source, and snapshot.content be complete, nonempty, and untruncated. Any missing, wrong-path, incomplete or malformed snapshot is a blocking needs_attention finding. Do not trust link_result's self-report about preservation.
-- Read the FULL current source concept, even when no links were added. Reject truncated reads, missing or malformed concepts or invalid frontmatter.
-- Independently compare complete snapshot.content against the FULL current file. For changed==false, the entire current file MUST be exactly identical to snapshot.content. For changed==true, the current file MUST start with the EXACT complete snapshot.content, unchanged byte-for-byte/character-for-character; only an EOF suffix consisting of the newly reported Related concepts link lines is permitted. Treat any lost or modified existing text, headings, citations, YAML fields, anchors, or links as a blocking error even if all reported links resolve. If the complete comparison cannot be carried out, return needs_attention, never ok.
-- Check that the newly added footer/suffix contains only up to three link entries and optional related-concepts heading/blank lines, with no unrelated substantive changes.
-- For each link_result.links_added entry, verify that the exact relative Markdown URL is present in the source and resolves relative to the source document's directory to exactly target_path. Resolve within the OKF root; reject traversal outside it, absolute paths, non-concept targets (index.md/log.md), missing targets, self-links and unsupported fragments.
-- Check that no reported link is duplicated elsewhere in the source and that at most three target links were added. An empty list is legitimate and must not be treated as a failure.
-- For potential integrity issues or an incomplete verification, report "needs_attention" with a concrete finding. Never report "ok" just because the model's result claimed success.
+- Never modify files or read doctrine sources. Require link_result.source_path and snapshot.concept_path to equal the expected source; require link_result.status == "ok", snapshot.status == "captured", and complete nonempty snapshot.content. An incomplete read/snapshot is a blocking error.
+- Read the FULL current source concept, including whitespace, line endings and YAML frontmatter. If unable to read it completely, return needs_attention.
+- Require link_result.changed to be a boolean equal to whether links_added is nonempty. Require links_added to be a list of at most THREE entries.
+- If changed is false, the current file MUST equal snapshot.content character for character.
+- If changed is true, perform a FULL reconstruction of snapshot.content by removing ONLY the introduced Markdown-link syntax. For each reported link, require a nonempty plain-text link_text, target_path and relative_url, and the exact new token [link_text](relative_url) to appear ONCE in the current file and not already in snapshot.content. Replace that token with link_text ONCE, without modifying the surrounding text. After processing every reported link, the reconstructed entire current text MUST equal the entire snapshot.content character for character. No lost or rephrased words, spacing, headings, frontmatter, references, punctuation, anchors, old links or other modifications are allowed. If reconstruction fails or is ambiguous, return needs_attention even if URLs resolve.
+- Verify the link label is the verbatim original phrase; it must not introduce new wording, span lines, or be placed inside a code fence, inline code, YAML frontmatter, heading, HTML, a pre-existing link or source-reference section. Reject nested/overlapping links.
+- Resolve each URL relative to the SOURCE DOCUMENT'S parent directory. Verify it points exactly to reported target_path, exists as a normal Markdown concept within the OKF root and is neither index.md/log.md nor the source. Reject absolute paths, unsupported fragments, directory escapes and duplicates (including previously existing links to the same target).
+- An unchanged concept with no links is valid. Any missing evidence or error yields needs_attention with concrete findings; NEVER trust the link step's own fidelity assertion as proof.
+- Do not claim the checks were completed if full-content comparison was impossible.
 
-Return JSON only:
+Return valid JSON only:
 {"status":"ok|needs_attention","source_path":"{{var:concept_path}}","checked_links":0,"findings":[{"severity":"error|warning","target_path":"other-folder/target.md","problem":"string"}],"warnings":["string"]}
