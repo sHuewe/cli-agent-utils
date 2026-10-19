@@ -31,6 +31,39 @@ The shared checkpoints are stored in `flow/okf/state/fine/`; routing-stage check
 
 If Windows reports a long-path error, note the **exact failing path**: a generated checkpoint file, an OKF concept output, or a `.cli-agent` diagnostic dump require different fixes. Shorter checkpoint filenames cannot by themselves guarantee Windows paths remain below system limits in a deeply nested workspace.
 
+## Related-concept links
+
+After concept generation, additional-concept processing, navigation creation,
+and post-split folder verification, the `link_related_concepts` phase adds
+**optional semantic cross-links between existing concepts**. This is distinct
+from the root and folder `index.md` navigation: it links concepts directly to
+other genuinely related concepts, including across semantic folders.
+
+Processing uses a separate nested flow for **each concept**, rather than
+loading a whole folder's contents into a single model context. The
+post-split folder verification supplies the final sorted
+`concept_paths` inventory, so newly split concepts are included. Each
+concept's link step inspects only a small number of candidate targets, adds at
+most three nonduplicated relative Markdown links, and only edits the current
+concept. A separate read-only verification step checks reported links and
+their target paths. Uncertain or unrelated candidates may be left unlinked.
+
+Per-concept JSON checkpoints are stored under
+`state/links-v1-<folder-id>-<position>.json` and
+`state/links-verify-v1-<folder-id>-<position>.json`; positions come from the
+**sorted** final folder concept list. Keep these checkpoints for ordinary
+resume. **If the set/order of concept paths changes, invalidate the
+`links-v1-*` and `links-verify-v1-*` checkpoints for each affected
+folder** before rerunning. Positional checkpoint IDs must not be reused for
+a different concept. If a link-step output must be regenerated, invalidate
+the matching link-verification checkpoint too.
+
+Concept generation's `build` and `repair` steps also preapprove
+`os__move_file` and `os__delete_file` in addition to their existing tool
+approvals. These are tool-wide approvals within each step, not
+path-limited approvals; the runner's workspace and protected-path
+restrictions still apply.
+
 ## Dynamic folder planning (v3)
 
 The former monolithic `process_folders.<folder>.plan` step has been replaced
