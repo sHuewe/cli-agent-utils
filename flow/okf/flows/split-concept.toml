@@ -36,11 +36,28 @@ okf_root = "${input.okf_root}"
 assessment = "${steps.assess.output}"
 
 [[steps]]
-id = "apply"
-prompt_file = "flow/okf/prompts/apply_concept_split.md"
+id = "parts"
+flow = "flow/okf/flows/split-part.toml"
+foreach = "steps.assess.output.parts"
+iteration_id = "${item.path}"
+
+[steps.input]
+part = "${item}"
+part_id = "${iteration.id}"
+concept_path = "${input.concept_path}"
+concept_id = "${input.concept_id}"
+scope_id = "${input.scope_id}"
+okf_root = "${input.okf_root}"
+assessment = "${steps.assess.output}"
+snapshot_status = "${steps.snapshot.output.status}"
+original_content = "${steps.snapshot.output.content}"
+
+[[steps]]
+id = "overview"
+prompt_file = "flow/okf/prompts/update_split_overview.md"
 add_file_context = ["flow/okf/okf-format.md"]
 workspace_access = "write"
-output = "flow/okf/state/fine/split-concept-apply-${input.scope_id}-${input.concept_id}.json"
+output = "flow/okf/state/fine/split-overview-v2-${input.scope_id}-${input.concept_id}.json"
 overwrite_output = false
 response_format = "json"
 approve_tools = ["os__write_file"]
@@ -49,7 +66,43 @@ approve_tools = ["os__write_file"]
 concept_path = "${input.concept_path}"
 okf_root = "${input.okf_root}"
 assessment = "${steps.assess.output}"
-snapshot = "${steps.snapshot.output}"
+snapshot_status = "${steps.snapshot.output.status}"
+original_content = "${steps.snapshot.output.content}"
+parts = "${steps.parts.output.iterations}"
+
+[[steps]]
+id = "index"
+prompt_file = "flow/okf/prompts/update_split_index.md"
+workspace_access = "write"
+output = "flow/okf/state/fine/split-index-v2-${input.scope_id}-${input.concept_id}.json"
+overwrite_output = false
+response_format = "json"
+approve_tools = ["os__write_file"]
+
+[steps.vars]
+concept_path = "${input.concept_path}"
+okf_root = "${input.okf_root}"
+assessment = "${steps.assess.output}"
+snapshot_status = "${steps.snapshot.output.status}"
+index_path = "${steps.snapshot.output.index_path}"
+index_content = "${steps.snapshot.output.index_content}"
+parts = "${steps.parts.output.iterations}"
+overview = "${steps.overview.output}"
+
+[[steps]]
+id = "apply"
+prompt_file = "flow/okf/prompts/finalize_staged_split.md"
+workspace_access = "none"
+output = "flow/okf/state/fine/split-concept-apply-${input.scope_id}-${input.concept_id}.json"
+overwrite_output = false
+response_format = "json"
+
+[steps.vars]
+concept_path = "${input.concept_path}"
+assessment = "${steps.assess.output}"
+parts = "${steps.parts.output.iterations}"
+overview = "${steps.overview.output}"
+index = "${steps.index.output}"
 
 [[steps]]
 id = "verify"
