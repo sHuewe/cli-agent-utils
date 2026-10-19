@@ -45,23 +45,24 @@ post-split folder verification supplies the final sorted
 `concept_paths` inventory, so newly split concepts are included. Each
 concept's link step inspects only a small number of candidate targets, adds at
 most three nonduplicated relative Markdown links, and only edits the current
-concept. A full-content read-only snapshot precedes each write. Linking can only append
-new link text without changing the original file prefix. A separate read-only
-verification step checks the full original content against the snapshot and
-validates the reported links and their target paths. Uncertain or unrelated candidates may be left unlinked.
+concept. A full-content read-only snapshot precedes each write. Linking inserts Markdown links directly around existing phrases in normal prose,
+without adding, deleting or rephrasing the original text. A separate read-only
+verification step reconstructs the full original content by removing only
+reported Markdown link wrappers and comparing it to the snapshot character
+for character; it also validates link destinations. Uncertain or unrelated candidates may be left unlinked.
 
 The final `post_split_final_verify` now consumes all nested link-verification
 results and rejects missing/failed concepts or folder mismatches. Its output
-uses a NEW checkpoint filename `state/post-link-final-verification-v2.json`
+uses a NEW checkpoint filename `state/post-link-final-verification-v3.json`
 so an existing pre-link final verification cannot be reused as success.
 
 Per-concept JSON checkpoints are stored under
-`state/links-snapshot-v2-<folder-id>-<position>.json`,
-`state/links-v2-<folder-id>-<position>.json` and
-`state/links-verify-v2-<folder-id>-<position>.json`; positions come from the
+`state/links-snapshot-v3-<folder-id>-<position>.json`,
+`state/links-v3-<folder-id>-<position>.json` and
+`state/links-verify-v3-<folder-id>-<position>.json`; positions come from the
 **sorted** final folder concept list. Keep these checkpoints for ordinary
 resume. **If the set/order of concept paths changes, invalidate the
-`links-snapshot-v2-*`, `links-v2-*` and `links-verify-v2-*` checkpoints for each affected
+`links-snapshot-v3-*`, `links-v3-*` and `links-verify-v3-*` checkpoints for each affected
 folder** before rerunning. Positional checkpoint IDs must not be reused for
 a different concept. If a link-step output must be regenerated, invalidate
 the matching link-verification checkpoint too.
