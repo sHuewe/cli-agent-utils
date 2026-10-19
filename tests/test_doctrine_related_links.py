@@ -34,7 +34,7 @@ def test_related_links_run_after_split_and_folder_verification() -> None:
     assert final["vars"]["link_verifications"] == (
         "${steps.link_related_concepts.output.iterations}"
     )
-    assert final["output"].endswith("post-link-final-verification-v1.json")
+    assert final["output"].endswith("post-link-final-verification-v2.json")
 
 
 
@@ -50,8 +50,13 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
 
     concept = _load(f"{BASE}/flows/link-concept.toml")
     assert concept["result"] == "steps.verify.output"
-    assert [s["id"] for s in concept["steps"]] == ["link", "verify"]
-    link, verify = concept["steps"]
+    assert [s["id"] for s in concept["steps"]] == ["snapshot", "link", "verify"]
+    snapshot, link, verify = concept["steps"]
+    assert snapshot["workspace_access"] == "read"
+    assert snapshot["response_format"] == "json"
+    assert not snapshot["overwrite_output"]
+    assert link["vars"]["snapshot"] == "${steps.snapshot.output}"
+    assert verify["vars"]["snapshot"] == "${steps.snapshot.output}"
     assert link["workspace_access"] == "write"
     assert link["approve_tools"] == ["os__write_file"]
     assert link["response_format"] == "json"
@@ -60,7 +65,7 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
     assert verify["response_format"] == "json"
     assert not verify["overwrite_output"]
     assert link["output"] != verify["output"]
-    for step in (link, verify):
+    for step in (snapshot, link, verify):
         assert "${input.folder_id}" in step["output"]
         assert "${input.concept_id}" in step["output"]
 
@@ -74,6 +79,9 @@ def test_link_prompts_enforce_concept_scope_and_read_only_verification() -> None
     )
     assert "{{var:concept_path}}" in linker
     assert "{{var:link_result}}" in verifier
+    assert "{{var:snapshot}}" in linker
+    assert "{{var:snapshot}}" in verifier
+    assert "snapshot.content" in verifier
     assert "ONLY file you may modify" in linker
     assert "at most THREE" in linker
     assert "relative" in linker.lower()
@@ -85,7 +93,7 @@ def test_doctrine_concept_build_repair_preapprove_move_and_delete() -> None:
     assert [s["id"] for s in steps] == ["build", "verify", "repair"]
     for step in (steps[0], steps[2]):
         assert step["workspace_access"] == "write"
-        assert {"os__move_file", "os__delete_file"} <= set(
+        assert {"os__move_file", "os__delete_file", "os__copy_file"} <= set(
             step["approve_tools"]
         )
     assert steps[1]["workspace_access"] == "read"
