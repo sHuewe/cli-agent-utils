@@ -1,0 +1,33 @@
+version = 1
+inputs = ["concept_path", "concept_id", "folder_id", "folder_status", "structure", "okf_root"]
+result = "steps.verify.output"
+
+[[steps]]
+id = "link"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/17_link_related_concept.md"
+output = "flow/okf/flow_okf_from_doctrine/state/links-v1-${input.folder_id}-${input.concept_id}.json"
+overwrite_output = false
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__write_file"]
+
+[steps.vars]
+concept_path = "${input.concept_path}"
+folder_id = "${input.folder_id}"
+folder_status = "${input.folder_status}"
+structure = "${input.structure}"
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "verify"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/18_verify_related_concept.md"
+output = "flow/okf/flow_okf_from_doctrine/state/links-verify-v1-${input.folder_id}-${input.concept_id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+concept_path = "${input.concept_path}"
+folder_id = "${input.folder_id}"
+okf_root = "${input.okf_root}"
+link_result = "${steps.link.output}"
