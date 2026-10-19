@@ -87,7 +87,7 @@ def test_link_prompts_enforce_concept_scope_and_read_only_verification() -> None
     assert "link_text" in linker
     assert "Related concepts footer" in linker
     assert "ONLY file you may modify" in linker
-    assert "at most THREE" in linker
+    assert "Add at most three DISTINCT target paths" in linker
     assert "relative" in linker.lower()
     assert "read-only" in verifier
 
