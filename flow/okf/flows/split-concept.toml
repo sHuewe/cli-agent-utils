@@ -39,7 +39,6 @@ assessment = "${steps.assess.output}"
 id = "parts"
 flow = "flow/okf/flows/split-part.toml"
 foreach = "steps.assess.output.parts"
-iteration_id = "${item.path}"
 
 [steps.input]
 part = "${item}"
