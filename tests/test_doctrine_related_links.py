@@ -34,7 +34,7 @@ def test_related_links_run_after_split_and_folder_verification() -> None:
     assert final["vars"]["link_verifications"] == (
         "${steps.link_related_concepts.output.iterations}"
     )
-    assert final["output"].endswith("post-link-final-verification-v2.json")
+    assert final["output"].endswith("post-link-final-verification-v3.json")
 
 
 
@@ -82,6 +82,10 @@ def test_link_prompts_enforce_concept_scope_and_read_only_verification() -> None
     assert "{{var:snapshot}}" in linker
     assert "{{var:snapshot}}" in verifier
     assert "snapshot.content" in verifier
+    assert "reconstructed entire current text" in verifier
+    assert "INSIDE the existing concept" in linker
+    assert "link_text" in linker
+    assert "Related concepts footer" in linker
     assert "ONLY file you may modify" in linker
     assert "at most THREE" in linker
     assert "relative" in linker.lower()
