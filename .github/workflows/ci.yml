@@ -17,8 +17,8 @@ jobs:
           python-version: "3.11"
       - name: Install pytest
         run: python -m pip install "pytest>=9,<10"
-      - name: Validate JSON-input/checkpoint contracts
-        run: python -m pytest tests/test_okf_json_inputs.py -q
+      - name: Validate all OKF flow contracts
+        run: python -m pytest tests/ -q
 
   isolated-package:
     runs-on: ubuntu-latest
