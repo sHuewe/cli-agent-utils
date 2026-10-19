@@ -73,6 +73,40 @@ approvals. These are tool-wide approvals within each step, not
 path-limited approvals; the runner's workspace and protected-path
 restrictions still apply.
 
+## Resumable concept splitting
+
+The shared `flow/okf/flows/split-concept.toml` no longer makes one large
+`split.apply` model call that creates all parts, rewrites the original and
+updates the index. Instead it runs:
+
+1. `assess` and `snapshot`, with the **existing checkpoint paths**.
+2. `parts`, with a separate `split-part-create-v2-*.json` checkpoint for
+   each of 2–6 planned focused parts (one concept per model invocation).
+3. `overview`, rewriting only the original concept while preserving its
+   original heading/fragment targets.
+4. `index`, conservatively adding missing links without discarding prior
+   navigation.
+5. `apply`, now a short JSON **summary**, using the original
+   `split-concept-apply-*.json` path and response schema.
+6. The existing read-only `verify` checks full coverage and structure.
+
+**Resume:** Existing `assess`, `snapshot`, `apply`, and `verify`
+checkpoints are retained; do not delete them. Previously created parts
+are treated as existing and never overwritten, and completed overview/index
+files can be recognized by their individual stages. Newly created stage
+checkpoints are independent for each concept/part. If an older `apply`
+checkpoint already exists, the new stages must only accept valid existing
+outputs, not recreate them. The runner remains based on immutable
+run-start checkpoints; edits to checkpoint files or new files after run start
+can cause an intentional safety rejection.
+
+**Important:** Changing the split plan, its part ordering or the source
+concept invalidates the corresponding new part/overview/index checkpoints.
+Manual intervention is required for incomplete legacy splits whose existing
+files cannot be validated against the original snapshot. Splitting large
+individual parts may still hit provider limits; this change reduces per-model
+scope, but cannot override gateway timeouts.
+
 ## Dynamic folder planning (v3)
 
 The former monolithic `process_folders.<folder>.plan` step has been replaced
