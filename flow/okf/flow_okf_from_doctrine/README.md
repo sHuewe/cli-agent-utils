@@ -48,6 +48,11 @@ most three nonduplicated relative Markdown links, and only edits the current
 concept. A separate read-only verification step checks reported links and
 their target paths. Uncertain or unrelated candidates may be left unlinked.
 
+The final `post_split_final_verify` now consumes all nested link-verification
+results and rejects missing/failed concepts or folder mismatches. Its output
+uses a NEW checkpoint filename `state/post-link-final-verification-v1.json`
+so an existing pre-link final verification cannot be reused as success.
+
 Per-concept JSON checkpoints are stored under
 `state/links-v1-<folder-id>-<position>.json` and
 `state/links-verify-v1-<folder-id>-<position>.json`; positions come from the
