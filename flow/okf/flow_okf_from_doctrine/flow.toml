@@ -194,3 +194,20 @@ iteration_id = "${item.id}"
 folder_scan = "${item.output}"
 structure = "${steps.design_structure.output}"
 okf_root = "${steps.design_structure.output.okf_root}"
+
+[[steps]]
+id = "post_split_final_verify"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/19_post_link_final_verify.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_doctrine/state/post-link-final-verification-v3.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+structure = "${steps.design_structure.output}"
+navigation = "${steps.create_root_index.output}"
+okf_root = "${steps.design_structure.output.okf_root}"
+folder_verifications = "${steps.post_split_verify_folders.output.iterations}"
+split_verifications = "${steps.split_concepts.output.iterations}"
+link_verifications = "${steps.link_related_concepts.output.iterations}"
