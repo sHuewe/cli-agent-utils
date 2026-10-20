@@ -21,5 +21,7 @@ foreach = "steps.inventory.output.files"
 iteration_id = "${iteration.id}"
 [steps.input]
 concept = "${item}"
+concept_id = "${iteration.id}"
+folder_id = "${input.folder_id}"
 folder = "${input.folder}"
 okf_root = "${input.okf_root}"
