@@ -1,5 +1,6 @@
 version = 1
-inputs = ["okf_root"]
+[vars]
+okf_root = "okf-generated"
 exclude_paths = ["flow"]
 result = "steps.link_folders.output"
 
@@ -15,7 +16,7 @@ output = "flow/okf/flow_okf_relink/state/inventory.json"
 overwrite_output = true
 [steps.filesystem_operation]
 kind = "inventory"
-directory = "${input.okf_root}"
+directory = "${var.okf_root}"
 recursive = true
 extensions = [".md"]
 exclude_names = ["index.md", "log.md"]
@@ -29,4 +30,4 @@ iteration_id = "${iteration.id}"
 [steps.input]
 folder = "${item}"
 folder_id = "${iteration.id}"
-okf_root = "${input.okf_root}"
+okf_root = "${var.okf_root}"
