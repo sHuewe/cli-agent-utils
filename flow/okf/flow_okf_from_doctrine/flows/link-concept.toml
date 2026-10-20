@@ -1,5 +1,5 @@
 version = 1
-inputs = ["concept_path", "concept_id", "folder_id", "folder_status", "structure", "okf_root"]
+inputs = ["concept_path", "concept_id", "folder_id", "folder_status", "structure", "okf_root", "target_folders"]
 result = "steps.shared.output"
 
 [[steps]]
@@ -16,3 +16,6 @@ state_dir = "flow/okf/flow_okf_from_doctrine/state"
 # The doctrine pipeline shares one state directory, so retain the historical
 # folder/concept suffix for its checkpoint names.
 checkpoint_key = "${input.folder_id}-${input.concept_id}"
+target_folders = "${input.target_folders}"
+# Semantic structure folder paths are relative to the OKF root.
+target_path_prefix = "${input.okf_root}/"

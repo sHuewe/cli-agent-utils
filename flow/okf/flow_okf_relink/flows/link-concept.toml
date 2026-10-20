@@ -1,5 +1,5 @@
 version = 1
-inputs = ["concept", "folder", "folder_id", "concept_id", "okf_root"]
+inputs = ["concept", "folder", "folder_id", "concept_id", "okf_root", "target_folders"]
 result = "steps.shared.output"
 
 [[steps]]
@@ -16,3 +16,6 @@ state_dir = "flow/okf/flow_okf_relink/state/concepts/${input.concept.path}"
 # This state_dir is already unique per concept, so checkpoint filenames
 # must not depend on positional folder/concept iteration IDs.
 checkpoint_key = "relink"
+target_folders = "${input.target_folders}"
+# Filesystem inventory paths already contain the OKF root.
+target_path_prefix = ""

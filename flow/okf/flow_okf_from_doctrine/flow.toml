@@ -194,6 +194,7 @@ iteration_id = "${item.id}"
 folder_scan = "${item.output}"
 structure = "${steps.design_structure.output}"
 okf_root = "${steps.design_structure.output.okf_root}"
+target_folders = "${steps.design_structure.output.folders}"
 
 [[steps]]
 id = "post_split_final_verify"
