@@ -30,6 +30,6 @@ overwrite_output = false
 response_format = "json"
 
 [steps.vars]
-inventory = "${steps.inventory.output}"
 folder = "${input.folder}"
 structure = "${input.structure}"
+inventory = "${steps.inventory.output}"

@@ -29,9 +29,9 @@ overwrite_output = false
 response_format = "json"
 
 [steps.vars]
-inventory = "${steps.inventory.output}"
 folder = "${input.folder}"
 okf_root = "${input.okf_root}"
+inventory = "${steps.inventory.output}"
 
 [[steps]]
 id = "split"
