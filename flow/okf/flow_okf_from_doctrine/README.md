@@ -27,7 +27,7 @@ Known limit: initial partitioning uses literal heading search and bounded single
 
 Every model step, including short chunk/folder-routing and shared index/verification/split stages, now writes an individual JSON checkpoint. Shared steps use pipeline-, phase- and folder-scoped identifiers so pre/post split verification cannot reuse each other's data. Subflow invocation steps are orchestrator operations: their model steps are checkpointed individually, and their combined results are reconstructed on resume.
 
-The shared checkpoints are stored in `flow/okf/state/fine/`; routing-stage checkpoints are stored in this pipeline's `state/fine/`. Both locations are gitignored. The concept-split discovery returns short positional IDs (c001, c002, ...), reducing long filenames even when concept titles are long. When inputs or generated OKF content changes, invalidate dependent checkpoints before rerunning. Earlier stages may otherwise legitimately resume from stale JSON.
+The link phase now calls `flow/okf/flows/link-concept.toml`, sharing the same snapshot/link/verify prompts with `flow_okf_relink`. Its checkpoint paths changed from the legacy `links-*-v3-*` names; existing legacy link checkpoints are **not** automatically reused. The old files remain untouched, but a resumed run will perform those link stages again unless migrated explicitly. Review this before resuming a partially completed doctrine run.\n\nThe shared checkpoints are stored in `flow/okf/state/fine/`; routing-stage checkpoints are stored in this pipeline's `state/fine/`. Both locations are gitignored. The concept-split discovery returns short positional IDs (c001, c002, ...), reducing long filenames even when concept titles are long. When inputs or generated OKF content changes, invalidate dependent checkpoints before rerunning. Earlier stages may otherwise legitimately resume from stale JSON.
 
 If Windows reports a long-path error, note the **exact failing path**: a generated checkpoint file, an OKF concept output, or a `.cli-agent` diagnostic dump require different fixes. Shorter checkpoint filenames cannot by themselves guarantee Windows paths remain below system limits in a deeply nested workspace.
 
@@ -41,7 +41,7 @@ other genuinely related concepts, including across semantic folders.
 
 Processing uses a separate nested flow for **each concept**, rather than
 loading a whole folder's contents into a single model context. The
-post-split folder verification supplies the sorted
+post-split folder verification supplies the final sorted
 `concept_paths` inventory, so newly split concepts are included. Each
 concept's link step inspects only a small number of candidate targets, adds at
 most three nonduplicated relative Markdown links, and only edits the current
@@ -51,15 +51,18 @@ verification step reconstructs the full original content by removing only
 reported Markdown link wrappers and comparing it to the snapshot character
 for character; it also validates link destinations. Uncertain or unrelated candidates may be left unlinked.
 
-The doctrine workflow ends with `link_related_concepts`; no additional root-level post-link verification is performed. The per-concept read-only link verifications remain in place, and their existing checkpoints are preserved.
+The final `post_split_final_verify` consumes all nested link-verification
+results and rejects missing/failed concepts or folder mismatches. Its output
+uses a NEW checkpoint filename `state/post-link-final-verification-v3.json`
+so an existing pre-link final verification cannot be reused as success.
 
-Per-concept JSON checkpoints are stored under
-`state/links-snapshot-v3-<folder-id>-<position>.json`,
-`state/links-v3-<folder-id>-<position>.json` and
-`state/links-verify-v3-<folder-id>-<position>.json`; positions come from the
+Per-concept JSON checkpoints for the shared link subflow are stored under
+`state/snapshot-<folder-id>-<position>.json`,
+`state/link-<folder-id>-<position>.json` and
+`state/verify-<folder-id>-<position>.json`; positions come from the
 **sorted** final folder concept list. Keep these checkpoints for ordinary
 resume. **If the set/order of concept paths changes, invalidate the
-`links-snapshot-v3-*`, `links-v3-*` and `links-verify-v3-*` checkpoints for each affected
+`snapshot-*`, `link-*` and `verify-*` checkpoints for each affected
 folder** before rerunning. Positional checkpoint IDs must not be reused for
 a different concept. If a link-step output must be regenerated, invalidate
 the matching link-verification checkpoint too.
@@ -144,7 +147,3 @@ checkpoints; a checkpoint is not a live dependency tracker.
 closed rather than being truncated. A very high number of distinct topic
 suggestions can still exceed a single consolidation context; that stage
 handles compact hints, not the full doctrine inventory.
-
-## Deterministic folder inventory
-
-Shared `verify-folder` and `split-folder` subflows now run a read-only `filesystem_operation.inventory` before their existing LLM verification or discovery step. The inventory lists direct Markdown files without model/tool calls; the verification still checks frontmatter and index links. Existing LLM checkpoint paths remain unchanged, and inventory outputs use `overwrite_output = true`. The inventory currently requires a POSIX runner (Linux); it is not supported on Windows.

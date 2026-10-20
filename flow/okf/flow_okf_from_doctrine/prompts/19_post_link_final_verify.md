@@ -46,6 +46,7 @@ Post-split per-concept link-verification results (one outer iteration per folder
 {{var:link_verifications}}
 
 ADDITIONAL MANDATORY LINK CHECKS:
+- Path convention: per-concept shared verifier source_path is workspace-relative, but post-split folder concept_paths are OKF-root-relative. For each source_path, require the exact okf_root directory prefix followed by a slash, remove that prefix exactly once, and compare the resulting OKF-root-relative paths. Reject a missing prefix, empty path, absolute path, or path traversal. Check duplicates after normalization.
 - This is the AUTHORITATIVE final result after the new link phase, not an independent pre-link success indicator. Do not return "ok" just because the older split/folder checks passed.
 - Inspect EVERY outer link iteration and EVERY nested per-concept link-verification result. The outer element has an "id" (folder ID) and "output.iterations"; each inner element's "output" is the verifier's JSON with "status", "source_path", "checked_links", and "findings". Do not confuse the outer nested aggregate with a completed verification: actually examine every inner output.
 - Compare outer folder IDs to structure.folders and to the post-split folder-verification results. Each declared folder must appear EXACTLY ONCE, with no missing or extra folder IDs, even for empty folders.

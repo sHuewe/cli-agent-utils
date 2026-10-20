@@ -1,0 +1,46 @@
+version = 1
+inputs = ["concept_path", "concept_id", "folder_id", "folder_status", "structure", "okf_root", "state_dir"]
+result = "steps.verify.output"
+
+[[steps]]
+id = "snapshot"
+prompt_file = "flow/okf/prompts/link_snapshot.md"
+output = "${input.state_dir}/snapshot-${input.folder_id}-${input.concept_id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+concept_path = "${input.concept_path}"
+folder_status = "${input.folder_status}"
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "link"
+prompt_file = "flow/okf/prompts/link_concept.md"
+output = "${input.state_dir}/link-${input.folder_id}-${input.concept_id}.json"
+overwrite_output = false
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__write_file"]
+[steps.vars]
+concept_path = "${input.concept_path}"
+folder_id = "${input.folder_id}"
+folder_status = "${input.folder_status}"
+structure = "${input.structure}"
+okf_root = "${input.okf_root}"
+snapshot = "${steps.snapshot.output}"
+
+[[steps]]
+id = "verify"
+prompt_file = "flow/okf/prompts/link_verify.md"
+output = "${input.state_dir}/verify-${input.folder_id}-${input.concept_id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+concept_path = "${input.concept_path}"
+folder_id = "${input.folder_id}"
+okf_root = "${input.okf_root}"
+folder_status = "${input.folder_status}"
+link_result = "${steps.link.output}"
+snapshot = "${steps.snapshot.output}"
