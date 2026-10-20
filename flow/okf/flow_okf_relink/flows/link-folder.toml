@@ -1,0 +1,16 @@
+version = 1
+inputs = ["folder", "structure", "okf_root"]
+result = "steps.link_concepts.output"
+
+[[steps]]
+id = "link_concepts"
+flow = "flow/okf/flow_okf_relink/flows/link-concept.toml"
+foreach = "input.folder.concept_paths"
+iteration_id = "${iteration.id}"
+[steps.input]
+concept_path = "${item}"
+concept_id = "${iteration.id}"
+folder_id = "${input.folder.id}"
+folder_status = "${input.folder.status}"
+structure = "${input.structure}"
+okf_root = "${input.okf_root}"
