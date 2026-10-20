@@ -1,5 +1,4 @@
 version = 1
-# Run from the workspace root; supply input.okf_root (workspace-relative).
 inputs = ["okf_root"]
 exclude_paths = ["flow"]
 result = "steps.link_folders.output"
@@ -19,25 +18,14 @@ kind = "inventory"
 directory = "${input.okf_root}"
 recursive = true
 extensions = [".md"]
+exclude_names = ["index.md", "log.md"]
 max_entries = 10000
-
-[[steps]]
-id = "plan"
-prompt_file = "flow/okf/flow_okf_relink/prompts/plan.md"
-workspace_access = "none"
-response_format = "json"
-output = "flow/okf/flow_okf_relink/state/plan.json"
-overwrite_output = false
-[steps.vars]
-inventory = "${steps.inventory.output}"
-okf_root = "${input.okf_root}"
 
 [[steps]]
 id = "link_folders"
 flow = "flow/okf/flow_okf_relink/flows/link-folder.toml"
-foreach = "steps.plan.output.folders"
-iteration_id = "${item.id}"
+foreach = "steps.inventory.output.directories"
+iteration_id = "${iteration.id}"
 [steps.input]
 folder = "${item}"
-structure = "${steps.plan.output}"
 okf_root = "${input.okf_root}"
