@@ -82,15 +82,24 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
     )
     for step in (snapshot, link, verify):
         assert step["output"].endswith(
-            f"/{step['id']}-${{input.checkpoint_key}}.json"
+            f"/{step['id']}-v2-${{input.checkpoint_key}}.json"
         )
+    assert discover["output"] == (
+        "${input.state_dir}/discover-v2-${input.checkpoint_key}/${item.path}.json"
+    )
+    assert discover["prompt_file"] == "flow/okf/prompts/link_discover_folder.md"
+    assert not discover["overwrite_output"]
 
 
 def test_link_prompts_enforce_concept_scope_and_read_only_verification() -> None:
     shared = _load("flow/okf/flows/link-concept.toml")
-    assert shared["steps"][0]["prompt_file"] == "flow/okf/prompts/link_snapshot.md"
-    assert shared["steps"][1]["prompt_file"] == "flow/okf/prompts/link_concept.md"
-    assert shared["steps"][2]["prompt_file"] == "flow/okf/prompts/link_verify.md"
+    prompts_by_step = {step["id"]: step["prompt_file"] for step in shared["steps"]}
+    assert prompts_by_step == {
+        "snapshot": "flow/okf/prompts/link_snapshot.md",
+        "discover_folders": "flow/okf/prompts/link_discover_folder.md",
+        "link": "flow/okf/prompts/link_concept.md",
+        "verify": "flow/okf/prompts/link_verify.md",
+    }
     linker = (ROOT / "flow/okf/prompts/link_concept.md").read_text(encoding="utf-8")
     verifier = (ROOT / "flow/okf/prompts/link_verify.md").read_text(encoding="utf-8")
     assert "{{var:concept_path}}" in linker
