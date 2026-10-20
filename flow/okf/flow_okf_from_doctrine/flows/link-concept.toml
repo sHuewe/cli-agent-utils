@@ -13,3 +13,6 @@ folder_status = "${input.folder_status}"
 structure = "${input.structure}"
 okf_root = "${input.okf_root}"
 state_dir = "flow/okf/flow_okf_from_doctrine/state"
+# The doctrine pipeline shares one state directory, so retain the historical
+# folder/concept suffix for its checkpoint names.
+checkpoint_key = "${input.folder_id}-${input.concept_id}"

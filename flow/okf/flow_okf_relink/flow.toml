@@ -24,7 +24,6 @@ max_entries = 10000
 id = "link_folders"
 flow = "flow/okf/flow_okf_relink/flows/link-folder.toml"
 foreach = "steps.inventory.output.directories"
-iteration_id = "${iteration.id}"
 [steps.input]
 folder = "${item}"
 folder_id = "${iteration.id}"

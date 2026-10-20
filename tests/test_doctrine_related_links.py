@@ -73,9 +73,13 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
     assert verify["response_format"] == "json"
     assert not verify["overwrite_output"]
     assert link["output"] != verify["output"]
+    assert adapter["steps"][0]["input"]["checkpoint_key"] == (
+        "${input.folder_id}-${input.concept_id}"
+    )
     for step in (snapshot, link, verify):
-        assert "${input.folder_id}" in step["output"]
-        assert "${input.concept_id}" in step["output"]
+        assert step["output"].endswith(
+            f"/{step['id']}-${{input.checkpoint_key}}.json"
+        )
 
 
 def test_link_prompts_enforce_concept_scope_and_read_only_verification() -> None:
