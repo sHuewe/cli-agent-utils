@@ -1,6 +1,4 @@
 version = 1
-[vars]
-okf_root = "okf-generated"
 exclude_paths = ["flow"]
 result = "steps.link_folders.output"
 
