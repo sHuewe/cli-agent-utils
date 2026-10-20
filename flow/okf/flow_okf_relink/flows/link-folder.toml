@@ -1,5 +1,5 @@
 version = 1
-inputs = ["folder", "folder_id", "okf_root"]
+inputs = ["folder", "folder_id", "okf_root", "target_folders"]
 result = "steps.link_concepts.output"
 
 [[steps]]
@@ -24,3 +24,4 @@ concept_id = "${iteration.id}"
 folder_id = "${input.folder_id}"
 folder = "${input.folder}"
 okf_root = "${input.okf_root}"
+target_folders = "${input.target_folders}"

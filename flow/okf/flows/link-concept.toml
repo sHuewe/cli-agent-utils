@@ -1,11 +1,11 @@
 version = 1
-inputs = ["concept_path", "concept_id", "folder_id", "folder_status", "structure", "okf_root", "state_dir", "checkpoint_key"]
+inputs = ["concept_path", "concept_id", "folder_id", "folder_status", "structure", "okf_root", "state_dir", "checkpoint_key", "target_folders", "target_path_prefix"]
 result = "steps.verify.output"
 
 [[steps]]
 id = "snapshot"
 prompt_file = "flow/okf/prompts/link_snapshot.md"
-output = "${input.state_dir}/snapshot-${input.checkpoint_key}.json"
+output = "${input.state_dir}/snapshot-v2-${input.checkpoint_key}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -14,10 +14,27 @@ concept_path = "${input.concept_path}"
 folder_status = "${input.folder_status}"
 okf_root = "${input.okf_root}"
 
+# One read-only search for EACH target folder. The full repository is no longer
+# searched in one model call; no source concept is modified in this loop.
+[[steps]]
+id = "discover_folders"
+prompt_file = "flow/okf/prompts/link_discover_folder.md"
+foreach = "input.target_folders"
+output = "${input.state_dir}/discover-v2-${input.checkpoint_key}/${item.path}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+concept_path = "${input.concept_path}"
+okf_root = "${input.okf_root}"
+target_folder_path = "${input.target_path_prefix}${item.path}"
+snapshot = "${steps.snapshot.output}"
+
+# A SINGLE write-capable step applies the combined, verified candidates.
 [[steps]]
 id = "link"
 prompt_file = "flow/okf/prompts/link_concept.md"
-output = "${input.state_dir}/link-${input.checkpoint_key}.json"
+output = "${input.state_dir}/link-v2-${input.checkpoint_key}.json"
 overwrite_output = false
 workspace_access = "write"
 response_format = "json"
@@ -29,11 +46,12 @@ folder_status = "${input.folder_status}"
 structure = "${input.structure}"
 okf_root = "${input.okf_root}"
 snapshot = "${steps.snapshot.output}"
+discoveries = "${steps.discover_folders.output.iterations}"
 
 [[steps]]
 id = "verify"
 prompt_file = "flow/okf/prompts/link_verify.md"
-output = "${input.state_dir}/verify-${input.checkpoint_key}.json"
+output = "${input.state_dir}/verify-v2-${input.checkpoint_key}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"

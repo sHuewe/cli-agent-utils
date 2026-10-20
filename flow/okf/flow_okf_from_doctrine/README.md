@@ -43,10 +43,11 @@ Processing uses a separate nested flow for **each concept**, rather than
 loading a whole folder's contents into a single model context. The
 post-split folder verification supplies the final sorted
 `concept_paths` inventory, so newly split concepts are included. Each
-concept's link step discovers candidates via root/folder `index.md` navigation
-AND targeted text searches across the OKF. It adds as many meaningful,
+concept's read-only folder `foreach` discovers candidates using each target
+folder's `index.md` AND text searches limited to that folder. Once all folders
+have been inspected, one write-capable step adds as many meaningful,
 nonduplicated relative Markdown links as naturally fit the existing prose,
-without a fixed per-concept cap, and only edits the current concept. A full-content read-only snapshot precedes each write. Linking inserts Markdown links directly around existing phrases in normal prose,
+without a fixed per-concept cap, and only edits the current concept. The new per-folder discovery and link/verify checkpoints use `v2` output names to avoid reusing old whole-repository link results. A full-content read-only snapshot precedes each write. Linking inserts Markdown links directly around existing phrases in normal prose,
 without adding, deleting or rephrasing the original text. A separate read-only
 verification step reconstructs the full original content by removing only
 reported Markdown link wrappers and comparing it to the snapshot character

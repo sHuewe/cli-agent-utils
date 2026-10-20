@@ -40,9 +40,8 @@ def test_relink_checkpoint_paths_do_not_depend_on_inventory_positions():
         "flow/okf/flow_okf_relink/state/concepts/${input.concept.path}"
     )
     for step in shared["steps"]:
-        assert step["output"].endswith(
-            f"/{step['id']}-${{input.checkpoint_key}}.json"
-        )
+        assert "v2" in step["output"]
+    assert shared["steps"][1]["foreach"] == "input.target_folders"
 
     def checkpoint_paths(concept_path: str, folder_pos: str, concept_pos: str):
         state_dir = adapter["state_dir"].replace(
@@ -52,6 +51,7 @@ def test_relink_checkpoint_paths_do_not_depend_on_inventory_positions():
             (step["output"]
              .replace("${input.state_dir}", state_dir)
              .replace("${input.checkpoint_key}", adapter["checkpoint_key"])
+             .replace("${item.path}", "security")
              .replace("${input.folder_id}", folder_pos)
              .replace("${input.concept_id}", concept_pos))
             for step in shared["steps"]
@@ -62,3 +62,5 @@ def test_relink_checkpoint_paths_do_not_depend_on_inventory_positions():
     other = checkpoint_paths("okf-generated/beta/topic.md", "7", "18")
     assert original == reordered
     assert original.isdisjoint(other)
+    root = _read(FLOW / "flow.toml")
+    assert root["steps"][1]["input"]["target_folders"] == "${steps.inventory.output.directories}"

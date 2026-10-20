@@ -41,7 +41,7 @@ def test_related_links_run_after_split_and_folder_verification() -> None:
 def test_per_concept_subflow_inputs_and_checkpoints() -> None:
     folder = _load(f"{BASE}/flows/link-folder-concepts.toml")
     steps = folder["steps"]
-    assert folder["inputs"] == ["folder_scan", "structure", "okf_root"]
+    assert folder["inputs"] == ["folder_scan", "structure", "okf_root", "target_folders"]
     assert folder["result"] == "steps.link_concepts.output"
     assert len(steps) == 1
     assert steps[0]["foreach"] == "input.folder_scan.concept_paths"
@@ -58,8 +58,12 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
 
     concept = _load("flow/okf/flows/link-concept.toml")
     assert concept["result"] == "steps.verify.output"
-    assert [step["id"] for step in concept["steps"]] == ["snapshot", "link", "verify"]
-    snapshot, link, verify = concept["steps"]
+    assert [step["id"] for step in concept["steps"]] == ["snapshot", "discover_folders", "link", "verify"]
+    snapshot, discover, link, verify = concept["steps"]
+    assert discover["foreach"] == "input.target_folders"
+    assert discover["workspace_access"] == "read"
+    assert discover["output"].endswith("/${item.path}.json")
+    assert link["vars"]["discoveries"] == "${steps.discover_folders.output.iterations}"
     assert snapshot["workspace_access"] == "read"
     assert snapshot["response_format"] == "json"
     assert not snapshot["overwrite_output"]
@@ -127,11 +131,12 @@ def test_related_link_prompts_use_index_and_text_search_without_count_cap() -> N
     for prompt in (linker, verifier):
         assert "NO FIXED MAXIMUM" in prompt
         assert "THREE" not in prompt
-    assert "root index.md" in linker
-    assert "folder's index.md" in linker
-    assert "targeted text searches" in linker
-    assert "EVEN IF index navigation" in linker
-    assert "ONE link per distinct target" in linker
+    discovery = (ROOT / "flow/okf/prompts/link_discover_folder.md").read_text(encoding="utf-8")
+    assert "index.md" in discovery
+    assert "targeted text searches" in discovery
+    assert "CURRENT target folder" in discovery
+    assert "do NOT perform another repository-wide search" in linker
+    assert "ONE link per target" in linker
     assert "Zero links is valid" in linker
     assert "verify ALL reported links" in verifier
     assert "distinct target for each" in verifier

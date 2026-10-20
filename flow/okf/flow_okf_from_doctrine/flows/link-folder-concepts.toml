@@ -1,5 +1,5 @@
 version = 1
-inputs = ["folder_scan", "structure", "okf_root"]
+inputs = ["folder_scan", "structure", "okf_root", "target_folders"]
 result = "steps.link_concepts.output"
 
 [[steps]]
@@ -14,3 +14,4 @@ folder_id = "${input.folder_scan.folder_id}"
 folder_status = "${input.folder_scan.status}"
 structure = "${input.structure}"
 okf_root = "${input.okf_root}"
+target_folders = "${input.target_folders}"
