@@ -30,3 +30,35 @@ def test_relink_forwards_real_iteration_ids():
     adapter = _read(FLOW / "flows/link-concept.toml")["steps"][0]["input"]
     assert adapter["concept_id"] == "${input.concept_id}"
     assert adapter["folder_id"] == "${input.folder_id}"
+
+
+def test_relink_checkpoint_paths_do_not_depend_on_inventory_positions():
+    shared = _read(ROOT / "flow/okf/flows/link-concept.toml")
+    adapter = _read(FLOW / "flows/link-concept.toml")["steps"][0]["input"]
+    assert adapter["checkpoint_key"] == "relink"
+    assert adapter["state_dir"] == (
+        "flow/okf/flow_okf_relink/state/concepts/${input.concept.path}"
+    )
+    for step in shared["steps"]:
+        assert step["output"].endswith(
+            f"/{step['id']}-${{input.checkpoint_key}}.json"
+        )
+
+    def checkpoint_paths(concept_path: str, folder_pos: str, concept_pos: str):
+        state_dir = adapter["state_dir"].replace(
+            "${input.concept.path}", concept_path
+        )
+        return {
+            (step["output"]
+             .replace("${input.state_dir}", state_dir)
+             .replace("${input.checkpoint_key}", adapter["checkpoint_key"])
+             .replace("${input.folder_id}", folder_pos)
+             .replace("${input.concept_id}", concept_pos))
+            for step in shared["steps"]
+        }
+
+    original = checkpoint_paths("okf-generated/alpha/topic.md", "1", "3")
+    reordered = checkpoint_paths("okf-generated/alpha/topic.md", "7", "18")
+    other = checkpoint_paths("okf-generated/beta/topic.md", "7", "18")
+    assert original == reordered
+    assert original.isdisjoint(other)

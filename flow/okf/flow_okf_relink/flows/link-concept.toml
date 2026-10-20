@@ -13,3 +13,6 @@ folder_status = "ok"
 structure = "${input.folder}"
 okf_root = "${input.okf_root}"
 state_dir = "flow/okf/flow_okf_relink/state/concepts/${input.concept.path}"
+# This state_dir is already unique per concept, so checkpoint filenames
+# must not depend on positional folder/concept iteration IDs.
+checkpoint_key = "relink"
