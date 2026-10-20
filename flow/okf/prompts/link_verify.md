@@ -6,7 +6,7 @@ OKF root (workspace-relative): {{var:okf_root}}
 Link result: {{var:link_result}}
 Full pre-link snapshot: {{var:snapshot}}
 
-Use concept_path as the WORKSPACE-relative source path. Require folder_status == "ok" and snapshot.status == "captured", snapshot.concept_path == concept_path, link_result.source_path == concept_path and link_result.status == "ok". Read the FULL current source, including exact whitespace and line endings. Require link_result.changed to match whether links_added is nonempty, and at most THREE distinct links.
+Use concept_path as the WORKSPACE-relative source path. Require folder_status == "ok" and snapshot.status == "captured", snapshot.concept_path == concept_path, link_result.source_path == concept_path and link_result.status == "ok". Read the FULL current source, including exact whitespace and line endings. Require link_result.changed to match whether links_added is nonempty. There is NO FIXED MAXIMUM number of new links: verify ALL reported links independently, and require a distinct target for each.
 
 If unchanged, require current content to equal snapshot.content exactly. If changed, replace each newly introduced [link_text](relative_url) token exactly once with its original link_text; require the reconstructed FULL current text to equal snapshot.content character for character. No other modifications are allowed. Reject ambiguous or overlapping replacements, nested links, changes to original markup or references, and edits in frontmatter, headings or code.
 

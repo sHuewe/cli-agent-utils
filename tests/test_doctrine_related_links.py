@@ -119,3 +119,19 @@ def test_final_review_requires_all_nested_link_verifications() -> None:
     assert "concept_paths" in prompt
     assert "needs_attention" in prompt
     assert "EVERY nested" in prompt
+
+
+def test_related_link_prompts_use_index_and_text_search_without_count_cap() -> None:
+    linker = (ROOT / "flow/okf/prompts/link_concept.md").read_text(encoding="utf-8")
+    verifier = (ROOT / "flow/okf/prompts/link_verify.md").read_text(encoding="utf-8")
+    for prompt in (linker, verifier):
+        assert "NO FIXED MAXIMUM" in prompt
+        assert "THREE" not in prompt
+    assert "root index.md" in linker
+    assert "folder's index.md" in linker
+    assert "targeted text searches" in linker
+    assert "EVEN IF index navigation" in linker
+    assert "ONE link per distinct target" in linker
+    assert "Zero links is valid" in linker
+    assert "verify ALL reported links" in verifier
+    assert "distinct target for each" in verifier
