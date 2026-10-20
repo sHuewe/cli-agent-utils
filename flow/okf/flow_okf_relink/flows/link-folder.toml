@@ -1,5 +1,5 @@
 version = 1
-inputs = ["folder", "okf_root"]
+inputs = ["folder", "folder_id", "okf_root"]
 result = "steps.link_concepts.output"
 
 [[steps]]
