@@ -28,4 +28,5 @@ foreach = "steps.inventory.output.directories"
 iteration_id = "${iteration.id}"
 [steps.input]
 folder = "${item}"
+folder_id = "${iteration.id}"
 okf_root = "${input.okf_root}"
