@@ -39,7 +39,6 @@ workspace_access = "read"
 response_format = "json"
 [steps.vars]
 concept_path = "${input.concept_path}"
-folder_id = "${input.folder_id}"
 okf_root = "${input.okf_root}"
 folder_status = "${input.folder_status}"
 link_result = "${steps.link.output}"
