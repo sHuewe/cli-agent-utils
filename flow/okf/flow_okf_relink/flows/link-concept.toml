@@ -1,11 +1,11 @@
 version = 1
-inputs = ["concept", "folder", "okf_root"]
+inputs = ["concept", "folder", "folder_id", "concept_id", "okf_root"]
 result = "steps.verify.output"
 
 [[steps]]
 id = "snapshot"
 prompt_file = "flow/okf/flow_okf_relink/prompts/snapshot.md"
-output = "flow/okf/flow_okf_relink/state/snapshot-${input.concept.path}.json"
+output = "flow/okf/flow_okf_relink/state/snapshot-${input.folder_id}-${input.concept_id}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -16,7 +16,7 @@ okf_root = "${input.okf_root}"
 [[steps]]
 id = "link"
 prompt_file = "flow/okf/flow_okf_relink/prompts/link.md"
-output = "flow/okf/flow_okf_relink/state/link-${input.concept.path}.json"
+output = "flow/okf/flow_okf_relink/state/link-${input.folder_id}-${input.concept_id}.json"
 overwrite_output = false
 workspace_access = "write"
 response_format = "json"
@@ -30,7 +30,7 @@ snapshot = "${steps.snapshot.output}"
 [[steps]]
 id = "verify"
 prompt_file = "flow/okf/flow_okf_relink/prompts/verify.md"
-output = "flow/okf/flow_okf_relink/state/verify-${input.concept.path}.json"
+output = "flow/okf/flow_okf_relink/state/verify-${input.folder_id}-${input.concept_id}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
