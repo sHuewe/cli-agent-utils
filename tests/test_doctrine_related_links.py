@@ -21,7 +21,8 @@ def test_related_links_run_after_split_and_folder_verification() -> None:
     steps = {s["id"]: (i, s) for i, s in enumerate(main["steps"])}
     assert steps["split_concepts"][0] < steps["post_split_verify_folders"][0]
     assert steps["post_split_verify_folders"][0] < steps["link_related_concepts"][0]
-    assert steps["link_related_concepts"][0] < steps["post_split_final_verify"][0]
+    assert list(steps)[-1] == "link_related_concepts"
+    assert "post_split_final_verify" not in steps
 
     links = steps["link_related_concepts"][1]
     assert links["flow"] == f"{BASE}/flows/link-folder-concepts.toml"
@@ -29,12 +30,6 @@ def test_related_links_run_after_split_and_folder_verification() -> None:
     assert links["iteration_id"] == "${item.id}"
     assert links["input"]["folder_scan"] == "${item.output}"
     assert links["input"]["okf_root"] == "${steps.design_structure.output.okf_root}"
-    final = steps["post_split_final_verify"][1]
-    assert final["prompt_file"].endswith("19_post_link_final_verify.md")
-    assert final["vars"]["link_verifications"] == (
-        "${steps.link_related_concepts.output.iterations}"
-    )
-    assert final["output"].endswith("post-link-final-verification-v3.json")
 
 
 
@@ -103,11 +98,17 @@ def test_doctrine_concept_build_repair_preapprove_move_and_delete() -> None:
     assert steps[1]["workspace_access"] == "read"
     assert "approve_tools" not in steps[1]
 
-def test_final_review_requires_all_nested_link_verifications() -> None:
-    prompt = (ROOT / BASE / "prompts/19_post_link_final_verify.md").read_text(
-        encoding="utf-8"
-    )
-    assert "{{var:link_verifications}}" in prompt
-    assert "concept_paths" in prompt
-    assert "needs_attention" in prompt
-    assert "EVERY nested" in prompt
+def test_inventory_precedes_shared_folder_verification() -> None:
+    flow = _load("flow/okf/flows/verify-folder.toml")
+    assert [step["id"] for step in flow["steps"]] == ["inventory", "verify"]
+    assert flow["steps"][0]["filesystem_operation"]["kind"] == "inventory"
+    assert flow["steps"][1]["vars"]["inventory"] == "${steps.inventory.output}"
+    assert flow["steps"][1]["output"].endswith("verification-verify-${input.scope_id}-${input.folder.id}.json")
+
+
+def test_inventory_precedes_split_discovery() -> None:
+    flow = _load("flow/okf/flows/split-folder.toml")
+    assert [step["id"] for step in flow["steps"]] == ["inventory", "discover", "split"]
+    assert flow["steps"][0]["filesystem_operation"]["kind"] == "inventory"
+    assert flow["steps"][1]["vars"]["inventory"] == "${steps.inventory.output}"
+    assert not flow["steps"][1]["overwrite_output"]

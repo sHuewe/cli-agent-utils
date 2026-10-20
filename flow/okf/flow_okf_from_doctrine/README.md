@@ -41,7 +41,7 @@ other genuinely related concepts, including across semantic folders.
 
 Processing uses a separate nested flow for **each concept**, rather than
 loading a whole folder's contents into a single model context. The
-post-split folder verification supplies the final sorted
+post-split folder verification supplies the sorted
 `concept_paths` inventory, so newly split concepts are included. Each
 concept's link step inspects only a small number of candidate targets, adds at
 most three nonduplicated relative Markdown links, and only edits the current
@@ -51,10 +51,7 @@ verification step reconstructs the full original content by removing only
 reported Markdown link wrappers and comparing it to the snapshot character
 for character; it also validates link destinations. Uncertain or unrelated candidates may be left unlinked.
 
-The final `post_split_final_verify` now consumes all nested link-verification
-results and rejects missing/failed concepts or folder mismatches. Its output
-uses a NEW checkpoint filename `state/post-link-final-verification-v3.json`
-so an existing pre-link final verification cannot be reused as success.
+The doctrine workflow ends with `link_related_concepts`; no additional root-level post-link verification is performed. The per-concept read-only link verifications remain in place, and their existing checkpoints are preserved.
 
 Per-concept JSON checkpoints are stored under
 `state/links-snapshot-v3-<folder-id>-<position>.json`,
@@ -147,3 +144,7 @@ checkpoints; a checkpoint is not a live dependency tracker.
 closed rather than being truncated. A very high number of distinct topic
 suggestions can still exceed a single consolidation context; that stage
 handles compact hints, not the full doctrine inventory.
+
+## Deterministic folder inventory
+
+Shared `verify-folder` and `split-folder` subflows now run a read-only `filesystem_operation.inventory` before their existing LLM verification or discovery step. The inventory lists direct Markdown files without model/tool calls; the verification still checks frontmatter and index links. Existing LLM checkpoint paths remain unchanged, and inventory outputs use `overwrite_output = true`. The inventory currently requires a POSIX runner (Linux); it is not supported on Windows.
