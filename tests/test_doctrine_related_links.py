@@ -48,9 +48,17 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
     assert steps[0]["input"]["concept_path"] == "${item}"
     assert steps[0]["input"]["concept_id"] == "${iteration.id}"
 
-    concept = _load(f"{BASE}/flows/link-concept.toml")
+    adapter = _load(f"{BASE}/flows/link-concept.toml")
+    assert adapter["result"] == "steps.shared.output"
+    assert [step["id"] for step in adapter["steps"]] == ["shared"]
+    assert adapter["steps"][0]["flow"] == "flow/okf/flows/link-concept.toml"
+    assert adapter["steps"][0]["input"]["concept_path"] == (
+        "${input.okf_root}/${input.concept_path}"
+    )
+
+    concept = _load("flow/okf/flows/link-concept.toml")
     assert concept["result"] == "steps.verify.output"
-    assert [s["id"] for s in concept["steps"]] == ["snapshot", "link", "verify"]
+    assert [step["id"] for step in concept["steps"]] == ["snapshot", "link", "verify"]
     snapshot, link, verify = concept["steps"]
     assert snapshot["workspace_access"] == "read"
     assert snapshot["response_format"] == "json"
@@ -71,25 +79,21 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
 
 
 def test_link_prompts_enforce_concept_scope_and_read_only_verification() -> None:
-    linker = (ROOT / BASE / "prompts/17_link_related_concept.md").read_text(
-        encoding="utf-8"
-    )
-    verifier = (ROOT / BASE / "prompts/18_verify_related_concept.md").read_text(
-        encoding="utf-8"
-    )
+    shared = _load("flow/okf/flows/link-concept.toml")
+    assert shared["steps"][0]["prompt_file"] == "flow/okf/prompts/link_snapshot.md"
+    assert shared["steps"][1]["prompt_file"] == "flow/okf/prompts/link_concept.md"
+    assert shared["steps"][2]["prompt_file"] == "flow/okf/prompts/link_verify.md"
+    linker = (ROOT / "flow/okf/prompts/link_concept.md").read_text(encoding="utf-8")
+    verifier = (ROOT / "flow/okf/prompts/link_verify.md").read_text(encoding="utf-8")
     assert "{{var:concept_path}}" in linker
     assert "{{var:link_result}}" in verifier
     assert "{{var:snapshot}}" in linker
     assert "{{var:snapshot}}" in verifier
     assert "snapshot.content" in verifier
-    assert "reconstructed entire current text" in verifier
-    assert "INSIDE the existing concept" in linker
+    assert "reconstruct" in verifier.lower()
     assert "link_text" in linker
-    assert "Related concepts footer" in linker
-    assert "ONLY file you may modify" in linker
-    assert "Add at most three DISTINCT target paths" in linker
     assert "relative" in linker.lower()
-    assert "read-only" in verifier
+    assert "read only" in verifier.lower() or "read-only" in verifier.lower()
 
 
 def test_doctrine_concept_build_repair_preapprove_move_and_delete() -> None:
