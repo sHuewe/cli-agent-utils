@@ -1,0 +1,21 @@
+version = 1
+inputs = ["batches"]
+result = "steps.batch.output"
+
+# json_inputs.iterate is intentionally rooted at the subflow input:
+# the runner permits input.*[] / item.*[], not steps.*.output.*[].
+# The caller supplies batch_modules.output.batches as this flow's input.
+[[steps]]
+id = "batch"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/global/suggestion-batches.json"
+overwrite_output = true
+
+[steps.json_operation]
+kind = "batch"
+input = "suggestions"
+batch_size = 6
+max_batch_bytes = 32000
+
+[steps.json_inputs.suggestions]
+iterate = "input.batches[]"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state/global/suggestions-${each.id}.json"

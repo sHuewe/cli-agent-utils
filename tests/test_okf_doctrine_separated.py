@@ -106,3 +106,35 @@ def test_global_okf_root_is_forwarded_to_both_subflows():
     generate = _flow(BASE / "flows/generate-doctrine.toml")
     assert build["steps"][-1]["input"]["okf_root"] == "${input.okf_root}"
     assert next(s for s in generate["steps"] if s["id"] == "build_concepts")["input"]["okf_root"] == "${input.okf_root}"
+
+
+def test_global_suggestion_batching_uses_declared_subflow_inputs():
+    """Prevent using steps.* in json_inputs.iterate (runner only permits input/item)."""
+    integrate = _flow(BASE / "flows/integrate.toml")
+    steps = {step["id"]: step for step in integrate["steps"]}
+    batching = steps["batch_suggestions"]
+    assert batching["flow"].endswith("/flows/batch-global-suggestions.toml")
+    assert batching["input"]["batches"] == "${steps.batch_modules.output.batches}"
+
+    child = _flow(BASE / "flows/batch-global-suggestions.toml")
+    assert "batches" in child["inputs"]
+    json_step = child["steps"][0]
+    assert json_step["json_inputs"]["suggestions"]["iterate"] == "input.batches[]"
+    assert json_step["json_operation"]["kind"] == "batch"
+    assert json_step["json_inputs"]["suggestions"]["path"].endswith(
+        "/suggestions-${each.id}.json"
+    )
+    assert steps["theme_registry"]["vars"]["reduced"] == (
+        "${steps.reduce_themes.output.iterations}"
+    )
+
+
+def test_all_json_input_iterators_refer_to_input_or_item():
+    for flow_path in [BASE / "flow.toml", *(BASE / "flows").glob("*.toml")]:
+        for step in _flow(flow_path)["steps"]:
+            for spec in step.get("json_inputs", {}).values():
+                selector = spec.get("iterate")
+                if selector is not None:
+                    assert selector.startswith(("input.", "item.")), (
+                        flow_path, step["id"], selector
+                    )

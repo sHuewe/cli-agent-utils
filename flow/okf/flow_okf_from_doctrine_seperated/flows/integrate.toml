@@ -30,16 +30,9 @@ batch = "${item}"
 
 [[steps]]
 id = "batch_suggestions"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/global/suggestion-batches.json"
-overwrite_output = true
-[steps.json_operation]
-kind = "batch"
-input = "suggestions"
-batch_size = 6
-max_batch_bytes = 32000
-[steps.json_inputs.suggestions]
-iterate = "steps.batch_modules.output.batches[]"
-path = "flow/okf/flow_okf_from_doctrine_seperated/state/global/suggestions-${each.id}.json"
+flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/batch-global-suggestions.toml"
+[steps.input]
+batches = "${steps.batch_modules.output.batches}"
 
 [[steps]]
 id = "reduce_themes"
@@ -62,7 +55,7 @@ overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 [steps.vars]
-reduced = "${steps.suggest_themes.output.iterations}"
+reduced = "${steps.reduce_themes.output.iterations}"
 okf_root = "${input.okf_root}"
 
 # One manifest at a time; no cross-doctrine writing in assignment.
