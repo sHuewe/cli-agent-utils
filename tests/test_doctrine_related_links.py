@@ -58,8 +58,20 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
 
     concept = _load("flow/okf/flows/link-concept.toml")
     assert concept["result"] == "steps.verify.output"
-    assert [step["id"] for step in concept["steps"]] == ["snapshot", "discover_folders", "batch_candidates", "review_batches", "link", "verify"]
-    snapshot, discover, batch, review, link, verify = concept["steps"]
+    assert [step["id"] for step in concept["steps"]] == ["resume", "snapshot", "discover_folders", "batch_candidates", "review_batches", "link", "verify"]
+    resume, snapshot, discover, batch, review, link, verify = concept["steps"]
+    assert concept["result"] == "steps.resume.output.verification"
+    assert concept["result_fallback"] == "steps.verify.output"
+    assert resume["filesystem_operation"]["release_source_on_miss"] is True
+    assert resume["filesystem_operation"]["expected_status"] == "ok"
+    assert resume["filesystem_operation"]["paths"] == [
+        "${input.state_dir}/verify-v2-${input.checkpoint_key}.json",
+        "${input.state_dir}/verify-v3-${input.checkpoint_key}.json",
+    ]
+    for guarded_step in (snapshot, discover, batch, review, link, verify):
+        assert guarded_step["when"] == {
+            "ref": "steps.resume.output.completed", "eq": False,
+        }
     assert batch["json_operation"]["kind"] == "batch"
     assert batch["json_operation"]["max_batch_bytes"] == 32000
     assert review["foreach"] == "steps.batch_candidates.output.batches"
@@ -99,6 +111,7 @@ def test_link_prompts_enforce_concept_scope_and_read_only_verification() -> None
     shared = _load("flow/okf/flows/link-concept.toml")
     prompts_by_step = {step["id"]: step.get("prompt_file") for step in shared["steps"]}
     assert prompts_by_step == {
+        "resume": None,
         "snapshot": "flow/okf/prompts/link_snapshot.md",
         "discover_folders": "flow/okf/prompts/link_discover_folder.md",
         "batch_candidates": None,
