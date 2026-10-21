@@ -57,7 +57,7 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
     )
 
     concept = _load("flow/okf/flows/link-concept.toml")
-    assert concept["result"] == "steps.verify.output"
+    assert concept["result"] == "steps.resume.output.verification"
     assert [step["id"] for step in concept["steps"]] == ["resume", "snapshot", "discover_folders", "batch_candidates", "review_batches", "link", "verify"]
     resume, snapshot, discover, batch, review, link, verify = concept["steps"]
     assert concept["result"] == "steps.resume.output.verification"
