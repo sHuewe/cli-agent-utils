@@ -67,3 +67,26 @@ def test_relink_checkpoint_paths_do_not_depend_on_inventory_positions():
     assert original.isdisjoint(other)
     root = _read(FLOW / "flow.toml")
     assert root["steps"][1]["input"]["target_folders"] == "${steps.inventory.output.directories}"
+
+
+def test_shared_link_resume_precheck_recognizes_legacy_verifiers():
+    """v2/v3 matching is deterministic and does not invoke an LLM."""
+    precheck = _read(ROOT / "flow/okf/flows/link-resume-status.toml")
+    assert precheck["inputs"] == ["concept_path", "state_dir", "checkpoint_key"]
+    assert precheck["result"] == "steps.check.output"
+    (check,) = precheck["steps"]
+    assert check["id"] == "check"
+    assert "prompt_file" not in check
+    assert check["overwrite_output"] is True
+    assert check["output"] == (
+        "${input.state_dir}/resume-status-v1-${input.checkpoint_key}.json"
+    )
+    assert check["filesystem_operation"] == {
+        "kind": "checkpoint_status",
+        "paths": [
+            "${input.state_dir}/verify-v2-${input.checkpoint_key}.json",
+            "${input.state_dir}/verify-v3-${input.checkpoint_key}.json",
+        ],
+        "expected_status": "ok",
+        "expected_source_path": "${input.concept_path}",
+    }
