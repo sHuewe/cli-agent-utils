@@ -34,7 +34,7 @@ def test_related_links_run_after_split_and_folder_verification() -> None:
     assert final["vars"]["link_verifications"] == (
         "${steps.link_related_concepts.output.iterations}"
     )
-    assert final["output"].endswith("post-link-final-verification-v3.json")
+    assert final["output"].endswith("post-link-final-verification-v4.json")
 
 
 
@@ -97,7 +97,7 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
 
 def test_link_prompts_enforce_concept_scope_and_read_only_verification() -> None:
     shared = _load("flow/okf/flows/link-concept.toml")
-    prompts_by_step = {step["id"]: step["prompt_file"] for step in shared["steps"]}
+    prompts_by_step = {step["id"]: step.get("prompt_file") for step in shared["steps"]}
     assert prompts_by_step == {
         "snapshot": "flow/okf/prompts/link_snapshot.md",
         "discover_folders": "flow/okf/prompts/link_discover_folder.md",
