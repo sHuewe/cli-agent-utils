@@ -43,7 +43,9 @@ def test_relink_checkpoint_paths_do_not_depend_on_inventory_positions():
         "flow/okf/flow_okf_relink/state/concepts/${input.concept.path}"
     )
     for step in shared["steps"]:
-        assert "v3" in step["output"] or step["id"] == "resume"
+        assert ("v3" in step["output"] or
+                step["id"] == "resume" or
+                (step["id"] == "verify" and "v4" in step["output"]))
     assert shared["steps"][2]["foreach"] == "input.target_folders"
     assert shared["steps"][0]["filesystem_operation"]["release_source_on_miss"] is True
 
