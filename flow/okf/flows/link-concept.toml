@@ -104,7 +104,8 @@ batch_reviews = "${steps.review_batches.output.iterations}"
 id = "verify"
 when = { ref = "steps.resume.output.completed", eq = false }
 prompt_file = "flow/okf/prompts/link_verify.md"
-output = "${input.state_dir}/verify-v3-${input.checkpoint_key}.json"
+# v2/v3 are immutable resume candidates; never write into those inputs.
+output = "${input.state_dir}/verify-v4-${input.checkpoint_key}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
