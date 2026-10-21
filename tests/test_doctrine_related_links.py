@@ -34,7 +34,7 @@ def test_related_links_run_after_split_and_folder_verification() -> None:
     assert final["vars"]["link_verifications"] == (
         "${steps.link_related_concepts.output.iterations}"
     )
-    assert final["output"].endswith("post-link-final-verification-v3.json")
+    assert final["output"].endswith("post-link-final-verification-v4.json")
 
 
 
@@ -57,13 +57,29 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
     )
 
     concept = _load("flow/okf/flows/link-concept.toml")
-    assert concept["result"] == "steps.verify.output"
-    assert [step["id"] for step in concept["steps"]] == ["snapshot", "discover_folders", "link", "verify"]
-    snapshot, discover, link, verify = concept["steps"]
+    assert concept["result"] == "steps.resume.output.verification"
+    assert [step["id"] for step in concept["steps"]] == ["resume", "snapshot", "discover_folders", "batch_candidates", "review_batches", "link", "verify"]
+    resume, snapshot, discover, batch, review, link, verify = concept["steps"]
+    assert concept["result"] == "steps.resume.output.verification"
+    assert concept["result_fallback"] == "steps.verify.output"
+    assert resume["filesystem_operation"]["release_source_on_miss"] is True
+    assert resume["filesystem_operation"]["expected_status"] == "ok"
+    assert resume["filesystem_operation"]["paths"] == [
+        "${input.state_dir}/verify-v2-${input.checkpoint_key}.json",
+        "${input.state_dir}/verify-v3-${input.checkpoint_key}.json",
+    ]
+    for guarded_step in (snapshot, discover, batch, review, link, verify):
+        assert guarded_step["when"] == {
+            "ref": "steps.resume.output.completed", "eq": False,
+        }
+    assert batch["json_operation"]["kind"] == "batch"
+    assert batch["json_operation"]["max_batch_bytes"] == 32000
+    assert review["foreach"] == "steps.batch_candidates.output.batches"
+    assert review["workspace_access"] == "read"
     assert discover["foreach"] == "input.target_folders"
     assert discover["workspace_access"] == "read"
     assert discover["output"].endswith("/${item.path}.json")
-    assert link["vars"]["discoveries"] == "${steps.discover_folders.output.iterations}"
+    assert link["vars"]["batch_reviews"] == "${steps.review_batches.output.iterations}"
     assert snapshot["workspace_access"] == "read"
     assert snapshot["response_format"] == "json"
     assert not snapshot["overwrite_output"]
@@ -80,12 +96,15 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
     assert adapter["steps"][0]["input"]["checkpoint_key"] == (
         "${input.folder_id}-${input.concept_id}"
     )
-    for step in (snapshot, link, verify):
+    for step in (snapshot, link):
         assert step["output"].endswith(
-            f"/{step['id']}-v2-${{input.checkpoint_key}}.json"
+            f"/{step['id']}-v3-${{input.checkpoint_key}}.json"
         )
+    assert verify["output"].endswith(
+        "/verify-v4-${input.checkpoint_key}.json"
+    )
     assert discover["output"] == (
-        "${input.state_dir}/discover-v2-${input.checkpoint_key}/${item.path}.json"
+        "${input.state_dir}/discover-v3-${input.checkpoint_key}/${item.path}.json"
     )
     assert discover["prompt_file"] == "flow/okf/prompts/link_discover_folder.md"
     assert not discover["overwrite_output"]
@@ -93,10 +112,13 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
 
 def test_link_prompts_enforce_concept_scope_and_read_only_verification() -> None:
     shared = _load("flow/okf/flows/link-concept.toml")
-    prompts_by_step = {step["id"]: step["prompt_file"] for step in shared["steps"]}
+    prompts_by_step = {step["id"]: step.get("prompt_file") for step in shared["steps"]}
     assert prompts_by_step == {
+        "resume": None,
         "snapshot": "flow/okf/prompts/link_snapshot.md",
         "discover_folders": "flow/okf/prompts/link_discover_folder.md",
+        "batch_candidates": None,
+        "review_batches": "flow/okf/prompts/link_review_batch.md",
         "link": "flow/okf/prompts/link_concept.md",
         "verify": "flow/okf/prompts/link_verify.md",
     }
@@ -144,8 +166,8 @@ def test_related_link_prompts_use_index_and_text_search_without_count_cap() -> N
     assert "index.md" in discovery
     assert "targeted text searches" in discovery
     assert "CURRENT target folder" in discovery
-    assert "do NOT perform another repository-wide search" in linker
-    assert "ONE link per target" in linker
+    assert "do NOT redo repository-wide searches" in linker
+    assert "ONE link per distinct target" in linker
     assert "Zero links is valid" in linker
     assert "verify ALL reported links" in verifier
     assert "distinct target for each" in verifier

@@ -1,11 +1,30 @@
 version = 1
 inputs = ["concept_path", "concept_id", "folder_id", "folder_status", "structure", "okf_root", "state_dir", "checkpoint_key", "target_folders", "target_path_prefix"]
-result = "steps.verify.output"
+result = "steps.resume.output.verification"
+result_fallback = "steps.verify.output"
+
+# Deterministically reuse a successful v2/v3 verification before invoking
+# any LLM. A missing or invalid verification releases the concept for the
+# guarded write step; candidate checkpoint files remain protected.
+[[steps]]
+id = "resume"
+output = "${input.state_dir}/resume-status-v1-${input.checkpoint_key}.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "checkpoint_status"
+paths = [
+  "${input.state_dir}/verify-v2-${input.checkpoint_key}.json",
+  "${input.state_dir}/verify-v3-${input.checkpoint_key}.json",
+]
+expected_status = "ok"
+expected_source_path = "${input.concept_path}"
+release_source_on_miss = true
 
 [[steps]]
 id = "snapshot"
+when = { ref = "steps.resume.output.completed", eq = false }
 prompt_file = "flow/okf/prompts/link_snapshot.md"
-output = "${input.state_dir}/snapshot-v2-${input.checkpoint_key}.json"
+output = "${input.state_dir}/snapshot-v3-${input.checkpoint_key}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -14,13 +33,12 @@ concept_path = "${input.concept_path}"
 folder_status = "${input.folder_status}"
 okf_root = "${input.okf_root}"
 
-# One read-only search for EACH target folder. The full repository is no longer
-# searched in one model call; no source concept is modified in this loop.
 [[steps]]
 id = "discover_folders"
+when = { ref = "steps.resume.output.completed", eq = false }
 prompt_file = "flow/okf/prompts/link_discover_folder.md"
 foreach = "input.target_folders"
-output = "${input.state_dir}/discover-v2-${input.checkpoint_key}/${item.path}.json"
+output = "${input.state_dir}/discover-v3-${input.checkpoint_key}/${item.path}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -30,11 +48,45 @@ okf_root = "${input.okf_root}"
 target_folder_path = "${input.target_path_prefix}${item.path}"
 snapshot = "${steps.snapshot.output}"
 
-# A SINGLE write-capable step applies the combined, verified candidates.
+# Deterministic, bounded batches of completed folder-discovery checkpoint files.
+# No LLM call receives the complete folder-discovery aggregate.
+[[steps]]
+id = "batch_candidates"
+when = { ref = "steps.resume.output.completed", eq = false }
+output = "${input.state_dir}/candidate-batches-v3-${input.checkpoint_key}.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch"
+input = "discoveries"
+batch_size = 2
+max_batch_bytes = 32000
+[steps.json_inputs.discoveries]
+iterate = "input.target_folders[]"
+path = "${input.state_dir}/discover-v3-${input.checkpoint_key}/${each.path}.json"
+
+# Filter and compact each candidate batch before the only writing step.
+[[steps]]
+id = "review_batches"
+when = { ref = "steps.resume.output.completed", eq = false }
+prompt_file = "flow/okf/prompts/link_review_batch.md"
+foreach = "steps.batch_candidates.output.batches"
+iteration_id = "${item.id}"
+output = "${input.state_dir}/review-v3-${input.checkpoint_key}-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+concept_path = "${input.concept_path}"
+okf_root = "${input.okf_root}"
+snapshot = "${steps.snapshot.output}"
+batch = "${item}"
+
+# Only selected, compact proposals reach the single write-capable step.
 [[steps]]
 id = "link"
+when = { ref = "steps.resume.output.completed", eq = false }
 prompt_file = "flow/okf/prompts/link_concept.md"
-output = "${input.state_dir}/link-v2-${input.checkpoint_key}.json"
+output = "${input.state_dir}/link-v3-${input.checkpoint_key}.json"
 overwrite_output = false
 workspace_access = "write"
 response_format = "json"
@@ -46,12 +98,14 @@ folder_status = "${input.folder_status}"
 structure = "${input.structure}"
 okf_root = "${input.okf_root}"
 snapshot = "${steps.snapshot.output}"
-discoveries = "${steps.discover_folders.output.iterations}"
+batch_reviews = "${steps.review_batches.output.iterations}"
 
 [[steps]]
 id = "verify"
+when = { ref = "steps.resume.output.completed", eq = false }
 prompt_file = "flow/okf/prompts/link_verify.md"
-output = "${input.state_dir}/verify-v2-${input.checkpoint_key}.json"
+# v2/v3 are immutable resume candidates; never write into those inputs.
+output = "${input.state_dir}/verify-v4-${input.checkpoint_key}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"

@@ -21,6 +21,9 @@ def test_relink_foreach_ids_are_not_self_referential():
 def test_shared_link_prompts_have_exact_variable_bindings():
     shared = _read(ROOT / "flow/okf/flows/link-concept.toml")
     for step in shared["steps"]:
+        if "prompt_file" not in step:
+            assert "json_operation" in step or "filesystem_operation" in step
+            continue
         prompt = (ROOT / step["prompt_file"]).read_text(encoding="utf-8")
         expected = set(re.findall(r"\{\{var:([a-zA-Z_][a-zA-Z0-9_]*)\}\}", prompt))
         assert set(step["vars"]) == expected, step["id"]
@@ -40,8 +43,11 @@ def test_relink_checkpoint_paths_do_not_depend_on_inventory_positions():
         "flow/okf/flow_okf_relink/state/concepts/${input.concept.path}"
     )
     for step in shared["steps"]:
-        assert "v2" in step["output"]
-    assert shared["steps"][1]["foreach"] == "input.target_folders"
+        assert ("v3" in step["output"] or
+                step["id"] == "resume" or
+                (step["id"] == "verify" and "v4" in step["output"]))
+    assert shared["steps"][2]["foreach"] == "input.target_folders"
+    assert shared["steps"][0]["filesystem_operation"]["release_source_on_miss"] is True
 
     def checkpoint_paths(concept_path: str, folder_pos: str, concept_pos: str):
         state_dir = adapter["state_dir"].replace(
@@ -64,3 +70,5 @@ def test_relink_checkpoint_paths_do_not_depend_on_inventory_positions():
     assert original.isdisjoint(other)
     root = _read(FLOW / "flow.toml")
     assert root["steps"][1]["input"]["target_folders"] == "${steps.inventory.output.directories}"
+
+

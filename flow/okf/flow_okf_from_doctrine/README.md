@@ -44,10 +44,11 @@ loading a whole folder's contents into a single model context. The
 post-split folder verification supplies the final sorted
 `concept_paths` inventory, so newly split concepts are included. Each
 concept's read-only folder `foreach` discovers candidates using each target
-folder's `index.md` AND text searches limited to that folder. Once all folders
-have been inspected, one write-capable step adds as many meaningful,
+folder's `index.md` AND text searches limited to that folder. After folder discovery, deterministic JSON batching limits the context to at most two
+folder results and 32,000 UTF-8 bytes per batch. Read-only batch-review steps
+select compact relevant proposals, then one write-capable step adds as many meaningful,
 nonduplicated relative Markdown links as naturally fit the existing prose,
-without a fixed per-concept cap, and only edits the current concept. The new per-folder discovery and link/verify checkpoints use `v2` output names to avoid reusing old whole-repository link results. A full-content read-only snapshot precedes each write. Linking inserts Markdown links directly around existing phrases in normal prose,
+without a fixed per-concept cap, and only edits the current concept. The new discovery, candidate-batch, read-only review and link checkpoints use `v3` output names, while new verifier results use `v4` to avoid reusing earlier link-stage outputs. An oversized individual folder result fails explicitly instead of being truncated. A full-content read-only snapshot precedes each write. Linking inserts Markdown links directly around existing phrases in normal prose,
 without adding, deleting or rephrasing the original text. A separate read-only
 verification step reconstructs the full original content by removing only
 reported Markdown link wrappers and comparing it to the snapshot character
@@ -55,7 +56,7 @@ for character; it also validates link destinations. Uncertain or unrelated candi
 
 The final `post_split_final_verify` consumes all nested link-verification
 results and rejects missing/failed concepts or folder mismatches. Its output
-uses a NEW checkpoint filename `state/post-link-final-verification-v3.json`
+uses a NEW checkpoint filename `state/post-link-final-verification-v4.json`
 so an existing pre-link final verification cannot be reused as success.
 
 Per-concept JSON checkpoints for the shared link subflow are stored under
@@ -131,7 +132,7 @@ with bounded deterministic batches and a global compact topic registry.
    `verify_coverage` compares the planned IDs to completed repair results.
    Finalization receives compact concept summaries and coverage counts only.
 
-**Minimum cli-agent runner:** Git commit [`d507ca3448c1541f3870c5dea50ba3c8fc71ad46`](https://github.com/sHuewe/cli-agent/commit/d507ca3448c1541f3870c5dea50ba3c8fc71ad46) (merge of [cli-agent PR #223](https://github.com/sHuewe/cli-agent/pull/223)), or a newer commit on `main` that includes it. This revision adds `foreach = "input.<path>"` support, used directly for the doctrine's chunk and folder routing; older runners fail validation.
+**Minimum cli-agent runner:** Git commit [`efa22cd18eae8ff00d4797d3964918cbe6f8047f`](https://github.com/sHuewe/cli-agent/commit/efa22cd18eae8ff00d4797d3964918cbe6f8047f) (merge of [cli-agent PR #230](https://github.com/sHuewe/cli-agent/pull/230)), or a newer commit on `main` that includes it. The shared concept-link flow now requires `result_fallback` and `filesystem_operation.release_source_on_miss` to resume verified concepts without LLM calls and safely unlock sources after a checkpoint miss. Earlier runner capabilities, including `foreach = "input.<path>"` from PR #223, are also required; older installations may fail flow validation.
 This flow requires all five deterministic JSON operations: `batch`, `flatten`,
 `group_items`, `verify_coverage`, **and `batch_routes`**. PRs #220 and #221
 alone do not provide `batch_routes`; versions preceding PR #222 will fail
