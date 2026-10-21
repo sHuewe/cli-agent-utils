@@ -2,8 +2,10 @@ Find potential CROSS-DOCTRINE themes from one bounded batch of module manifests:
 {{var:batch}}
 
 Use only compact concept descriptions and tags provided. No file tools.
-Suggest themes only where there is credible subject overlap across doctrines.
-A local candidate may be corroborated by other batches later. Avoid generic
+Suggest focused provisional themes even if this batch contains only one doctrine:
+relevance across different batches will be decided by the global registry.
+Do not discard a strong local candidate merely because its related doctrine
+belongs to another batch. Avoid generic
 topics such as "technology" or "system". Suggest at most 12 strong proposals,
 each with unique short name, focused scope and supporting concept paths. Do not
 invent links or source content; no full Concept copies.
