@@ -1,0 +1,35 @@
+version = 1
+# exclude_paths = []  # inherited from the parent flow
+inputs = ["folder", "structure", "scope_id"]
+result = "steps.verify.output"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+[[steps]]
+id = "inventory"
+output = "flow/okf/state/fine/inventory-${input.scope_id}-${input.folder.id}.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "inventory"
+directory = "${input.structure.okf_root}/${input.folder.path}"
+recursive = false
+extensions = [".md"]
+max_entries = 10000
+
+[[steps]]
+id = "verify"
+prompt_file = "flow/okf/prompts/verify_folder.md"
+add_file_context = ["flow/okf/okf-format.md"]
+workspace_access = "read"
+output = "flow/okf/state/fine/verification-verify-${input.scope_id}-${input.folder.id}.json"
+overwrite_output = false
+response_format = "json"
+
+[steps.vars]
+folder = "${input.folder}"
+structure = "${input.structure}"
+inventory = "${steps.inventory.output}"

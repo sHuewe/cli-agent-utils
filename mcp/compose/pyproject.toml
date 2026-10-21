@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cli-agent-compose-mcp"
+version = "1.0.0"
+description = "Docker Compose MCP server for cli-agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["mcp>=1.9,<2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=9,<10"]
+
+[project.scripts]
+cli-agent-compose-mcp = "cli_agent_compose_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cli_agent_compose_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

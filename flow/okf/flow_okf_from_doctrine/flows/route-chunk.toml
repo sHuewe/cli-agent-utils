@@ -1,0 +1,35 @@
+version = 1
+inputs = ["chunk", "structure"]
+result = "steps.finalize.output"
+
+[[steps]]
+id = "route"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/05_route_chunk.md"
+foreach = "input.structure.folders"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine/state/routes/${input.chunk.document_id}-${input.chunk.id}-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+
+[steps.json_inputs.scan]
+path = "flow/okf/flow_okf_from_doctrine/state/chunks/scan-${input.chunk.document_id}-${input.chunk.id}.json"
+
+[steps.vars]
+chunk = "${input.chunk}"
+folder = "${item}"
+structure = "${input.structure}"
+document_id = "${input.chunk.document_id}"
+chunk_id = "${input.chunk.id}"
+folder_id = "${item.id}"
+
+[[steps]]
+id = "finalize"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/06_finalize_routing.md"
+output = "flow/okf/flow_okf_from_doctrine/state/fine/finalize-${input.chunk.document_id}-${input.chunk.id}.json"
+overwrite_output = false
+response_format = "json"
+
+[steps.vars]
+doctrine = "${input.chunk}"
+structure = "${input.structure}"

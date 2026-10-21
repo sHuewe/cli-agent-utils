@@ -1,0 +1,214 @@
+version = 1
+exclude_paths = ["flow"]
+
+[vars]
+doctrine_path = "doctrines"
+okf_root = "okf-generated"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+[[steps]]
+id = "discover_doctrines"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/01_discover_doctrines.md"
+output = "flow/okf/flow_okf_from_doctrine/state/doctrines.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[[steps]]
+id = "scan_doctrines"
+flow = "flow/okf/flow_okf_from_doctrine/flows/scan-doctrine.toml"
+foreach = "steps.discover_doctrines.output.doctrines"
+iteration_id = "${item.id}"
+
+[steps.input]
+doctrine = "${item}"
+
+[[steps]]
+id = "design_structure"
+prompt_file = "flow/okf/prompts/design_structure.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_doctrine/state/structure.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+
+[steps.vars]
+source_kind = "normative and descriptive doctrines"
+project = "${steps.discover_doctrines.output.project}"
+analysis_profiles = "${steps.scan_doctrines.output.iterations}"
+
+[[steps]]
+id = "route_doctrines"
+flow = "flow/okf/flow_okf_from_doctrine/flows/route-doctrine.toml"
+foreach = "steps.scan_doctrines.output.iterations"
+iteration_id = "${item.id}"
+
+[steps.input]
+scan = "${item.output}"
+structure = "${steps.design_structure.output}"
+
+[[steps]]
+id = "process_folders"
+flow = "flow/okf/flow_okf_from_doctrine/flows/process-folder.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+folder = "${item}"
+structure = "${steps.design_structure.output}"
+doctrines = "${steps.discover_doctrines.output.doctrines}"
+scans = "${steps.scan_doctrines.output.iterations}"
+doctrine_path = "${steps.discover_doctrines.output.doctrine_path}"
+okf_root = "${steps.design_structure.output.okf_root}"
+
+[[steps]]
+id = "additional_concepts"
+prompt_file = "flow/okf/prompts/additional_concepts.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_doctrine/state/additional-concepts.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+structure = "${steps.design_structure.output}"
+plans = "${steps.process_folders.output.iterations}"
+results = "${steps.process_folders.output.iterations}"
+
+[[steps]]
+id = "assess_additional_concepts"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/13_assess_additional_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+foreach = "steps.additional_concepts.output.concepts"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine/state/assess-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+requested_concept = "${item}"
+structure = "${steps.design_structure.output}"
+doctrines = "${steps.discover_doctrines.output.doctrines}"
+
+[[steps]]
+id = "apply_additional_concepts"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/14_apply_additional_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+foreach = "steps.assess_additional_concepts.output.iterations"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine/state/apply-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__make_directory", "os__write_file"]
+
+[steps.vars]
+assessment = "${item.output}"
+
+[[steps]]
+id = "create_folder_indexes"
+flow = "flow/okf/flows/create-folder-index.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+scope_id = "doctrine-nav"
+folder = "${item}"
+structure = "${steps.design_structure.output}"
+
+[[steps]]
+id = "create_root_index"
+prompt_file = "flow/okf/prompts/create_root_index.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_doctrine/state/root-index.json"
+overwrite_output = false
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__make_directory", "os__write_file"]
+
+[steps.vars]
+project = "${steps.discover_doctrines.output.project}"
+structure = "${steps.design_structure.output}"
+folder_indexes = "${steps.create_folder_indexes.output.iterations}"
+
+[[steps]]
+id = "verify_folders"
+flow = "flow/okf/flows/verify-folder.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+scope_id = "doctrine-pre"
+folder = "${item}"
+structure = "${steps.design_structure.output}"
+
+[[steps]]
+id = "final_verify"
+prompt_file = "flow/okf/prompts/final_verify.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_doctrine/state/final-verification.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+structure = "${steps.design_structure.output}"
+navigation = "${steps.create_root_index.output}"
+folder_verifications = "${steps.verify_folders.output.iterations}"
+
+[[steps]]
+id = "split_concepts"
+flow = "flow/okf/flows/split-folder.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+scope_id = "doctrine-split"
+folder = "${item}"
+okf_root = "${steps.design_structure.output.okf_root}"
+
+[[steps]]
+id = "post_split_verify_folders"
+flow = "flow/okf/flows/verify-folder.toml"
+foreach = "steps.design_structure.output.folders"
+iteration_id = "${item.id}"
+
+[steps.input]
+scope_id = "doctrine-post"
+folder = "${item}"
+structure = "${steps.design_structure.output}"
+
+[[steps]]
+id = "link_related_concepts"
+flow = "flow/okf/flow_okf_from_doctrine/flows/link-folder-concepts.toml"
+foreach = "steps.post_split_verify_folders.output.iterations"
+iteration_id = "${item.id}"
+
+[steps.input]
+folder_scan = "${item.output}"
+structure = "${steps.design_structure.output}"
+okf_root = "${steps.design_structure.output.okf_root}"
+target_folders = "${steps.design_structure.output.folders}"
+
+[[steps]]
+id = "post_split_final_verify"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/19_post_link_final_verify.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_doctrine/state/post-link-final-verification-v4.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+
+[steps.vars]
+structure = "${steps.design_structure.output}"
+navigation = "${steps.create_root_index.output}"
+okf_root = "${steps.design_structure.output.okf_root}"
+folder_verifications = "${steps.post_split_verify_folders.output.iterations}"
+split_verifications = "${steps.split_concepts.output.iterations}"
+link_verifications = "${steps.link_related_concepts.output.iterations}"

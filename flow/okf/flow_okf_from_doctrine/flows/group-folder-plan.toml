@@ -1,0 +1,24 @@
+version = 1
+inputs = ["folder", "scans", "assignments"]
+result = "steps.group.output"
+
+[[steps]]
+id = "group"
+output = "flow/okf/flow_okf_from_doctrine/state/folder-plan-v3-${input.folder.id}.json"
+overwrite_output = false
+
+[steps.json_operation]
+kind = "group_items"
+input = "assignments"
+max_concept_bytes = 60000
+
+[steps.json_inputs.routes]
+iterate = "input.scans[].output.chunks[]"
+path = "flow/okf/flow_okf_from_doctrine/state/routes/${each.document_id}-${each.id}-${input.folder.id}.json"
+
+[steps.json_inputs.assignments]
+iterate = "input.assignments[]"
+path = "flow/okf/flow_okf_from_doctrine/state/folder-topic-assignment-v3-${input.folder.id}-${each.id}.json"
+
+[steps.json_inputs.topics]
+path = "flow/okf/flow_okf_from_doctrine/state/folder-topics-v3-${input.folder.id}.json"

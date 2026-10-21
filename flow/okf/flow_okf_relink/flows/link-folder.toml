@@ -1,0 +1,27 @@
+version = 1
+inputs = ["folder", "folder_id", "okf_root", "target_folders"]
+result = "steps.link_concepts.output"
+
+[[steps]]
+id = "inventory"
+output = "flow/okf/flow_okf_relink/state/folder-inventory-${input.folder.path}.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "inventory"
+directory = "${input.folder.path}"
+recursive = false
+extensions = [".md"]
+exclude_names = ["index.md", "log.md"]
+max_entries = 10000
+
+[[steps]]
+id = "link_concepts"
+flow = "flow/okf/flow_okf_relink/flows/link-concept.toml"
+foreach = "steps.inventory.output.files"
+[steps.input]
+concept = "${item}"
+concept_id = "${iteration.id}"
+folder_id = "${input.folder_id}"
+folder = "${input.folder}"
+okf_root = "${input.okf_root}"
+target_folders = "${input.target_folders}"
