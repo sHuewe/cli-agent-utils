@@ -45,6 +45,8 @@ introduce a deterministic index in a future version. Manifests and tag
 assignment must be invalidated together if a doctrine changes. Module-level
 source verification and resulting change tracking are not fully automatic.
 
+Requires `cli-agent` main at or after [PR #231](https://github.com/sHuewe/cli-agent/pull/231) (merge commit `4a9ec52bf66a5a0748b13d2835703a8a80bb0297`): the root `flow.toml` uses `${var.okf_root}` in both `[steps.input]` blocks, which is only supported after that change. Modify `[vars].okf_root` to choose the generated OKF directory; do not hardcode child inputs.
+
 Requires the current `cli-agent` flow runner with inventory,
 `json_operation=batch_routes/group_items/verify_coverage/batch`,
 `json_inputs`, nested subflows and `foreach`.
