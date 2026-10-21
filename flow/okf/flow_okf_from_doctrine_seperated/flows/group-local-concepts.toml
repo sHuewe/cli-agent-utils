@@ -1,0 +1,20 @@
+version = 1
+inputs = ["source", "chunks", "batches"]
+result = "steps.group.output"
+
+[[steps]]
+id = "group"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/concept-plan.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "group_items"
+input = "assignments"
+max_concept_bytes = 48000
+[steps.json_inputs.routes]
+iterate = "input.chunks[]"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/route-${each.id}.json"
+[steps.json_inputs.assignments]
+iterate = "input.batches[]"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/assign-${each.id}.json"
+[steps.json_inputs.topics]
+path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/local-topics.json"

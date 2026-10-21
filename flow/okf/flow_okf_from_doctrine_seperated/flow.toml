@@ -1,0 +1,43 @@
+version = 1
+exclude_paths = ["flow"]
+result = "steps.integrate.output"
+
+[vars]
+doctrine_path = "doctrines"
+okf_root = "okf-generated"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+# The inventory is refreshed every time: newly added source documents are included.
+[[steps]]
+id = "inventory"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/source-inventory.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "inventory"
+directory = "${var.doctrine_path}"
+recursive = true
+extensions = [".md", ".markdown"]
+exclude_names = ["index.md", "log.md"]
+max_entries = 10000
+
+# Each doctrine has a path-scoped state directory, independent from iteration order.
+[[steps]]
+id = "build_modules"
+flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/build-doctrine.toml"
+foreach = "steps.inventory.output.files"
+[steps.input]
+source = "${item}"
+okf_root = "${var.okf_root}"
+
+# Global work receives source paths, not the large nested build results.
+[[steps]]
+id = "integrate"
+flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/integrate.toml"
+[steps.input]
+sources = "${steps.inventory.output.files}"
+okf_root = "${var.okf_root}"

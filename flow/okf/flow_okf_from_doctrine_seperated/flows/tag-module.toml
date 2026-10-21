@@ -1,0 +1,29 @@
+version = 1
+inputs = ["source", "okf_root", "themes"]
+result = "steps.apply_tags.output"
+
+[[steps]]
+id = "assign_topics"
+prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/10_assign_themes.md"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/global-assignments.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.json_inputs.manifest]
+path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/manifest.json"
+[steps.vars]
+themes = "${input.themes}"
+
+[[steps]]
+id = "apply_tags"
+prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/11_apply_tags.md"
+foreach = "steps.assign_topics.output.assignments"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/tags-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__write_file"]
+[steps.vars]
+assignment = "${item}"
+okf_root = "${input.okf_root}"

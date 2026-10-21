@@ -1,0 +1,53 @@
+version = 1
+inputs = ["source", "folder", "batches"]
+result = "steps.final_topics.output"
+
+[[steps]]
+id = "suggest"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/07a_suggest_batch_topics.md"
+foreach = "input.batches"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/suggest-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+folder = "${input.folder}"
+batch = "${item}"
+
+# A second bounded layer protects final topic consolidation on long documents.
+[[steps]]
+id = "batch_suggestions"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/suggest-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch"
+input = "suggestions"
+batch_size = 8
+max_batch_bytes = 32000
+[steps.json_inputs.suggestions]
+iterate = "input.batches[]"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/suggest-${each.id}.json"
+
+[[steps]]
+id = "reduce"
+prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/05_reduce_topics.md"
+foreach = "steps.batch_suggestions.output.batches"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/reduced-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${item}"
+
+[[steps]]
+id = "final_topics"
+prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/06_final_local_topics.md"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/local-topics.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+folder = "${input.folder}"
+suggestions = "${steps.reduce.output.iterations}"

@@ -1,0 +1,122 @@
+version = 1
+inputs = ["source", "meta", "chunks", "okf_root"]
+result = "steps.manifest.output"
+
+# Convert one original scan at a time to a single-folder routing record.
+[[steps]]
+id = "route"
+prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/02_route_chunk.md"
+foreach = "input.chunks"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/route-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.json_inputs.scan]
+path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/scan-${item.id}.json"
+[steps.vars]
+chunk = "${item}"
+folder = "${input.meta.folder}"
+
+# Bounded deterministic route batches; one oversized item is a hard error.
+[[steps]]
+id = "batch_routes"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/route-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch_routes"
+input = "routes"
+batch_size = 2
+max_batch_bytes = 48000
+[steps.json_inputs.routes]
+iterate = "input.chunks[]"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/route-${each.id}.json"
+
+[[steps]]
+id = "plan_topics"
+flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/plan-local-topics.toml"
+[steps.input]
+source = "${input.source}"
+folder = "${input.meta.folder}"
+batches = "${steps.batch_routes.output.batches}"
+
+[[steps]]
+id = "assign"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/07c_assign_batch_topics.md"
+foreach = "steps.batch_routes.output.batches"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/assign-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+folder = "${input.meta.folder}"
+batch = "${item}"
+topics = "${steps.plan_topics.output}"
+
+[[steps]]
+id = "group"
+flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/group-local-concepts.toml"
+[steps.input]
+source = "${input.source}"
+chunks = "${input.chunks}"
+batches = "${steps.batch_routes.output.batches}"
+
+[[steps]]
+id = "build_concepts"
+flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/build-concept.toml"
+foreach = "steps.group.output.concepts"
+iteration_id = "${item.id}"
+[steps.input]
+source = "${input.source}"
+concept = "${item}"
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "coverage"
+flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/verify-local-coverage.toml"
+[steps.input]
+source = "${input.source}"
+concepts = "${steps.group.output.concepts}"
+
+# The index is read against a fresh deterministic inventory, not a guessed list.
+[[steps]]
+id = "folder_inventory"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/folder-inventory.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "inventory"
+directory = "${input.okf_root}/${input.meta.folder.path}"
+recursive = false
+extensions = [".md"]
+exclude_names = ["index.md", "log.md"]
+max_entries = 10000
+
+[[steps]]
+id = "write_index"
+when = { ref = "steps.coverage.output.status", eq = "ok" }
+prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/03_module_index.md"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/index-result.json"
+overwrite_output = false
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__write_file", "os__make_directory"]
+[steps.vars]
+folder = "${input.meta.folder}"
+okf_root = "${input.okf_root}"
+inventory = "${steps.folder_inventory.output}"
+coverage = "${steps.coverage.output}"
+
+[[steps]]
+id = "manifest"
+prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/04_module_manifest.md"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/manifest.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+meta = "${input.meta}"
+plan = "${steps.group.output.concept_summaries}"
+coverage = "${steps.coverage.output}"
+index = "${steps.write_index.output}"

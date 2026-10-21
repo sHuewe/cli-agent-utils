@@ -1,0 +1,45 @@
+version = 1
+inputs = ["source", "okf_root"]
+result = "steps.generate.output"
+
+[[steps]]
+id = "prepare"
+prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/01_prepare_doctrine.md"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/prepare.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "partition"
+prompt_file = "flow/okf/common/prompts/01_partition_document.md"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/partition.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+document = "${steps.prepare.output.document}"
+
+[[steps]]
+id = "scan"
+prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/02_scan_chunk.md"
+foreach = "steps.partition.output.chunks"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/scan-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+chunk = "${item}"
+
+[[steps]]
+id = "generate"
+flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/generate-doctrine.toml"
+[steps.input]
+source = "${input.source}"
+meta = "${steps.prepare.output}"
+chunks = "${steps.partition.output.chunks}"
+okf_root = "${input.okf_root}"
