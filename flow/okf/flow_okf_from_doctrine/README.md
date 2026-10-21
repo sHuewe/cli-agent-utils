@@ -48,7 +48,7 @@ folder's `index.md` AND text searches limited to that folder. After folder disco
 folder results and 32,000 UTF-8 bytes per batch. Read-only batch-review steps
 select compact relevant proposals, then one write-capable step adds as many meaningful,
 nonduplicated relative Markdown links as naturally fit the existing prose,
-without a fixed per-concept cap, and only edits the current concept. The new discovery, candidate-batch, read-only review, link and verify checkpoints use `v3` output names to avoid reusing earlier link-stage outputs. An oversized individual folder result fails explicitly instead of being truncated. A full-content read-only snapshot precedes each write. Linking inserts Markdown links directly around existing phrases in normal prose,
+without a fixed per-concept cap, and only edits the current concept. The new discovery, candidate-batch, read-only review and link checkpoints use `v3` output names, while new verifier results use `v4` to avoid reusing earlier link-stage outputs. An oversized individual folder result fails explicitly instead of being truncated. A full-content read-only snapshot precedes each write. Linking inserts Markdown links directly around existing phrases in normal prose,
 without adding, deleting or rephrasing the original text. A separate read-only
 verification step reconstructs the full original content by removing only
 reported Markdown link wrappers and comparing it to the snapshot character
