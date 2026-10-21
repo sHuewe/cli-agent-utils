@@ -53,8 +53,7 @@ response_format = "json"
 [steps.vars]
 batch = "${item}"
 
-# This step intentionally only consumes compact topic descriptions. For large
-# installations split the namespace into several independent topical domains.
+# Consume compact per-batch proposals, not the original manifests.
 [[steps]]
 id = "theme_registry"
 prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/09_global_registry.md"
@@ -63,7 +62,7 @@ overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 [steps.vars]
-reduced = "${steps.reduce_themes.output.iterations}"
+reduced = "${steps.suggest_themes.output.iterations}"
 okf_root = "${input.okf_root}"
 
 # One manifest at a time; no cross-doctrine writing in assignment.
