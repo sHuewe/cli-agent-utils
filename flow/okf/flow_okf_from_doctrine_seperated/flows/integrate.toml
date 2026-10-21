@@ -68,6 +68,7 @@ okf_root = "${input.okf_root}"
 # One manifest at a time; no cross-doctrine writing in assignment.
 [[steps]]
 id = "tag_modules"
+when = { ref = "steps.theme_registry.output.status", eq = "ok" }
 flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/tag-module.toml"
 foreach = "input.sources"
 [steps.input]
@@ -78,6 +79,7 @@ themes = "${steps.theme_registry.output.themes}"
 # Each theme is composed separately after all module tagging.
 [[steps]]
 id = "write_themes"
+when = { ref = "steps.theme_registry.output.status", eq = "ok" }
 flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/write-theme.toml"
 foreach = "steps.theme_registry.output.themes"
 iteration_id = "${item.id}"
@@ -98,6 +100,7 @@ max_entries = 10000
 
 [[steps]]
 id = "root_index"
+when = { ref = "steps.theme_registry.output.status", eq = "ok" }
 prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/13_root_index.md"
 output = "flow/okf/flow_okf_from_doctrine_seperated/state/global/root-index-result.json"
 overwrite_output = false
