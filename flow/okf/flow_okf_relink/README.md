@@ -11,30 +11,26 @@ The inventory is refreshed each run. Each concept's workspace-relative path dete
 **Migration from positional checkpoints:** Older `snapshot-<folder-id>-<concept-id>.json`, `link-<folder-id>-<concept-id>.json`, and `verify-<folder-id>-<concept-id>.json` files are not automatically reused. Before the first rerun, review them and migrate each complete set to the corresponding stable filenames **only after verifying the concept path in the saved JSON**. Otherwise the write-capable link step may run again; do not assume old positional IDs still identify the same concept. The root's own Markdown concepts are not iterated because the top-level iteration uses `directories`; place concepts in folders or extend the flow if root-level concepts must also be processed. Recursive inventory is bounded to 10,000 entries.
 
 
-## Legacy v2/v3 verification precheck (not yet wired into relink)
+## Automatic checkpoint-aware resume (requires new runner)
 
-The shared, model-free subflow at `flow/okf/flows/link-resume-status.toml`
-checks whether a concept has an existing successful `verify-v2-*.json` or
-`verify-v3-*.json` result with an exact matching `source_path`.
-It uses the runner's `filesystem_operation.kind = "checkpoint_status"`
-and requires the source concept to exist.
+The shared link-concept flow now begins with a deterministic `checkpoint_status`
+step. It checks existing `verify-v2-*.json` and `verify-v3-*.json` results
+with `status = "ok"`, an exact workspace-relative `source_path`, and an
+existing regular source concept. The check makes **no model call**.
 
-This is currently only a **read-only integration building block**. It is
-**not** called from `link-concept.toml`, and the main flow does not yet
-skip successfully linked concepts automatically.
+When a matching checkpoint exists, all snapshot, discovery, batching, review,
+write and verification steps are skipped. The subflow returns the original
+verifier JSON through its primary result selector; this preserves
+`status`, `source_path`, and `checked_links` for the parent aggregates.
 
-Two runner limitations prevent safe in-flow integration:
+When no valid verification exists, the concept's protection is released
+**only after the first deterministic check has completed with a confirmed
+miss**. All existing verification checkpoint files remain protected; the
+ordinary link and independent verification stages then execute. The
+`result_fallback` selector returns the freshly generated verifier JSON.
 
-1. `checkpoint_status` permanently protects its `expected_source_path`
-   from subsequent writes in the same flow run. A new or invalid
-   verification must allow the linker to edit that concept; otherwise the
-   resumed flow would abort with a protected-path collision.
-2. The subflow `result` points to one fixed step. Selecting an existing
-   v2/v3 verification result *or* a newly produced v3 verifier result needs
-   a deterministic result-selection mechanism. Skipped concepts must still
-   appear in the final per-folder and doctrine verification aggregates.
-
-Do not wire the precheck directly before the write-capable `link` step
-until both protections and result semantics have been implemented and tested
-in `cli-agent`. Do not infer success solely from the existence of a JSON
-checkpoint filename.
+This requires the cli-agent runner extensions `release_source_on_miss` and
+`result_fallback` from the companion runner PR. Older runners will reject
+this configuration during validation. A valid legacy verification does not
+prove the source content has remained unchanged; invalidate stale checkpoints
+manually when the underlying concepts or link requirements change.
