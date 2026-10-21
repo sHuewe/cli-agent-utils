@@ -105,4 +105,4 @@ def test_global_okf_root_is_forwarded_to_both_subflows():
     build = _flow(BASE / "flows/build-doctrine.toml")
     generate = _flow(BASE / "flows/generate-doctrine.toml")
     assert build["steps"][-1]["input"]["okf_root"] == "${input.okf_root}"
-    assert generate["steps"][4]["input"]["okf_root"] == "${input.okf_root}"
+    assert next(s for s in generate["steps"] if s["id"] == "build_concepts")["input"]["okf_root"] == "${input.okf_root}"
