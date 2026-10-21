@@ -138,3 +138,19 @@ def test_all_json_input_iterators_refer_to_input_or_item():
                     assert selector.startswith(("input.", "item.")), (
                         flow_path, step["id"], selector
                     )
+
+
+def test_separated_scan_only_requests_bounded_read_file():
+    build = _flow(BASE / "flows/build-doctrine.toml")
+    scan = next(step for step in build["steps"] if step["id"] == "scan")
+    assert scan["foreach"] == "steps.partition.output.chunks"
+    assert scan["workspace_access"] == "read"
+    assert scan["prompt_file"] == (
+        "flow/okf/flow_okf_from_doctrine_seperated/prompts/02_scan_chunk.md"
+    )
+    prompt = (ROOT / scan["prompt_file"]).read_text(encoding="utf-8")
+    assert "start_line=chunk.start_line" in prompt
+    assert "end_line=chunk.end_line" in prompt
+    assert "NEVER call" in prompt
+    assert "search_text" in prompt
+    assert "exactly ONE document-content tool call" in prompt
