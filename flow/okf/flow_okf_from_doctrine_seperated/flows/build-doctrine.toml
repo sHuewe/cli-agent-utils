@@ -25,7 +25,7 @@ document = "${steps.prepare.output.document}"
 
 [[steps]]
 id = "scan"
-prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/02_scan_chunk.md"
+prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/02_scan_chunk.md"
 foreach = "steps.partition.output.chunks"
 iteration_id = "${item.id}"
 output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/scan-${iteration.id}.json"
