@@ -21,6 +21,9 @@ def test_relink_foreach_ids_are_not_self_referential():
 def test_shared_link_prompts_have_exact_variable_bindings():
     shared = _read(ROOT / "flow/okf/flows/link-concept.toml")
     for step in shared["steps"]:
+        if "prompt_file" not in step:
+            assert "json_operation" in step or "filesystem_operation" in step
+            continue
         prompt = (ROOT / step["prompt_file"]).read_text(encoding="utf-8")
         expected = set(re.findall(r"\{\{var:([a-zA-Z_][a-zA-Z0-9_]*)\}\}", prompt))
         assert set(step["vars"]) == expected, step["id"]
