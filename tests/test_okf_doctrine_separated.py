@@ -81,3 +81,28 @@ def test_shared_doctrine_flow_remains_separate():
     separated = _flow(BASE / "flow.toml")
     assert "design_structure" in {s["id"] for s in original["steps"]}
     assert "design_structure" not in {s["id"] for s in separated["steps"]}
+
+
+def test_global_okf_root_is_forwarded_to_both_subflows():
+    """PR #231 makes static parent [vars] usable in steps.input."""
+    root = _flow(BASE / "flow.toml")
+    assert root["vars"]["okf_root"] == "okf-generated"
+    assert root["vars"]["doctrine_path"] == "doctrines"
+
+    steps = {step["id"]: step for step in root["steps"]}
+    assert steps["inventory"]["filesystem_operation"]["directory"] == (
+        "${var.doctrine_path}"
+    )
+    assert steps["build_modules"]["input"]["okf_root"] == "${var.okf_root}"
+    assert steps["integrate"]["input"]["okf_root"] == "${var.okf_root}"
+
+    # Changes to [vars].okf_root must propagate to both child invocations.
+    # Hardcoded paths in steps.input would silently ignore that setting.
+    for step in root["steps"]:
+        if "flow" in step:
+            assert step["input"]["okf_root"] == "${var.okf_root}"
+
+    build = _flow(BASE / "flows/build-doctrine.toml")
+    generate = _flow(BASE / "flows/generate-doctrine.toml")
+    assert build["steps"][-1]["input"]["okf_root"] == "${input.okf_root}"
+    assert generate["steps"][4]["input"]["okf_root"] == "${input.okf_root}"
