@@ -132,7 +132,7 @@ with bounded deterministic batches and a global compact topic registry.
    `verify_coverage` compares the planned IDs to completed repair results.
    Finalization receives compact concept summaries and coverage counts only.
 
-**Minimum cli-agent runner:** Git commit [`d507ca3448c1541f3870c5dea50ba3c8fc71ad46`](https://github.com/sHuewe/cli-agent/commit/d507ca3448c1541f3870c5dea50ba3c8fc71ad46) (merge of [cli-agent PR #223](https://github.com/sHuewe/cli-agent/pull/223)), or a newer commit on `main` that includes it. This revision adds `foreach = "input.<path>"` support, used directly for the doctrine's chunk and folder routing; older runners fail validation.
+**Minimum cli-agent runner:** Git commit [`efa22cd18eae8ff00d4797d3964918cbe6f8047f`](https://github.com/sHuewe/cli-agent/commit/efa22cd18eae8ff00d4797d3964918cbe6f8047f) (merge of [cli-agent PR #230](https://github.com/sHuewe/cli-agent/pull/230)), or a newer commit on `main` that includes it. The shared concept-link flow now requires `result_fallback` and `filesystem_operation.release_source_on_miss` to resume verified concepts without LLM calls and safely unlock sources after a checkpoint miss. Earlier runner capabilities, including `foreach = "input.<path>"` from PR #223, are also required; older installations may fail flow validation.
 This flow requires all five deterministic JSON operations: `batch`, `flatten`,
 `group_items`, `verify_coverage`, **and `batch_routes`**. PRs #220 and #221
 alone do not provide `batch_routes`; versions preceding PR #222 will fail
