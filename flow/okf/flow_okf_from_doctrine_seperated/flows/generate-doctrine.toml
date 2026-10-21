@@ -94,6 +94,7 @@ max_entries = 10000
 
 [[steps]]
 id = "write_index"
+when = { ref = "steps.coverage.output.status", eq = "ok" }
 prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/03_module_index.md"
 output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/index-result.json"
 overwrite_output = false
