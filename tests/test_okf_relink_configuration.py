@@ -40,7 +40,7 @@ def test_relink_checkpoint_paths_do_not_depend_on_inventory_positions():
         "flow/okf/flow_okf_relink/state/concepts/${input.concept.path}"
     )
     for step in shared["steps"]:
-        assert "v2" in step["output"]
+        assert "v3" in step["output"]
     assert shared["steps"][1]["foreach"] == "input.target_folders"
 
     def checkpoint_paths(concept_path: str, folder_pos: str, concept_pos: str):

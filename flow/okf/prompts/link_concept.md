@@ -1,4 +1,4 @@
-Apply meaningful, evidence-supported INLINE Markdown links to exactly ONE existing source concept. Candidate discovery is ALREADY completed separately per target folder by read-only steps. There is NO FIXED MAXIMUM number of links; quality and natural placement determine how many to add.
+Apply meaningful, evidence-supported INLINE Markdown links to exactly ONE existing source concept. Folder-by-folder candidate discovery and read-only BATCH REVIEW are ALREADY complete. The input contains ONLY compact accepted proposals, not the original discovery payloads. There is NO FIXED MAXIMUM number of links.
 
 Source concept path (workspace-relative): {{var:concept_path}}
 Folder status: {{var:folder_status}}
@@ -6,11 +6,11 @@ Folder ID: {{var:folder_id}}
 Folder context: {{var:structure}}
 OKF root (workspace-relative): {{var:okf_root}}
 Full pre-link snapshot: {{var:snapshot}}
-Per-target-folder discoveries: {{var:discoveries}}
+Per-batch link proposals: {{var:batch_reviews}}
 
-Use concept_path directly as the WORKSPACE-relative source. Require folder_status == "ok", snapshot.status == "captured", snapshot.concept_path == concept_path, and complete nonempty snapshot.content. EVERY folder discovery must have status "ok" and a valid candidates list. If any folder failed, is malformed or missing, report needs_attention WITHOUT WRITING; do not mistake incomplete discovery for zero relevant links.
+Use concept_path directly as the WORKSPACE-relative source. Require folder_status == "ok", snapshot.status == "captured", snapshot.concept_path == concept_path, and complete nonempty snapshot.content. Require EVERY batch review in the aggregate to contain status "ok", a unique nonempty batch_id, reviewed_count >= 0 and a valid proposals array. If any batch review failed, is malformed, missing, or duplicated, return needs_attention WITHOUT WRITING. Do not mistake partial discovery or review failures for zero relevant links.
 
-Use ONLY candidate targets from the folder discoveries; do NOT perform another repository-wide search. Deduplicate candidate targets across all folders. Validate each actual target against the OKF root and its own file before using it. A candidate's reason or index presence alone is not proof of relevance; check that the target meaningfully relates to the existing source prose. Reject weak associations and targets without suitable natural phrases. Add at most ONE link per target in the source concept; skip targets already linked in the original. Zero links is valid. Never link the source itself or index.md/log.md, invent paths, or link outside the OKF root.
+Use ONLY the reviewed proposals; do NOT redo repository-wide searches or load the original folder discoveries. Deduplicate target paths across batches. Validate each proposed target is a real, normal Markdown concept under the OKF root and not the source, index.md, or log.md. Check each proposed phrase still occurs in original source prose and that the relationship is genuine, not a superficial topical association. Resolve conflicts where proposals overlap or compete for the same source phrase; skip ambiguous ones rather than changing the prose. Skip targets already linked in the original. At most ONE link per distinct target. Zero links is valid.
 
 STRICT EDIT CONTRACT:
 - The source concept is the ONLY file that may be modified. Do not create, delete, rename or move any file.
