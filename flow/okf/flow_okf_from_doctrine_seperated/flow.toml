@@ -32,7 +32,7 @@ flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/build-doctrine.toml"
 foreach = "steps.inventory.output.files"
 [steps.input]
 source = "${item}"
-okf_root = "okf-generated"
+okf_root = "${var.okf_root}"
 
 # Global work receives source paths, not the large nested build results.
 [[steps]]
@@ -40,4 +40,4 @@ id = "integrate"
 flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/integrate.toml"
 [steps.input]
 sources = "${steps.inventory.output.files}"
-okf_root = "okf-generated"
+okf_root = "${var.okf_root}"
