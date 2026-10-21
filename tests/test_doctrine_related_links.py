@@ -96,10 +96,13 @@ def test_per_concept_subflow_inputs_and_checkpoints() -> None:
     assert adapter["steps"][0]["input"]["checkpoint_key"] == (
         "${input.folder_id}-${input.concept_id}"
     )
-    for step in (snapshot, link, verify):
+    for step in (snapshot, link):
         assert step["output"].endswith(
             f"/{step['id']}-v3-${{input.checkpoint_key}}.json"
         )
+    assert verify["output"].endswith(
+        "/verify-v4-${input.checkpoint_key}.json"
+    )
     assert discover["output"] == (
         "${input.state_dir}/discover-v3-${input.checkpoint_key}/${item.path}.json"
     )
