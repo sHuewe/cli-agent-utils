@@ -12,7 +12,6 @@ response_format = "json"
 [steps.json_inputs.manifest]
 path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/manifest.json"
 [steps.vars]
-manifest = "{{var:manifest}}"
 themes = "${input.themes}"
 
 [[steps]]
