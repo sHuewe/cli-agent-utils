@@ -1,0 +1,43 @@
+version = 1
+inputs = ["sources", "okf_root"]
+result = "steps.root_index.output"
+
+# Five compact module manifests can usually be reasoned about together.
+# This does NOT embed the full original doctrines in the global prompt.
+[[steps]]
+id = "plan_themes"
+prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/06_plan_themes.md"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/global/themes-plan.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.json_inputs.modules]
+iterate = "input.sources[]"
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${each.path}/manifest.json"
+[steps.vars]
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "write_themes"
+flow = "flow/okf/flow_okf_from_doctrine_simple/flows/write-theme.toml"
+foreach = "steps.plan_themes.output.themes"
+iteration_id = "${item.id}"
+[steps.input]
+theme = "${item}"
+okf_root = "${input.okf_root}"
+
+# One writer creates the OKF root, doctrines and themes indices.
+[[steps]]
+id = "root_index"
+prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/08_root_index.md"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/global/root-index.json"
+overwrite_output = false
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__make_directory", "os__write_file"]
+[steps.json_inputs.modules]
+iterate = "input.sources[]"
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${each.path}/manifest.json"
+[steps.vars]
+themes = "${steps.plan_themes.output}"
+okf_root = "${input.okf_root}"
