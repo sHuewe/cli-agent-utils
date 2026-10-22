@@ -40,6 +40,13 @@ needs_attention with an empty concepts list. This slug distinguishes
 different paths even when kebab normalization would collide. The module folder must be
 doctrines/<slug>. Folder IDs and concept filenames must be safe on Windows;
 never use con, nul, prn, aux, com1..com9 or lpt1..lpt9.
+Reserve `index.md` and `log.md` (case-insensitive) in EVERY directory:
+these are special OKF navigation/log files, NEVER concept filenames.
+Before returning status=ok, inspect ALL planned concept basenames and reject
+reserved filenames, duplicates (including case-insensitive collisions),
+or concept paths coinciding with any planned navigation index.
+If a valid distinct filename cannot be chosen, return needs_attention
+instead of including a conflicting concept path.
 Plan ZERO semantic subfolders when the structure is small. Otherwise
 use 2-8 coherent subject subfolders (maximum 12), exactly one level
 under doctrines/<slug>. Every planned concept.path must be either directly
