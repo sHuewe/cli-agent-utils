@@ -1,0 +1,42 @@
+version = 1
+exclude_paths = ["flow"]
+result = "steps.integrate.output"
+
+# Configure source and output here. Both are independent from existing flows.
+[vars]
+doctrine_path = "doctrines"
+okf_root = "okf-simple"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 1
+backoff_multiplier = 2
+max_delay_seconds = 10
+
+[[steps]]
+id = "inventory"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/source-inventory.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "inventory"
+directory = "${var.doctrine_path}"
+recursive = true
+extensions = [".md", ".markdown"]
+exclude_names = ["index.md", "log.md"]
+max_entries = 10000
+stable_slugs = true
+
+[[steps]]
+id = "build_modules"
+flow = "flow/okf/flow_okf_from_doctrine_simple/flows/build-doctrine.toml"
+foreach = "steps.inventory.output.files"
+[steps.input]
+source = "${item}"
+okf_root = "${var.okf_root}"
+
+[[steps]]
+id = "integrate"
+flow = "flow/okf/flow_okf_from_doctrine_simple/flows/integrate.toml"
+[steps.input]
+sources = "${steps.inventory.output.files}"
+okf_root = "${var.okf_root}"
