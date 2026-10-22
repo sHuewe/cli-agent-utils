@@ -40,12 +40,29 @@ source = "${input.source}"
 folder = "${input.meta.folder}"
 batches = "${steps.batch_routes.output.batches}"
 
+# Assignment is more expensive than topic discovery: split the ORIGINAL
+# routes into much smaller, independent fragments. No Knowledge Item is lost
+# or duplicated by batch_routes; group_items verifies one assignment per item.
+# Deliberately independent of route-batches.json and its existing checkpoints.
+[[steps]]
+id = "assignment_batches"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/assignment-batches-v1.json"
+overwrite_output = true
+[steps.json_operation]
+kind = "batch_routes"
+input = "routes"
+batch_size = 1
+max_batch_bytes = 12000
+[steps.json_inputs.routes]
+iterate = "input.chunks[]"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/route-${each.id}.json"
+
 [[steps]]
 id = "assign"
-prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/07c_assign_batch_topics.md"
-foreach = "steps.batch_routes.output.batches"
+prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/07c_assign_small_batch.md"
+foreach = "steps.assignment_batches.output.batches"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/assign-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/assign-small-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
@@ -60,7 +77,7 @@ flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/group-local-concepts.tom
 [steps.input]
 source = "${input.source}"
 chunks = "${input.chunks}"
-batches = "${steps.batch_routes.output.batches}"
+batches = "${steps.assignment_batches.output.batches}"
 
 [[steps]]
 id = "build_concepts"

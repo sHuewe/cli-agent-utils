@@ -186,3 +186,38 @@ def test_v2_semantic_states_are_isolated_from_flat_layout():
                 assert "/state/" not in step["output"], (path, step["id"])
             for value in step.get("json_inputs", {}).values():
                 assert "/state-semantic-v2/" in value["path"], (path, step["id"])
+
+
+def test_assignment_uses_independent_small_bounded_batches():
+    generate = _flow(BASE / "flows/generate-doctrine.toml")
+    steps = {step["id"]: step for step in generate["steps"]}
+    batches = steps["assignment_batches"]
+    assert batches["json_operation"] == {
+        "kind": "batch_routes", "input": "routes",
+        "batch_size": 1, "max_batch_bytes": 12000,
+    }
+    assert batches["json_inputs"]["routes"]["iterate"] == "input.chunks[]"
+    assert batches["overwrite_output"] is True
+    assert steps["assign"]["foreach"] == "steps.assignment_batches.output.batches"
+    assert steps["assign"]["output"].endswith("/assign-small-${iteration.id}.json")
+    assert steps["assign"]["prompt_file"].endswith("/07c_assign_small_batch.md")
+    assert steps["group"]["input"]["batches"] == (
+        "${steps.assignment_batches.output.batches}"
+    )
+
+    grouping = _flow(BASE / "flows/group-local-concepts.toml")["steps"][0]
+    assert grouping["json_inputs"]["assignments"]["path"].endswith(
+        "/assign-small-${each.id}.json"
+    )
+    assert grouping["output"].endswith("/concept-plan-small-assign-v1.json")
+    coverage = _flow(BASE / "flows/verify-local-coverage.toml")["steps"][0]
+    assert coverage["json_inputs"]["plan"]["path"] == grouping["output"]
+
+
+def test_small_assignment_prompt_requires_exact_one_assignment_per_item():
+    generate = _flow(BASE / "flows/generate-doctrine.toml")
+    assign = next(s for s in generate["steps"] if s["id"] == "assign")
+    prompt = (ROOT / assign["prompt_file"]).read_text(encoding="utf-8")
+    assert "document_id + \":\" + knowledge_item.id" in prompt
+    assert "exactly one assignment" in prompt.lower()
+    assert "topics.topics" in prompt

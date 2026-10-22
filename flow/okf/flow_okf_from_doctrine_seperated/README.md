@@ -71,3 +71,20 @@ in an existing OKF root are not automatically removed/migrated.
 
 Requires cli-agent's semantic subfolder support in
 [sHuewe/cli-agent PR #233](https://github.com/sHuewe/cli-agent/pull/233).
+
+## Bounded assignment batches
+
+The doctrine topic-assignment step uses its OWN batches generated from the
+original per-chunk routes: at most one route fragment and 12 KB per batch.
+Unlike the larger route batches used for topic planning, these smaller batches
+bound the model input/JSON output. Each knowledge item retains its stable
+document_id + local ID, and deterministic group_items still detects omissions
+and duplicate assignments.
+
+Older `assign-b000*.json` checkpoints are preserved and intentionally NOT
+reused: new results are `assign-small-b000*.json`. The new grouping output is
+`concept-plan-small-assign-v1.json`; coverage reads this new plan. All
+`prepare`, `partition`, `scan`, `route`, `suggest`, `reduce` and
+`local-topics` checkpoints remain eligible for normal reuse. If a run
+reached concept generation under the previous layout, inspect its generated
+files/checkpoints before rerunning; this fix does not migrate concept files.

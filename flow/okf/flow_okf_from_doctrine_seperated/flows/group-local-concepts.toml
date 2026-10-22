@@ -4,7 +4,7 @@ result = "steps.group.output"
 
 [[steps]]
 id = "group"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/concept-plan.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/concept-plan-small-assign-v1.json"
 overwrite_output = false
 [steps.json_operation]
 kind = "group_items"
@@ -15,6 +15,6 @@ iterate = "input.chunks[]"
 path = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/route-${each.id}.json"
 [steps.json_inputs.assignments]
 iterate = "input.batches[]"
-path = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/assign-${each.id}.json"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/assign-small-${each.id}.json"
 [steps.json_inputs.topics]
 path = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/local-topics.json"
