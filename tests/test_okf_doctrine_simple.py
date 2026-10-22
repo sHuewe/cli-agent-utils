@@ -38,8 +38,8 @@ def test_simple_flow_wiring_and_referenced_prompts():
 def test_simple_plan_skips_mandatory_chunks_and_atomic_items():
     build = load(BASE / "flows/build-doctrine.toml")
     ids = [step["id"] for step in build["steps"]]
-    assert ids == ["plan", "concepts", "navigation", "manifest"]
-    assert build["steps"][1]["foreach"] == "steps.plan.output.concepts"
+    assert ids == ["plan", "validate_plan", "concepts", "navigation", "manifest"]
+    assert build["steps"][2]["foreach"] == "steps.validate_plan.output.concepts"
     assert "batch_routes" not in str(build)
     assert "group_items" not in str(build)
     prompt = (BASE / "prompts/01_plan_doctrine.md").read_text(encoding="utf-8")
@@ -63,7 +63,7 @@ def test_simple_flow_isolation_and_global_manifests():
     assert root["steps"][2]["input"]["okf_root"] == "${var.okf_root}"
     integrate = load(BASE / "flows/integrate.toml")
     assert integrate["steps"][0]["json_inputs"]["modules"]["iterate"] == "input.sources[]"
-    assert integrate["steps"][2]["json_inputs"]["modules"]["iterate"] == "input.sources[]"
+    assert integrate["steps"][-1]["json_inputs"]["modules"]["iterate"] == "input.sources[]"
 
 
 def test_verified_concepts_gate_navigation_and_manifest():
@@ -120,3 +120,14 @@ def test_theme_membership_checked_on_disk_and_at_root():
     root = (BASE / "prompts/08_root_index.md").read_text(encoding="utf-8")
     assert "output.linked_concept_paths" in root
     assert "theme.concept_paths" in root
+
+
+def test_plans_are_deterministically_validated_before_writes():
+    build = load(BASE / "flows/build-doctrine.toml")
+    assert build["steps"][1]["json_operation"]["kind"] == "validate_okf_plan"
+    assert build["steps"][1]["json_operation"]["plan_kind"] == "doctrine"
+    assert build["steps"][2]["foreach"] == "steps.validate_plan.output.concepts"
+    integrate = load(BASE / "flows/integrate.toml")
+    assert integrate["steps"][1]["json_operation"]["kind"] == "validate_okf_plan"
+    assert integrate["steps"][1]["json_operation"]["plan_kind"] == "themes"
+    assert integrate["steps"][2]["foreach"] == "steps.validate_themes.output.themes"
