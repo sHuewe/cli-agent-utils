@@ -50,3 +50,24 @@ Requires `cli-agent` main at or after [PR #231](https://github.com/sHuewe/cli-ag
 Requires the current `cli-agent` flow runner with inventory,
 `json_operation=batch_routes/group_items/verify_coverage/batch`,
 `json_inputs`, nested subflows and `foreach`.
+
+## Semantic subfolders (v2)
+
+From this version the local topic plan may optionally group doctrine concepts
+into up to 12 meaningful subfolders, with one level under
+`<okf-root>/doctrines/<doctrine-slug>/`. The doctrine `index.md` links to
+each semantic subfolder `index.md`, which in turn links to its actual
+concept files. Small doctrine topic sets may stay flat. Cross-doctrine
+`themen/` and `theme:<id>` tags remain independent of local grouping.
+
+**Migration:** v2 deliberately writes its checkpoints to
+`flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/`.
+Existing `state/` checkpoints are retained untouched but will NOT be
+reused by the new flow. This avoids silently loading old flat concept plans.
+Do not change the flow implementation while a run is active; finish or stop
+the old run before checking out this version. For a clean comparison use a
+new `[vars].okf_root`, because generated concept files from the flat layout
+in an existing OKF root are not automatically removed/migrated.
+
+Requires cli-agent's semantic subfolder support in
+[sHuewe/cli-agent PR #233](https://github.com/sHuewe/cli-agent/pull/233).
