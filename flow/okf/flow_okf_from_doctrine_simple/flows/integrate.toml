@@ -18,9 +18,20 @@ path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${each.path}/manife
 okf_root = "${input.okf_root}"
 
 [[steps]]
+id = "validate_themes"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/global/validated-themes.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "validate_okf_plan"
+input = "plan"
+plan_kind = "themes"
+[steps.json_inputs.plan]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/global/themes-plan.json"
+
+[[steps]]
 id = "write_themes"
 flow = "flow/okf/flow_okf_from_doctrine_simple/flows/write-theme.toml"
-foreach = "steps.plan_themes.output.themes"
+foreach = "steps.validate_themes.output.themes"
 iteration_id = "${item.id}"
 [steps.input]
 theme = "${item}"
@@ -39,6 +50,6 @@ approve_tools = ["os__make_directory", "os__write_file", "os__move_file", "os__c
 iterate = "input.sources[]"
 path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${each.path}/manifest.json"
 [steps.vars]
-themes = "${steps.plan_themes.output}"
+themes = "${steps.validate_themes.output}"
 theme_results = "${steps.write_themes.output.iterations}"
 okf_root = "${input.okf_root}"
