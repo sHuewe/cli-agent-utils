@@ -91,3 +91,16 @@ def test_doctrine_slugs_come_from_deterministic_inventory():
     prompt = (BASE / "prompts/01_plan_doctrine.md").read_text(encoding="utf-8")
     assert "source.slug" in prompt
     assert "Never" in prompt
+
+
+def test_root_index_requires_all_theme_writer_outcomes():
+    integrate = load(BASE / "flows/integrate.toml")
+    steps = {step["id"]: step for step in integrate["steps"]}
+    assert steps["root_index"]["vars"]["theme_results"] == (
+        "${steps.write_themes.output.iterations}"
+    )
+    prompt = (ROOT / steps["root_index"]["prompt_file"]).read_text(encoding="utf-8")
+    assert "{{var:theme_results}}" in prompt
+    assert 'output.status=="ok"' in prompt
+    assert "no duplicates, omissions or unknown IDs" in prompt
+    assert "WITHOUT writing root indexes" in prompt
