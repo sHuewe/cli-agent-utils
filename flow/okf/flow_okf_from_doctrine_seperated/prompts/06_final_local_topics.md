@@ -1,16 +1,27 @@
-Construct one compact, COMPLETE local concept-topic registry for this doctrine.
-Folder: {{var:folder}}
-Reduced bounded suggestions: {{var:suggestions}}
+Plan doctrine-local concepts and optionally ONE semantic subfolder level.
 
-Merge duplicates and overlapping labels without dropping genuinely distinct
-subtopics. Choose unique IDs t001, t002...; every topic path MUST be directly
-under folder.path, lowercase kebab-case and unique. Type must be a meaningful
-OKF type; keep titles/descriptions compact. Include semantic local tags, but
-do not invent GLOBAL cross-doctrine topic tags in this stage. Do not read
-files, create concepts, or copy source evidence. If any reduction returned
-needs_attention or is malformed, return warnings and do not pretend complete.
-Downstream deterministic group_items validates paths, IDs and assigned coverage.
+Doctrine root: {{var:folder}}
+Reduced topic suggestions: {{var:suggestions}}
 
-JSON only:
-{"folder":{"id":"same folder id","path":"same folder path","title":"same folder title"},
-"topics":[{"id":"t001","path":"folder-path/topic.md","type":"concept","title":"title","description":"one sentence","tags":[]}],"warnings":[]}
+Do not read files. Merge synonymous topics while retaining distinct knowledge.
+Use stable and unique topic IDs t001..., short descriptions and unique file
+names. For fewer than 8 coherent topics, keep folders=[] and put all topic
+files directly under folder.path. For larger documents, choose between 2 and
+8 (maximum 12) semantic subfolders based on shared subject matter; put ALL
+topics under these folders. Avoid one folder per concept, mirroring chapter
+headings and generic catchalls. No source changes or global theme tags.
+Each folder ID must be a unique, lowercase kebab-case slug (no Windows device
+names con, nul, aux, prn, com1..9, lpt1..9), and each declared folder path
+must be folder.path + "/" + folder.id. Exactly ONE subfolder level.
+Concept paths must be folder.path + "/" + filename for flat mode, or
+declared-subfolder.path + "/" + filename in hierarchical mode.
+Do not mix flat and hierarchical topics.
+
+Return valid JSON only:
+{"folder":{"id":"existing folder id","path":"doctrines/slug","title":"existing folder title"},
+"folders":[{"id":"access-rights","path":"doctrines/slug/access-rights","title":"Access rights"}],
+"topics":[{"id":"t001","path":"doctrines/slug/access-rights/topic.md","type":"concept","title":"title","description":"one sentence","tags":[]}],
+"warnings":[]}
+
+The deterministic group_items operation verifies all topic paths and IDs.
+For flat mode, folders=[] and topic files live directly under folder.path.
