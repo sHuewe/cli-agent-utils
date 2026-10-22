@@ -5,6 +5,14 @@ Root: {{var:okf_root}}
 Planned concept: {{var:concept}}
 Build outcome: {{var:build}}
 
+BEFORE reading a concept file, enforce this build gate:
+build.status MUST equal "created"; build.concept_id MUST equal concept.id;
+build.path MUST equal concept.path. If any check fails, do NOT read an
+existing (possibly stale) concept file, do NOT return ok/needs_repair;
+return needs_attention with an explicit failed-build finding.
+The build JSON is not proof that the file exists; still inspect the file
+after the gate succeeds.
+
 Read the actual Markdown concept and ONLY the original source intervals
 listed under concept.evidence_ranges, using BOTH start_line and end_line.
 Do not read unrelated source files or write anything.
