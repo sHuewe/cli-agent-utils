@@ -17,7 +17,9 @@ Stages:
 3. Build each planned concept from bounded original evidence. Verify every
    concept; repair **only** actionable concept defects. Planning/evidence
    defects are reported separately, not silently treated as missing text.
-4. Write doctrine/subfolder navigation indexes, then create one compact manifest\n   **deterministically** from the validated plan and successful navigation.\n   No extra LLM is used to recopy or omit planned concepts.
+4. Write doctrine/subfolder navigation indexes, then create one compact manifest
+   **deterministically** from the validated plan and successful navigation.
+   No extra LLM is used to recopy or omit planned concepts.
 5. Use manifests from all doctrines in one global theme-planning step.
    Write cross-doctrine theme navigation pages and root/index.md.
 
@@ -32,7 +34,22 @@ cli-agent-flow validate flow/okf/flow_okf_from_doctrine_simple/flow.toml --works
 cli-agent-flow run flow/okf/flow_okf_from_doctrine_simple/flow.toml --workspace .
 ```
 
-Configure [vars] in flow.toml: doctrine_path and okf_root.\nRequires `cli-agent` with deterministic manifest generation from\n[sHuewe/cli-agent PR #238](https://github.com/sHuewe/cli-agent/pull/238),\nand deterministic validation of model-generated OKF plans\nfrom [sHuewe/cli-agent PR #237](https://github.com/sHuewe/cli-agent/pull/237),\nin addition to optional deterministic inventory slugs from\n[sHuewe/cli-agent PR #236](https://github.com/sHuewe/cli-agent/pull/236).\nThe inventory source.slug is authoritative; unlike LLM kebab normalization\nit distinguishes source paths such as `a/b.md` and `a-b.md`.\nThe simplified flow passes completed concept verification/repair outcomes\nto navigation and manifest creation; incomplete concepts must not be\nreported as successfully published. Theme pages require OKF frontmatter.
+Configure [vars] in flow.toml: doctrine_path and okf_root.
+
+The runner must contain the following already-merged changes:
+
+- [cli-agent PR #236](https://github.com/sHuewe/cli-agent/pull/236): deterministic inventory slugs.
+- [cli-agent PR #237](https://github.com/sHuewe/cli-agent/pull/237): pre-write OKF plan validation.
+- [cli-agent PR #238](https://github.com/sHuewe/cli-agent/pull/238): deterministic manifest creation.
+- [cli-agent PR #239](https://github.com/sHuewe/cli-agent/pull/239): binding source path/slug to inventory and validating theme links against current manifests.
+
+These are available in `cli-agent` main after PR #239; an older runner will reject the simplified flow.
+
+The inventory source.slug is authoritative; unlike LLM kebab normalization
+it distinguishes source paths such as `a/b.md` and `a-b.md`.
+The simplified flow passes completed concept verification/repair outcomes
+to navigation and manifest creation; incomplete concepts must not be
+reported as successfully published. Theme pages require OKF frontmatter.
 Workspace must contain the flow sources, the source Markdown files
 and any shared OKF format context. Do not point okf_root at the existing
 generated repository during experiments. The new independent state is
