@@ -126,10 +126,13 @@ def test_plans_are_deterministically_validated_before_writes():
     build = load(BASE / "flows/build-doctrine.toml")
     assert build["steps"][1]["json_operation"]["kind"] == "validate_okf_plan"
     assert build["steps"][1]["json_operation"]["plan_kind"] == "doctrine"
+    assert build["steps"][1]["json_operation"]["expected_source_path"] == "${input.source.path}"
+    assert build["steps"][1]["json_operation"]["expected_source_slug"] == "${input.source.slug}"
     assert build["steps"][2]["foreach"] == "steps.validate_plan.output.concepts"
     integrate = load(BASE / "flows/integrate.toml")
     assert integrate["steps"][1]["json_operation"]["kind"] == "validate_okf_plan"
     assert integrate["steps"][1]["json_operation"]["plan_kind"] == "themes"
+    assert integrate["steps"][1]["json_inputs"]["manifests"]["iterate"] == "input.sources[]"
     assert integrate["steps"][2]["foreach"] == "steps.validate_themes.output.themes"
 
 
