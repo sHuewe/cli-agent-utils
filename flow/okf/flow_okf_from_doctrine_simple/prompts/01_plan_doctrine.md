@@ -32,9 +32,12 @@ within the source. Use multiple ranges when one concept spans chapters.
 Provide a brief outline of covered chapters and notable exceptions in
 the summary to make omissions easier to spot.
 
-Derive ONE stable lowercase kebab-case doctrine slug from the complete
-workspace-relative source path (not merely filename), keep it stable for
-re-runs, and never use positional document IDs. The module folder must be
+The inventory entry source.slug is the AUTHORITATIVE deterministic,
+collision-resistant doctrine identifier. Use source.slug literally for
+folder.id and in folder.path = "doctrines/" + source.slug. Never
+normalize, regenerate, shorten, or guess it; if missing, return
+needs_attention with an empty concepts list. This slug distinguishes
+different paths even when kebab normalization would collide. The module folder must be
 doctrines/<slug>. Folder IDs and concept filenames must be safe on Windows;
 never use con, nul, prn, aux, com1..com9 or lpt1..lpt9.
 Plan ZERO semantic subfolders when the structure is small. Otherwise
