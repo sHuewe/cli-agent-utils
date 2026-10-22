@@ -59,7 +59,7 @@ overwrite_output = false
 workspace_access = "none"
 response_format = "json"
 [steps.vars]
-plan = "${steps.plan.output}"
+plan = "${steps.validate_plan.output}"
 navigation = "${steps.navigation.output}"
 concept_results = "${steps.concepts.output.iterations}"
 okf_root = "${input.okf_root}"
