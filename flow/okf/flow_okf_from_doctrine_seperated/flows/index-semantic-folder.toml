@@ -16,7 +16,7 @@ max_entries = 10000
 
 [[steps]]
 id = "write_index"
-when = { ref = "steps.coverage.output.status", eq = "ok" }
+when = { ref = "input.coverage.status", eq = "ok" }
 prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/16_semantic_folder_index.md"
 output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/folder-${input.folder.id}-index.json"
 overwrite_output = false
