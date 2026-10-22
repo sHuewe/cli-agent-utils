@@ -58,6 +58,7 @@ overwrite_output = false
 [steps.json_operation]
 kind = "build_okf_manifest"
 input = "plan"
+expected_source_path = "${input.source.path}"
 [steps.json_inputs.plan]
 path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/validated-plan.json"
 [steps.json_inputs.navigation]
