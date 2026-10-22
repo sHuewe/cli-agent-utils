@@ -16,9 +16,20 @@ okf_root = "${input.okf_root}"
 
 # Only the planned concepts are generated; no atomic item routing.
 [[steps]]
+id = "validate_plan"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/validated-plan.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "validate_okf_plan"
+input = "plan"
+plan_kind = "doctrine"
+[steps.json_inputs.plan]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/plan.json"
+
+[[steps]]
 id = "concepts"
 flow = "flow/okf/flow_okf_from_doctrine_simple/flows/build-concept.toml"
-foreach = "steps.plan.output.concepts"
+foreach = "steps.validate_plan.output.concepts"
 iteration_id = "${item.id}"
 [steps.input]
 source = "${input.source}"
@@ -35,7 +46,7 @@ workspace_access = "write"
 response_format = "json"
 approve_tools = ["os__make_directory", "os__write_file", "os__move_file", "os__copy_file", "os__delete_file"]
 [steps.vars]
-plan = "${steps.plan.output}"
+plan = "${steps.validate_plan.output}"
 concept_results = "${steps.concepts.output.iterations}"
 okf_root = "${input.okf_root}"
 
