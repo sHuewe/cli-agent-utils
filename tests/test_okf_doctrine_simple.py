@@ -136,7 +136,7 @@ def test_plans_are_deterministically_validated_before_writes():
 def test_manifest_uses_deterministic_complete_plan_projection():
     flow = load(BASE / "flows/build-doctrine.toml")
     manifest = next(s for s in flow["steps"] if s["id"] == "manifest")
-    assert manifest["json_operation"] == {"kind": "build_okf_manifest", "input": "plan"}
+    assert manifest["json_operation"] == {"kind": "build_okf_manifest", "input": "plan", "expected_source_path": "${input.source.path}"}
     assert manifest["json_inputs"]["plan"]["path"].endswith("/validated-plan.json")
     assert manifest["json_inputs"]["navigation"]["path"].endswith("/navigation.json")
     assert "prompt_file" not in manifest
