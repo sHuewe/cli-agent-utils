@@ -24,6 +24,7 @@ recursive = true
 extensions = [".md", ".markdown"]
 exclude_names = ["index.md", "log.md"]
 max_entries = 10000
+stable_slugs = true
 
 [[steps]]
 id = "build_modules"
