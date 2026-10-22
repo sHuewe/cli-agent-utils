@@ -12,7 +12,7 @@ or collides with a doctrine/subfolder navigation `index.md`. Do not
 publish navigation over a planned concept file.
 Before publishing, require exactly one concept result for EACH planned
 concept ID (the list consists of {"id": iteration-id, "output": result}
-entries). Result status must be "ok" or "repaired" and IDs/paths must
+entries). Result status MUST be "ok" (including a successful independent\npost-repair verification); a bare repair.status="repaired" is NEVER\nsufficient. IDs/paths must
 match the plan. Any "needs_attention", missing, duplicate, unknown or
 unexpected status blocks publishing and is reported in warnings. A
 generated Markdown file existing on disk alone is NOT proof of a valid
