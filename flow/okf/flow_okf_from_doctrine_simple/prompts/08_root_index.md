@@ -10,6 +10,9 @@ there is exactly one theme writer result for every themes.themes[].id.
 Each result is an {"id": iteration-id, "output": writer-result} entry:
 require the iteration ID to match the theme ID, output.status=="ok",
 output.path==theme.path, no duplicates, omissions or unknown IDs.
+Also require output.linked_concept_paths to match exactly the planned
+`theme.concept_paths` (same members, no duplicates or extras); theme
+writer results claiming incomplete membership must not be published.
 A file existing at the expected location is not sufficient when its
 writer returned needs_attention. If any check fails, return
 needs_attention with specific warnings WITHOUT writing root indexes.
