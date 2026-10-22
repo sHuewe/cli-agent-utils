@@ -1,0 +1,30 @@
+version = 1
+inputs = ["source", "folder", "okf_root", "coverage"]
+result = "steps.write_index.output"
+
+[[steps]]
+id = "inventory"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/folder-${input.folder.id}-inventory.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "inventory"
+directory = "${input.okf_root}/${input.folder.path}"
+recursive = false
+extensions = [".md"]
+exclude_names = ["index.md", "log.md"]
+max_entries = 10000
+
+[[steps]]
+id = "write_index"
+when = { ref = "input.coverage.status", eq = "ok" }
+prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/16_semantic_folder_index.md"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/folder-${input.folder.id}-index.json"
+overwrite_output = false
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__write_file"]
+[steps.vars]
+folder = "${input.folder}"
+okf_root = "${input.okf_root}"
+inventory = "${steps.inventory.output}"
+coverage = "${input.coverage}"

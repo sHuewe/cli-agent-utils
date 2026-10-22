@@ -154,3 +154,35 @@ def test_separated_scan_only_requests_bounded_read_file():
     assert "NEVER call" in prompt
     assert "search_text" in prompt
     assert "exactly ONE document-content tool call" in prompt
+
+
+def test_semantic_subfolder_flow_contract():
+    generate = _flow(BASE / "flows/generate-doctrine.toml")
+    steps = {step["id"]: step for step in generate["steps"]}
+    assert steps["folder_indexes"]["foreach"] == "steps.group.output.folders"
+    assert steps["folder_indexes"]["input"]["folder"] == "${item}"
+    assert steps["write_index"]["vars"]["folders"] == "${steps.group.output.folders}"
+    assert steps["write_index"]["vars"]["folder_indexes"] == (
+        "${steps.folder_indexes.output.iterations}"
+    )
+    local = _flow(BASE / "flows/index-semantic-folder.toml")
+    assert set(local["inputs"]) == {"source", "folder", "okf_root", "coverage"}
+    assert local["steps"][0]["filesystem_operation"]["recursive"] is False
+    assert local["steps"][1]["when"] == {
+        "ref": "input.coverage.status", "eq": "ok"
+    }
+    prompt = (BASE / "prompts/06_final_local_topics.md").read_text(encoding="utf-8")
+    assert '"folders":' in prompt
+    assert "folders=[]" in prompt
+
+
+def test_v2_semantic_states_are_isolated_from_flat_layout():
+    all_flows = [BASE / "flow.toml", *(BASE / "flows").glob("*.toml")]
+    for path in all_flows:
+        cfg = _flow(path)
+        for step in cfg["steps"]:
+            if "output" in step:
+                assert "/state-semantic-v2/" in step["output"], (path, step["id"])
+                assert "/state/" not in step["output"], (path, step["id"])
+            for value in step.get("json_inputs", {}).values():
+                assert "/state-semantic-v2/" in value["path"], (path, step["id"])

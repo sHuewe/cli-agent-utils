@@ -15,7 +15,7 @@ max_delay_seconds = 10
 # The inventory is refreshed every time: newly added source documents are included.
 [[steps]]
 id = "inventory"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/source-inventory.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/source-inventory.json"
 overwrite_output = true
 [steps.filesystem_operation]
 kind = "inventory"

@@ -8,12 +8,12 @@ id = "route"
 prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/02_route_chunk.md"
 foreach = "input.chunks"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/route-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/route-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
 [steps.json_inputs.scan]
-path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/scan-${item.id}.json"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/scan-${item.id}.json"
 [steps.vars]
 chunk = "${item}"
 folder = "${input.meta.folder}"
@@ -21,7 +21,7 @@ folder = "${input.meta.folder}"
 # Bounded deterministic route batches; one oversized item is a hard error.
 [[steps]]
 id = "batch_routes"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/route-batches.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/route-batches.json"
 overwrite_output = false
 [steps.json_operation]
 kind = "batch_routes"
@@ -30,7 +30,7 @@ batch_size = 2
 max_batch_bytes = 48000
 [steps.json_inputs.routes]
 iterate = "input.chunks[]"
-path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/route-${each.id}.json"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/route-${each.id}.json"
 
 [[steps]]
 id = "plan_topics"
@@ -45,7 +45,7 @@ id = "assign"
 prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/07c_assign_batch_topics.md"
 foreach = "steps.batch_routes.output.batches"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/assign-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/assign-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
@@ -81,22 +81,21 @@ concepts = "${steps.group.output.concepts}"
 
 # The index is read against a fresh deterministic inventory, not a guessed list.
 [[steps]]
-id = "folder_inventory"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/folder-inventory.json"
-overwrite_output = true
-[steps.filesystem_operation]
-kind = "inventory"
-directory = "${input.okf_root}/${input.meta.folder.path}"
-recursive = false
-extensions = [".md"]
-exclude_names = ["index.md", "log.md"]
-max_entries = 10000
+id = "folder_indexes"
+flow = "flow/okf/flow_okf_from_doctrine_seperated/flows/index-semantic-folder.toml"
+foreach = "steps.group.output.folders"
+iteration_id = "${item.id}"
+[steps.input]
+source = "${input.source}"
+folder = "${item}"
+okf_root = "${input.okf_root}"
+coverage = "${steps.coverage.output}"
 
 [[steps]]
 id = "write_index"
 when = { ref = "steps.coverage.output.status", eq = "ok" }
 prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/03_module_index.md"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/index-result.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/index-result.json"
 overwrite_output = false
 workspace_access = "write"
 response_format = "json"
@@ -104,13 +103,14 @@ approve_tools = ["os__write_file", "os__make_directory"]
 [steps.vars]
 folder = "${input.meta.folder}"
 okf_root = "${input.okf_root}"
-inventory = "${steps.folder_inventory.output}"
+folders = "${steps.group.output.folders}"
+folder_indexes = "${steps.folder_indexes.output.iterations}"
 coverage = "${steps.coverage.output}"
 
 [[steps]]
 id = "manifest"
 prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/04_module_manifest.md"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/manifest.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/manifest.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
