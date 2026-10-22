@@ -27,6 +27,9 @@ input = "plan"
 plan_kind = "themes"
 [steps.json_inputs.plan]
 path = "flow/okf/flow_okf_from_doctrine_simple/state/global/themes-plan.json"
+[steps.json_inputs.manifests]
+iterate = "input.sources[]"
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${each.path}/manifest.json"
 
 [[steps]]
 id = "write_themes"
