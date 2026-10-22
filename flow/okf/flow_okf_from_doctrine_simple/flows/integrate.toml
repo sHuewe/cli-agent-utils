@@ -40,4 +40,5 @@ iterate = "input.sources[]"
 path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${each.path}/manifest.json"
 [steps.vars]
 themes = "${steps.plan_themes.output}"
+theme_results = "${steps.write_themes.output.iterations}"
 okf_root = "${input.okf_root}"
