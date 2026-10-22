@@ -64,3 +64,30 @@ def test_simple_flow_isolation_and_global_manifests():
     integrate = load(BASE / "flows/integrate.toml")
     assert integrate["steps"][0]["json_inputs"]["modules"]["iterate"] == "input.sources[]"
     assert integrate["steps"][2]["json_inputs"]["modules"]["iterate"] == "input.sources[]"
+
+
+def test_verified_concepts_gate_navigation_and_manifest():
+    flow = load(BASE / "flows/build-doctrine.toml")
+    by_id = {step["id"]: step for step in flow["steps"]}
+    for step_id in ("navigation", "manifest"):
+        assert by_id[step_id]["vars"]["concept_results"] == (
+            "${steps.concepts.output.iterations}"
+        )
+        prompt = (ROOT / by_id[step_id]["prompt_file"]).read_text(encoding="utf-8")
+        assert "{{var:concept_results}}" in prompt
+        assert "needs_attention" in prompt
+
+
+def test_theme_files_require_frontmatter():
+    theme = (BASE / "prompts/07_write_theme.md").read_text(encoding="utf-8")
+    assert "type: concept" in theme
+    assert "status: stable" in theme
+    assert "Read back" in theme
+
+
+def test_doctrine_slugs_come_from_deterministic_inventory():
+    flow = load(BASE / "flow.toml")
+    assert flow["steps"][0]["filesystem_operation"]["stable_slugs"] is True
+    prompt = (BASE / "prompts/01_plan_doctrine.md").read_text(encoding="utf-8")
+    assert "source.slug" in prompt
+    assert "Never" in prompt
