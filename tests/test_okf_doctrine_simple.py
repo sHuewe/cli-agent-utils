@@ -104,3 +104,19 @@ def test_root_index_requires_all_theme_writer_outcomes():
     assert 'output.status=="ok"' in prompt
     assert "no duplicates, omissions or unknown IDs" in prompt
     assert "WITHOUT writing root indexes" in prompt
+
+
+def test_navigation_filenames_are_reserved_across_stages():
+    for name in ("01_plan_doctrine.md", "02_build_concept.md", "04_write_navigation.md"):
+        p = (BASE / "prompts" / name).read_text(encoding="utf-8")
+        assert "index.md" in p and "log.md" in p
+
+
+def test_theme_membership_checked_on_disk_and_at_root():
+    writer = (BASE / "prompts/07_write_theme.md").read_text(encoding="utf-8")
+    assert "COMPLETE generated theme page" in writer
+    assert "missing, extra or duplicate concept links" in writer
+    assert "theme.concept_paths" in writer
+    root = (BASE / "prompts/08_root_index.md").read_text(encoding="utf-8")
+    assert "output.linked_concept_paths" in root
+    assert "theme.concept_paths" in root
