@@ -53,13 +53,12 @@ okf_root = "${input.okf_root}"
 # One small manifest for cross-doctrine topic discovery.
 [[steps]]
 id = "manifest"
-prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/05_module_manifest.md"
 output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/manifest.json"
 overwrite_output = false
-workspace_access = "none"
-response_format = "json"
-[steps.vars]
-plan = "${steps.validate_plan.output}"
-navigation = "${steps.navigation.output}"
-concept_results = "${steps.concepts.output.iterations}"
-okf_root = "${input.okf_root}"
+[steps.json_operation]
+kind = "build_okf_manifest"
+input = "plan"
+[steps.json_inputs.plan]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/validated-plan.json"
+[steps.json_inputs.navigation]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/navigation.json"
