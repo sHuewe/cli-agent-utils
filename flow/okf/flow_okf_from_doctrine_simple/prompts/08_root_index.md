@@ -2,7 +2,19 @@
 
 Compact completed doctrine manifests: {{var:modules}}
 Global themes plan: {{var:themes}}
+Theme writer outcomes: {{var:theme_results}}
 OKF root: {{var:okf_root}}
+
+Before publishing ANY root index, verify that themes.status=="ok" and
+there is exactly one theme writer result for every themes.themes[].id.
+Each result is an {"id": iteration-id, "output": writer-result} entry:
+require the iteration ID to match the theme ID, output.status=="ok",
+output.path==theme.path, no duplicates, omissions or unknown IDs.
+A file existing at the expected location is not sufficient when its
+writer returned needs_attention. If any check fails, return
+needs_attention with specific warnings WITHOUT writing root indexes.
+If themes.themes is empty, require zero writer results (valid).
+Only after this check, validate listed files on disk as below.
 
 Create ONLY three navigation files, using os__make_directory as needed:
 1) <okf_root>/index.md (required OKF root marker, with links to both
