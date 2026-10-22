@@ -1,9 +1,18 @@
 # Write navigable indexes for ONE doctrine
 
 Source-grounded plan: {{var:plan}}
+Concept verification/repair outcomes: {{var:concept_results}}
 OKF root: {{var:okf_root}}
 
 If plan.status is not ok, return needs_attention WITHOUT writing files.
+Before publishing, require exactly one concept result for EACH planned
+concept ID (the list consists of {"id": iteration-id, "output": result}
+entries). Result status must be "ok" or "repaired" and IDs/paths must
+match the plan. Any "needs_attention", missing, duplicate, unknown or
+unexpected status blocks publishing and is reported in warnings. A
+generated Markdown file existing on disk alone is NOT proof of a valid
+concept. Normal informational warnings from a successful verification
+do not automatically block publication.
 The plan is a navigation contract, not proof that files were generated.
 For each planned concept, verify the actual file exists with a small
 bounded os__read_file (e.g. lines 1..30), and inspect the frontmatter.
