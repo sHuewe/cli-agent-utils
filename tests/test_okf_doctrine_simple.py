@@ -49,11 +49,27 @@ def test_simple_plan_skips_mandatory_chunks_and_atomic_items():
 
 def test_conditional_repair_has_verify_fallback():
     flow = load(BASE / "flows/build-concept.toml")
-    assert flow["result"] == "steps.repair.output"
+    assert flow["result"] == "steps.verify_repair.output"
     assert flow["result_fallback"] == "steps.verify.output"
-    assert flow["steps"][-1]["when"] == {
-        "ref": "steps.verify.output.status", "eq": "needs_repair"
+    steps = {step["id"]: step for step in flow["steps"]}
+    assert steps["verify"]["when"] == {
+        "ref": "steps.build.output.status", "eq": "created"
     }
+    assert steps["repair"]["when"] == {"all": [
+        {"ref": "steps.verify.status", "eq": "completed"},
+        {"ref": "steps.verify.output.status", "eq": "needs_repair"},
+    ]}
+    assert steps["verify_repair"]["when"] == {"all": [
+        {"ref": "steps.repair.status", "eq": "completed"},
+        {"ref": "steps.repair.output.status", "eq": "repaired"},
+    ]}
+    recheck = (BASE / "prompts/03c_verify_repair.md").read_text(encoding="utf-8")
+    assert "EVERY actionable issue" in recheck
+    assert "READ-ONLY" in recheck
+    verify = (BASE / "prompts/03_verify_concept.md").read_text(encoding="utf-8")
+    assert 'build.status MUST equal "created"' in verify
+    navigation = (BASE / "prompts/04_write_navigation.md").read_text(encoding="utf-8")
+    assert 'a bare repair.status="repaired" is NEVER' in navigation
 
 
 def test_simple_flow_isolation_and_global_manifests():
