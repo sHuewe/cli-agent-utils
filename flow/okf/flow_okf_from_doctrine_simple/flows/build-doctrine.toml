@@ -23,6 +23,8 @@ overwrite_output = false
 kind = "validate_okf_plan"
 input = "plan"
 plan_kind = "doctrine"
+expected_source_path = "${input.source.path}"
+expected_source_slug = "${input.source.slug}"
 [steps.json_inputs.plan]
 path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/plan.json"
 
