@@ -13,3 +13,6 @@ coverage.xml
 flow/okf/state/
 flow/okf/**/state/fine/
 /flow/okf/flow_okf_relink/state/
+
+# Checkpoints from the experimental simple doctrine flow (source-derived JSON)
+/flow/okf/flow_okf_from_doctrine_simple/state/
