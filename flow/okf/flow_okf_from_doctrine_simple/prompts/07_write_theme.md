@@ -17,6 +17,18 @@ status: stable. Do not add verified metadata. Read back the first
 type and expected path; return needs_attention on a mismatch, never ok.
 Use relative links from themen/ to the concept paths and explain the
 shared scope briefly, distinguishing each doctrine's contribution.
+The page MUST include exactly one Markdown link to EVERY concept in
+`theme.concept_paths`, and no links to unplanned concept files.
+After writing, read back the COMPLETE generated theme page (using
+bounded successive line ranges if necessary, not just its first 30
+lines). Resolve each Markdown link destination relative to `themen/`,
+normalize the resulting workspace-relative OKF path, and compare the
+set AND count against the full `theme.concept_paths` list. Reject
+missing, extra or duplicate concept links, and return needs_attention
+if any planned member is absent. Also check that the resulting links
+still span at least two distinct doctrine module folders. The reported
+`linked_concept_paths` must list exactly those verified planned paths;
+never claim success based solely on the file existing or on its header.
 Do not edit concept tags or other files. No external claims.
 Return JSON only:
 {"status":"ok|needs_attention","path":"themen/theme.md",
