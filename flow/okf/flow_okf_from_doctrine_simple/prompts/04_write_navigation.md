@@ -5,6 +5,11 @@ Concept verification/repair outcomes: {{var:concept_results}}
 OKF root: {{var:okf_root}}
 
 If plan.status is not ok, return needs_attention WITHOUT writing files.
+Before checking any file or writing an index, reject the entire plan
+with needs_attention if ANY concept path ends in `index.md` or `log.md`
+(case-insensitive), duplicates another concept path after casefolding,
+or collides with a doctrine/subfolder navigation `index.md`. Do not
+publish navigation over a planned concept file.
 Before publishing, require exactly one concept result for EACH planned
 concept ID (the list consists of {"id": iteration-id, "output": result}
 entries). Result status must be "ok" or "repaired" and IDs/paths must
