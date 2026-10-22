@@ -69,7 +69,7 @@ def test_simple_flow_isolation_and_global_manifests():
 def test_verified_concepts_gate_navigation_and_manifest():
     flow = load(BASE / "flows/build-doctrine.toml")
     by_id = {step["id"]: step for step in flow["steps"]}
-    for step_id in ("navigation", "manifest"):
+    for step_id in ("navigation",):
         assert by_id[step_id]["vars"]["concept_results"] == (
             "${steps.concepts.output.iterations}"
         )
@@ -131,3 +131,12 @@ def test_plans_are_deterministically_validated_before_writes():
     assert integrate["steps"][1]["json_operation"]["kind"] == "validate_okf_plan"
     assert integrate["steps"][1]["json_operation"]["plan_kind"] == "themes"
     assert integrate["steps"][2]["foreach"] == "steps.validate_themes.output.themes"
+
+
+def test_manifest_uses_deterministic_complete_plan_projection():
+    flow = load(BASE / "flows/build-doctrine.toml")
+    manifest = next(s for s in flow["steps"] if s["id"] == "manifest")
+    assert manifest["json_operation"] == {"kind": "build_okf_manifest", "input": "plan"}
+    assert manifest["json_inputs"]["plan"]["path"].endswith("/validated-plan.json")
+    assert manifest["json_inputs"]["navigation"]["path"].endswith("/navigation.json")
+    assert "prompt_file" not in manifest
