@@ -5,7 +5,7 @@ result = "steps.generate.output"
 [[steps]]
 id = "prepare"
 prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/01_prepare_doctrine.md"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/prepare.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/prepare.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -16,7 +16,7 @@ okf_root = "${input.okf_root}"
 [[steps]]
 id = "partition"
 prompt_file = "flow/okf/common/prompts/01_partition_document.md"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/partition.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/partition.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -28,7 +28,7 @@ id = "scan"
 prompt_file = "flow/okf/flow_okf_from_doctrine_seperated/prompts/02_scan_chunk.md"
 foreach = "steps.partition.output.chunks"
 iteration_id = "${item.id}"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/scan-${iteration.id}.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/scan-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"

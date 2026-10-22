@@ -3,13 +3,13 @@ inputs = ["source", "concepts"]
 result = "steps.coverage.output"
 [[steps]]
 id = "coverage"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/coverage.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/coverage.json"
 overwrite_output = false
 [steps.json_operation]
 kind = "verify_coverage"
 input = "plan"
 [steps.json_inputs.plan]
-path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/concept-plan.json"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/concept-plan.json"
 [steps.json_inputs.results]
 iterate = "input.concepts[]"
-path = "flow/okf/flow_okf_from_doctrine_seperated/state/modules/${input.source.path}/concept-${each.id}-repair.json"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/modules/${input.source.path}/concept-${each.id}-repair.json"

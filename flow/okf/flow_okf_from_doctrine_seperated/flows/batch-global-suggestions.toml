@@ -7,7 +7,7 @@ result = "steps.batch.output"
 # The caller supplies batch_modules.output.batches as this flow's input.
 [[steps]]
 id = "batch"
-output = "flow/okf/flow_okf_from_doctrine_seperated/state/global/suggestion-batches.json"
+output = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/global/suggestion-batches.json"
 overwrite_output = true
 
 [steps.json_operation]
@@ -18,4 +18,4 @@ max_batch_bytes = 32000
 
 [steps.json_inputs.suggestions]
 iterate = "input.batches[]"
-path = "flow/okf/flow_okf_from_doctrine_seperated/state/global/suggestions-${each.id}.json"
+path = "flow/okf/flow_okf_from_doctrine_seperated/state-semantic-v2/global/suggestions-${each.id}.json"
