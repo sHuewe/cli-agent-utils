@@ -4,6 +4,13 @@ Original doctrine: {{var:source}}
 OKF root: {{var:okf_root}}
 Single concept plan: {{var:concept}}
 
+Before using ANY write/move/copy/delete tool, validate the planned
+concept path: its case-insensitive basename MUST NOT be `index.md` or
+`log.md` and it must be a normal Markdown concept path under the planned
+module folder. If invalid, do not write or modify anything; return
+status=needs_attention with an explanatory warning. Never overwrite
+navigation or log files.
+
 GOAL: Write ONE self-contained, correct, useful Markdown article at
 <okf_root>/<concept.path>. Do not write or modify other files.
 Use os__read_file on the ORIGINAL doctrine for the exact planned
