@@ -1,8 +1,9 @@
 version = 1
 inputs = ["source", "concept", "okf_root"]
 
-# Verification is the fallback when no repair is necessary.
-result = "steps.repair.output"
+# Post-repair verification is authoritative; initial verification is the fallback.
+# Unsuccessful builds have no verifier output and fail closed.
+result = "steps.verify_repair.output"
 result_fallback = "steps.verify.output"
 
 [[steps]]
@@ -21,6 +22,7 @@ okf_root = "${input.okf_root}"
 
 [[steps]]
 id = "verify"
+when = { ref = "steps.build.output.status", eq = "created" }
 prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/03_verify_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/concept-${input.concept.id}-verify.json"
@@ -35,7 +37,10 @@ okf_root = "${input.okf_root}"
 
 [[steps]]
 id = "repair"
-when = { ref = "steps.verify.output.status", eq = "needs_repair" }
+when = { all = [
+    { ref = "steps.verify.status", eq = "completed" },
+    { ref = "steps.verify.output.status", eq = "needs_repair" },
+] }
 prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/03b_repair_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/concept-${input.concept.id}-repair.json"
@@ -47,4 +52,26 @@ approve_tools = ["os__make_directory", "os__write_file", "os__move_file", "os__c
 source = "${input.source}"
 concept = "${input.concept}"
 verification = "${steps.verify.output}"
+okf_root = "${input.okf_root}"
+
+# A repair is never accepted solely from its self-reported "repaired" status.
+# Recheck all original findings and the complete corrected concept.
+[[steps]]
+id = "verify_repair"
+when = { all = [
+    { ref = "steps.repair.status", eq = "completed" },
+    { ref = "steps.repair.output.status", eq = "repaired" },
+] }
+prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/03c_verify_repair.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/concept-${input.concept.id}-verify-repair.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+concept = "${input.concept}"
+build = "${steps.build.output}"
+initial_verification = "${steps.verify.output}"
+repair = "${steps.repair.output}"
 okf_root = "${input.okf_root}"
