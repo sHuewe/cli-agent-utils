@@ -8,7 +8,7 @@ WORKDIR /work
 ARG ASSISTANT_UI_CLI_VERSION=0.0.122
 ENV CI=1
 RUN npx --yes "assistant-ui@${ASSISTANT_UI_CLI_VERSION}" create ui \
-    --example with-ag-ui --use-npm --skip-install
+    --example with-ag-ui --use-npm
 
 # Only same-origin routing/auth is custom. React keeps using HttpAgent and
 # useAgUiRuntime from the upstream template.
@@ -33,4 +33,4 @@ COPY --from=build /work/ui /app
 # Docker host-network mode ignores -p/ports mappings.
 USER node
 EXPOSE 3000
-CMD ["npm", "run", "start", "--", "-H", "127.0.0.1", "-p", "3000"]
+CMD ["npm", "run", "start", "--", "-H", "0.0.0.0", "-p", "3000"]
