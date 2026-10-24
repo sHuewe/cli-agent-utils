@@ -76,3 +76,14 @@ jobs:
       - name: Run Windows tests
         shell: pwsh
         run: python -m pytest mcp/code-validator/tests -q
+
+  agui-proxy-security:
+    name: AG-UI proxy CSRF tests / Node 22
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run AG-UI proxy security regression tests
+        run: node --disable-warning=ExperimentalWarning --experimental-strip-types --test integrations/assistant-ui-ag-ui/ag-ui-route.test.mjs
