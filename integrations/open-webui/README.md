@@ -1,6 +1,6 @@
-# Open WebUI Pipe (experimentell)
+# Open WebUI Pipe – AG-UI 1.0 (experimentell)
 
-Diese Pipe stellt den lokalen `cli-agent-api`-Server als auswählbaren Agenten in Open WebUI bereit.
+Diese Pipe stellt den lokalen `cli-agent-api`-Server als auswählbaren Agenten in Open WebUI bereit. Sie verwendet seit der Migration **`POST /ag-ui` mit HTTP/SSE (AG-UI 1.0)**. Voraussetzung ist cli-agent auf dem Stand des AG-UI-Branches (PR #241) oder neuer. Die alten proprietären Run-/Approval-Endpunkte werden nicht mehr verwendet.
 
 ## Integrationstest mit Docker (Linux, Host-Netzwerk)
 
@@ -99,10 +99,12 @@ docker volume rm cli-agent-open-webui-data
 
 ## Verhalten und Grenzen
 
-- Eine Session pro Kombination aus Open-WebUI-Benutzer und Chat-ID (nur im Speicher des Pipe-Prozesses). Ohne beide IDs wird eine temporäre Session angelegt und nach der Anfrage gelöscht.
-- SSE zeigt Tool-Status an; die vollständige Antwort wird erst nach Abschluss des LLM-Laufs ausgegeben. **Kein Token-Streaming**.
-- Tool-Freigaben verwenden den Open-WebUI-Confirmation-Dialog. Fehlende Bestätigung oder `diff_blocked` führt zur Ablehnung; eine sitzungsweite Pauschalfreigabe wird nicht angeboten.
-- Pro API-Session ist nur ein Run gleichzeitig erlaubt; ein gleichzeitiger zweiter Run wird nicht automatisch wiederholt.
-- Sessions werden bei API-Neustart neu angelegt, sofern der Server die alte ID mit 404 zurückweist. Nach Neustart geht die alte Konversation im Agenten verloren.
+- Eine Session pro Kombination aus Open-WebUI-Benutzer und Chat-ID (nur im Speicher des Pipe-Prozesses). Ohne beide IDs wird eine temporäre Session angelegt und nach der Anfrage gelöscht. `POST /sessions` erstellt eine Session, deren ID anschließend als `threadId` für `POST /ag-ui` verwendet wird.
+- Der AG-UI-Stream wird direkt über `POST /ag-ui` gelesen. SSE zeigt Tool-Status an; die vollständige Antwort wird erst nach Abschluss des LLM-Laufs ausgegeben. **Kein Token-Streaming**.
+- Chatnachrichten aus Open WebUI werden auf Textnachrichten der Rollen `user`/`assistant` reduziert und auf 100 Nachrichten bzw. 350 kB begrenzt. System-/Developer-Rollen werden nicht als autorisierte Agent-Instruktionen weitergereicht.
+- Tool-Freigaben erfolgen über AG-UI-`RUN_FINISHED`-Interrupts und einen weiteren `POST /ag-ui` mit `resume`. Der Open-WebUI-Confirmation-Dialog entscheidet über `approved`. Fehlende Bestätigung oder `diff_blocked` führt zur Ablehnung; eine sitzungsweite Pauschalfreigabe wird nicht angeboten. Maximal 16 aufeinanderfolgende Freigaberunden.
+- Frontend-Tools werden von der Pipe nicht angeboten; unerwartete ausstehende Frontend-Tool-Aufrufe werden als Fehler behandelt.
+- Pro API-Session ist nur ein Run gleichzeitig erlaubt; ein gleichzeitiger zweiter Run für dieselbe Benutzer-/Chat-Kombination wird bereits durch die Pipe zurückgewiesen und nicht automatisch wiederholt.
+- Vor der Wiederverwendung wird die Session mit `GET /sessions/{id}/context` überprüft; nach einem API-Neustart wird sie bei HTTP 404 neu angelegt. Ohne diesen Check würde `POST /ag-ui` eine alte Thread-ID als neue Unterhaltung behandeln. Nach Neustart geht die alte Konversation im Agenten verloren.
 - Die Pipe enthält keine persistenten Secrets; den API-Token ausschließlich in den serverseitigen Valves hinterlegen.
-- **Noch nicht end-to-end mit einer realen Open-WebUI-Instanz getestet.** Insbesondere müssen die Confirmation-Events und die Chat-ID-Übergabe mit der konkret eingesetzten Open-WebUI-Version validiert werden.
+- **23 lokale Mock-Contract-Tests bestanden; noch nicht end-to-end mit einer realen Open-WebUI-Instanz getestet.** Insbesondere müssen die Confirmation-Events und die Chat-ID-Übergabe mit der konkret eingesetzten Open-WebUI-Version validiert werden.
