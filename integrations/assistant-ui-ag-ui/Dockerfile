@@ -8,7 +8,7 @@ WORKDIR /work
 ARG ASSISTANT_UI_CLI_VERSION=0.0.122
 ENV CI=1
 RUN npx --yes "assistant-ui@${ASSISTANT_UI_CLI_VERSION}" create ui \
-    --example with-ag-ui --use-npm --no-skills --skip-install
+    --example with-ag-ui --use-npm --skip-install
 
 # Only same-origin routing/auth is custom. React keeps using HttpAgent and
 # useAgUiRuntime from the upstream template.
