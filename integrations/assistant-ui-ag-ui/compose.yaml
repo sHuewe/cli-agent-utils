@@ -1,0 +1,19 @@
+services:
+  assistant-ui:
+    build:
+      context: .
+      args:
+        ASSISTANT_UI_CLI_VERSION: "0.0.122"
+    image: cli-agent-assistant-ui-ag-ui:local
+    network_mode: host
+    environment:
+      CLI_AGENT_API_URL: ${CLI_AGENT_API_URL:-http://127.0.0.1:8765/ag-ui}
+      CLI_AGENT_API_TOKEN: ${CLI_AGENT_API_TOKEN:?Set CLI_AGENT_API_TOKEN in .env}
+      NODE_ENV: production
+    # Do not use ports: with network_mode=host.
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
