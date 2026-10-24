@@ -35,6 +35,19 @@ The CLI API and the UI container must run on **the same host**.
    `docker compose logs -f assistant-ui` if the UI cannot reach the API.
    Cleanup: `docker compose down`.
 
+The token-bearing proxy **requires** the exact browser origin and host
+`http://127.0.0.1:3000` and accepts only `Content-Type: application/json`.
+Requests without an Origin, from another Origin (including `localhost`
+instead of `127.0.0.1`), or with a different Host are rejected before the
+service token is attached. Do not place the UI behind a public reverse proxy
+without a separate authentication and CSRF design.
+
+Run the independent security tests using Node 22 or newer:
+
+```bash
+node --experimental-strip-types --test ag-ui-route.test.mjs
+```
+
 The container binds the Next.js UI to **127.0.0.1:3000** with the host
 network. Do **not** add `ports:`, expose the cli-agent API on `0.0.0.0`,
 or forward the browser token to the API. This is a single-user smoke-test
