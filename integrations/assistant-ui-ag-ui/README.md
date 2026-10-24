@@ -72,8 +72,8 @@ Browser localhost:3000
 ```
 
 Open WebUI is an **alternative** UI, not part of this Compose file.
-Its existing pipe under `../open-webui/` still calls the deprecated
-`/sessions/{id}/runs` endpoints and therefore does **not** work with the
-AG-UI-only PR #241 API without a migration. Open WebUI does not currently
-expose a confirmed native AG-UI client configuration, so the pipe remains a
-separate compatibility adapter rather than an AG-UI interoperability test.
+Its pipe under `../open-webui/` has now been migrated to `POST /ag-ui`
+with AG-UI 1.0 HTTP/SSE, including human approval interrupts and resume.
+Open WebUI does not currently expose a confirmed native AG-UI client
+configuration, so the pipe remains a **custom Open-WebUI adapter**, not
+proof that an unrelated AG-UI frontend works without an adapter.
