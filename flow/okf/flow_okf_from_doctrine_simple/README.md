@@ -15,9 +15,13 @@ Stages:
    planning route. Longer doctrines receive a compact section analysis per
    approximately 30,000-character range (no atomic knowledge-item routing);
    each analysis reads the exact original source lines and has an independent
-   JSON checkpoint. One global planner then synthesizes the complete
-   doctrine concept plan from all section analyses, with source line references.
-   The planner rejects missing/incomplete sections rather than claiming coverage.
+   JSON checkpoint. One global planner synthesizes the document-wide concept
+   structure (IDs, paths, folders and section associations) without emitting
+   detailed source ranges. A deterministic step divides these concepts into
+   groups of three. Each group gets its own evidence-planning model call and
+   checkpoint. The runner combines complete, validated groups into the
+   original plan.json without another model call. Missing/inconsistent evidence
+   blocks subsequent writing.
 3. Build each planned concept from bounded original evidence. Verify every
    concept; repair **only** actionable concept defects. Planning/evidence
    defects are reported separately, not silently treated as missing text.
@@ -84,3 +88,14 @@ under flow/okf/flow_okf_from_doctrine_simple/state/.
 This is a test workflow, not a replacement for the existing flow or
 for a formal compliance audit. No live end-to-end run was performed when
 this implementation was authored.
+
+## Batched planning checkpoints
+
+The newly introduced intermediate outputs are `outline.json`,
+`plan-batches.json` and `plan-detail-b0001.json` (one per group). The final
+`plan.json` and every downstream checkpoint path are unchanged. For
+preexisting `plan.json` checkpoints the runner still reuses that file,
+but the newly introduced preceding stages may be executed unless their
+own checkpoints already exist. Do not assume that a resumed run skips
+all newly introduced upstream work. Do not merge the utils PR before
+its companion cli-agent PR adds the deterministic JSON operations.
