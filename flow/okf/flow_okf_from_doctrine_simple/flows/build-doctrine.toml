@@ -2,7 +2,33 @@ version = 1
 inputs = ["source", "okf_root"]
 result = "steps.manifest.output"
 
-# First see the doctrine as a WHOLE. No mandatory 350/450-line chunks.
+# Inspect Markdown structure without a model. Short doctrines keep direct planning.
+[[steps]]
+id = "sections"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/sections.json"
+overwrite_output = false
+[steps.filesystem_operation]
+kind = "markdown_sections"
+source_path = "${input.source.path}"
+target_chars = 30000
+max_sections = 32
+
+# Only long doctrines have section work; each analysis has its own checkpoint.
+[[steps]]
+id = "section_analysis"
+prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/00_analyze_section.md"
+foreach = "steps.sections.output.sections"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/section-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+section = "${item}"
+
+# Short documents: read original whole. Long documents: plan over the
+# bounded analyses, which keep original line ranges.
 [[steps]]
 id = "plan"
 prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/01_plan_doctrine.md"
@@ -13,6 +39,8 @@ response_format = "json"
 [steps.vars]
 source = "${input.source}"
 okf_root = "${input.okf_root}"
+sections = "${steps.sections.output}"
+section_analyses = "${steps.section_analysis.output.iterations}"
 
 # Only the planned concepts are generated; no atomic item routing.
 [[steps]]
