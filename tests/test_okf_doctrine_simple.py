@@ -38,16 +38,15 @@ def test_simple_flow_wiring_and_referenced_prompts():
 def test_simple_plan_skips_mandatory_chunks_and_atomic_items():
     build = load(BASE / "flows/build-doctrine.toml")
     ids = [step["id"] for step in build["steps"]]
-    assert ids == ["sections", "section_analysis", "outline", "plan_batches", "plan_details", "plan", "validate_plan", "concepts", "navigation", "manifest"]
-    assert build["steps"][7]["foreach"] == "steps.validate_plan.output.concepts"
-    assert build["steps"][3]["json_operation"]["kind"] == "prepare_doctrine_batches"
-    assert build["steps"][4]["foreach"] == "steps.plan_batches.output.batches"
-    assert build["steps"][5]["json_operation"]["kind"] == "assemble_doctrine_plan"
+    assert ids == ["sections", "section_analysis", "outline_tasks", "local_outlines", "outline", "plan_batches", "plan_details", "plan", "validate_plan", "concepts", "navigation", "manifest"]
+    assert build["steps"][9]["foreach"] == "steps.validate_plan.output.concepts"
+    assert build["steps"][5]["json_operation"]["kind"] == "prepare_doctrine_batches"
+    assert build["steps"][6]["foreach"] == "steps.plan_batches.output.batches"
+    assert build["steps"][7]["json_operation"]["kind"] == "assemble_doctrine_plan"
     assert "batch_routes" not in str(build)
     assert "group_items" not in str(build)
     prompt = (BASE / "prompts/01_plan_doctrine.md").read_text(encoding="utf-8")
-    assert "FULL document" in prompt
-    assert "section_analyses" in prompt and "EMPTY concepts" in prompt
+    assert "topic_key" in (BASE / "prompts/01_plan_section.md").read_text(encoding="utf-8")
 
 
 def test_conditional_repair_has_verify_fallback():
@@ -126,7 +125,7 @@ def test_root_index_requires_all_theme_writer_outcomes():
 
 
 def test_navigation_filenames_are_reserved_across_stages():
-    for name in ("01_plan_doctrine.md", "02_build_concept.md", "04_write_navigation.md"):
+    for name in ("02_build_concept.md", "04_write_navigation.md"):
         p = (BASE / "prompts" / name).read_text(encoding="utf-8")
         assert "index.md" in p and "log.md" in p
 
@@ -143,11 +142,11 @@ def test_theme_membership_checked_on_disk_and_at_root():
 
 def test_plans_are_deterministically_validated_before_writes():
     build = load(BASE / "flows/build-doctrine.toml")
-    assert build["steps"][6]["json_operation"]["kind"] == "validate_okf_plan"
-    assert build["steps"][6]["json_operation"]["plan_kind"] == "doctrine"
-    assert build["steps"][6]["json_operation"]["expected_source_path"] == "${input.source.path}"
-    assert build["steps"][6]["json_operation"]["expected_source_slug"] == "${input.source.slug}"
-    assert build["steps"][7]["foreach"] == "steps.validate_plan.output.concepts"
+    assert build["steps"][8]["json_operation"]["kind"] == "validate_okf_plan"
+    assert build["steps"][8]["json_operation"]["plan_kind"] == "doctrine"
+    assert build["steps"][8]["json_operation"]["expected_source_path"] == "${input.source.path}"
+    assert build["steps"][8]["json_operation"]["expected_source_slug"] == "${input.source.slug}"
+    assert build["steps"][9]["foreach"] == "steps.validate_plan.output.concepts"
     integrate = load(BASE / "flows/integrate.toml")
     assert integrate["steps"][1]["json_operation"]["kind"] == "validate_okf_plan"
     assert integrate["steps"][1]["json_operation"]["plan_kind"] == "themes"
@@ -172,7 +171,7 @@ def test_adaptive_sections_keep_existing_plan_checkpoint_path():
     assert steps["section_analysis"]["foreach"] == "steps.sections.output.sections"
     assert steps["section_analysis"]["iteration_id"] == "${item.id}"
     assert steps["plan"]["output"].endswith("/plan.json")
-    assert steps["outline"]["vars"]["section_analyses"] == "${steps.section_analysis.output.iterations}"
-    assert steps["outline"]["vars"]["sections"] == "${steps.sections.output}"
+    assert steps["outline_tasks"]["json_operation"]["results_step"] == "section_analysis"
+    assert steps["local_outlines"]["foreach"] == "steps.outline_tasks.output.tasks"
     assert steps["validate_plan"]["json_inputs"]["plan"]["path"] == steps["plan"]["output"]
     assert steps["manifest"]["json_inputs"]["plan"]["path"].endswith("/validated-plan.json")

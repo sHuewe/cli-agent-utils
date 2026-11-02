@@ -27,19 +27,46 @@ response_format = "json"
 source = "${input.source}"
 section = "${item}"
 
-# One global outline for the full doctrine (no detailed evidence ranges yet).
+# Build bounded outline tasks: each gets only its own section analysis.
 [[steps]]
-id = "outline"
-prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/01_plan_doctrine.md"
-output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline.json"
+id = "outline_tasks"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline-tasks.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "prepare_outline_tasks"
+input = "sections"
+results_step = "section_analysis"
+[steps.json_inputs.sections]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/sections.json"
+
+# Each model request sees one section, or the short original document.
+[[steps]]
+id = "local_outlines"
+prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/01_plan_section.md"
+foreach = "steps.outline_tasks.output.tasks"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/local-outline-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
 [steps.vars]
 source = "${input.source}"
-okf_root = "${input.okf_root}"
-sections = "${steps.sections.output}"
-section_analyses = "${steps.section_analysis.output.iterations}"
+task = "${item}"
+
+# No global LLM request: repeated topic_keys are combined deterministically.
+[[steps]]
+id = "outline"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "assemble_section_outlines"
+input = "tasks"
+results_step = "local_outlines"
+batches_step = "outline_tasks"
+expected_source_path = "${input.source.path}"
+expected_source_slug = "${input.source.slug}"
+[steps.json_inputs.tasks]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline-tasks.json"
 
 # Deterministic grouping: at most 3 concepts per detail-planning request.
 [[steps]]
