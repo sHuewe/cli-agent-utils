@@ -1,11 +1,11 @@
-# Understand one doctrine, then design its OKF navigation
+# Create one global doctrine concept outline
 
 Source inventory entry: {{var:source}}
 Output OKF root: {{var:okf_root}}
 Deterministic document sections: {{var:sections}}
 Completed bounded section analyses: {{var:section_analyses}}
 
-TASK: Create ONE coherent concept plan for this doctrine.
+TASK: Create ONE coherent, COMPACT concept OUTLINE for this doctrine. This is the ONLY phase that may choose concepts, their IDs and folder structure. Detailed evidence ranges are produced separately in small batches.
 
 First inspect sections.mode:
 - "direct": This is a short doctrine. Read and understand the FULL document in
@@ -36,12 +36,9 @@ Prefer a manageable number of self-contained concepts with a clear purpose.
 There is no arbitrary requirement to produce 89 concepts or an exact count.
 Avoid collapsing unrelated normative rules into a vague summary.
 
-PLAN ONLY: do not create or modify any file. Each concept needs a stable
+OUTLINE ONLY: do not create or modify any file. Each concept needs a stable
 lowercase kebab-case id; unique lowercase kebab-case filename; meaningful
-title/description; and only the source sections it needs, with concrete
-1-based inclusive start_line and end_line. Line numbers must come from the
-actual read; never invent evidence line references. Each interval must be
-within the source. Use multiple ranges when one concept spans chapters.
+title/description and a list of relevant section IDs (section_ids), when sections.mode is "sections". Use IDs exactly from supplied analyses; for short direct-mode documents use section_ids=[]. Do not emit evidence_ranges in this phase; they are planned in bounded requests later.
 Provide a brief outline of covered chapters and notable exceptions in
 the summary to make omissions easier to spot.
 
@@ -77,11 +74,10 @@ Output COMPACT JSON only, with this schema:
  "concepts":[
    {"id":"approval-rules","path":"doctrines/stable-source-slug/procedures/approval-rules.md",
     "title":"Approval rules","description":"focused purpose","type":"concept",
-    "tags":["approval"],
-    "evidence_ranges":[{"doctrine":"workspace-relative/source.md","start_line":1,"end_line":45,"reason":"what this section supports"}]}
+    "tags":["approval"],"section_ids":["s001","s002"]}
  ],
  "warnings":[]
 }
 
-The schema's line numbers are examples only; use actual evidence positions.
+For short documents use section_ids=[] for every concept. Each long-document concept must reference at least one existing, relevant section_id. Do not emit evidence ranges here.
 If status=needs_attention: no concepts, no invented sections or files.
