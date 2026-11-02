@@ -27,12 +27,11 @@ response_format = "json"
 source = "${input.source}"
 section = "${item}"
 
-# Short documents: read original whole. Long documents: plan over the
-# bounded analyses, which keep original line ranges.
+# One global outline for the full doctrine (no detailed evidence ranges yet).
 [[steps]]
-id = "plan"
+id = "outline"
 prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/01_plan_doctrine.md"
-output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/plan.json"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -41,6 +40,45 @@ source = "${input.source}"
 okf_root = "${input.okf_root}"
 sections = "${steps.sections.output}"
 section_analyses = "${steps.section_analysis.output.iterations}"
+
+# Deterministic grouping: at most 3 concepts per detail-planning request.
+[[steps]]
+id = "plan_batches"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/plan-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "prepare_doctrine_batches"
+input = "outline"
+results_step = "section_analysis"
+batch_size = 3
+[steps.json_inputs.outline]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline.json"
+
+# Independent detail checkpoints: any completed batch survives a later timeout.
+[[steps]]
+id = "plan_details"
+prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/01_detail_concepts.md"
+foreach = "steps.plan_batches.output.batches"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/plan-detail-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+batch = "${item}"
+
+# No LLM is used to combine the results: preserve the original plan.json.
+[[steps]]
+id = "plan"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/plan.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "assemble_doctrine_plan"
+input = "outline"
+results_step = "plan_details"
+[steps.json_inputs.outline]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline.json"
 
 # Only the planned concepts are generated; no atomic item routing.
 [[steps]]
