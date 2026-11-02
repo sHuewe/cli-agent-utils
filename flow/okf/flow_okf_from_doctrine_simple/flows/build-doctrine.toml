@@ -55,8 +55,8 @@ task = "${item}"
 
 # No global LLM request: repeated topic_keys are combined deterministically.
 [[steps]]
-id = "outline"
-output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline.json"
+id = "outline_candidates"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline-candidates.json"
 overwrite_output = false
 [steps.json_operation]
 kind = "assemble_section_outlines"
@@ -67,6 +67,68 @@ expected_source_path = "${input.source.path}"
 expected_source_slug = "${input.source.slug}"
 [steps.json_inputs.tasks]
 path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline-tasks.json"
+
+# Small deterministic subject inventory, no large LLM context.
+[[steps]]
+id = "taxonomy_profile"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/taxonomy-profile.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "doctrine_taxonomy_profile"
+input = "candidates"
+[steps.json_inputs.candidates]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline-candidates.json"
+
+# One short LLM call chooses only the semantic subfolder taxonomy.
+[[steps]]
+id = "taxonomy"
+prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/01_taxonomy.md"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/taxonomy.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+profile = "${steps.taxonomy_profile.output}"
+
+[[steps]]
+id = "consolidation_batches"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/consolidation-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "prepare_doctrine_consolidation"
+input = "candidates"
+batch_size = 12
+[steps.json_inputs.candidates]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline-candidates.json"
+[steps.json_inputs.taxonomy]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/taxonomy.json"
+
+[[steps]]
+id = "consolidation_groups"
+prompt_file = "flow/okf/flow_okf_from_doctrine_simple/prompts/01_consolidate_group.md"
+foreach = "steps.consolidation_batches.output.batches"
+iteration_id = "${item.id}"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/consolidation-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${item}"
+
+# One final structure, without another global model request.
+[[steps]]
+id = "outline"
+output = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "assemble_doctrine_consolidation"
+input = "candidates"
+batches_step = "consolidation_batches"
+results_step = "consolidation_groups"
+[steps.json_inputs.candidates]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline-candidates.json"
+[steps.json_inputs.taxonomy]
+path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/taxonomy.json"
 
 # Deterministic grouping: at most 3 concepts per detail-planning request.
 [[steps]]
