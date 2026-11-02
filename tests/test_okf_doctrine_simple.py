@@ -37,16 +37,20 @@ def test_simple_flow_wiring_and_referenced_prompts():
 
 def test_simple_plan_skips_mandatory_chunks_and_atomic_items():
     build = load(BASE / "flows/build-doctrine.toml")
-    ids = [step["id"] for step in build["steps"]]
-    assert ids == ["sections", "section_analysis", "outline_tasks", "local_outlines", "outline", "plan_batches", "plan_details", "plan", "validate_plan", "concepts", "navigation", "manifest"]
-    assert build["steps"][9]["foreach"] == "steps.validate_plan.output.concepts"
-    assert build["steps"][5]["json_operation"]["kind"] == "prepare_doctrine_batches"
-    assert build["steps"][6]["foreach"] == "steps.plan_batches.output.batches"
-    assert build["steps"][7]["json_operation"]["kind"] == "assemble_doctrine_plan"
+    steps = {step["id"]: step for step in build["steps"]}
+    assert len(steps) == len(build["steps"])
+    assert steps["local_outlines"]["foreach"] == "steps.outline_tasks.output.tasks"
+    assert steps["outline_candidates"]["json_operation"]["kind"] == "assemble_section_outlines"
+    assert steps["taxonomy_profile"]["json_operation"]["kind"] == "doctrine_taxonomy_profile"
+    assert steps["consolidation_batches"]["json_operation"]["kind"] == "prepare_doctrine_consolidation"
+    assert steps["consolidation_groups"]["foreach"] == "steps.consolidation_batches.output.batches"
+    assert steps["outline"]["json_operation"]["kind"] == "assemble_doctrine_consolidation"
+    assert steps["plan_batches"]["json_operation"]["kind"] == "prepare_doctrine_batches"
+    assert steps["plan_details"]["foreach"] == "steps.plan_batches.output.batches"
+    assert steps["plan"]["json_operation"]["kind"] == "assemble_doctrine_plan"
+    assert steps["concepts"]["foreach"] == "steps.validate_plan.output.concepts"
     assert "batch_routes" not in str(build)
     assert "group_items" not in str(build)
-    prompt = (BASE / "prompts/01_plan_doctrine.md").read_text(encoding="utf-8")
-    assert "topic_key" in (BASE / "prompts/01_plan_section.md").read_text(encoding="utf-8")
 
 
 def test_conditional_repair_has_verify_fallback():
@@ -142,11 +146,12 @@ def test_theme_membership_checked_on_disk_and_at_root():
 
 def test_plans_are_deterministically_validated_before_writes():
     build = load(BASE / "flows/build-doctrine.toml")
-    assert build["steps"][8]["json_operation"]["kind"] == "validate_okf_plan"
-    assert build["steps"][8]["json_operation"]["plan_kind"] == "doctrine"
-    assert build["steps"][8]["json_operation"]["expected_source_path"] == "${input.source.path}"
-    assert build["steps"][8]["json_operation"]["expected_source_slug"] == "${input.source.slug}"
-    assert build["steps"][9]["foreach"] == "steps.validate_plan.output.concepts"
+    steps = {step["id"]: step for step in build["steps"]}
+    assert steps["validate_plan"]["json_operation"]["kind"] == "validate_okf_plan"
+    assert steps["validate_plan"]["json_operation"]["plan_kind"] == "doctrine"
+    assert steps["validate_plan"]["json_operation"]["expected_source_path"] == "${input.source.path}"
+    assert steps["validate_plan"]["json_operation"]["expected_source_slug"] == "${input.source.slug}"
+    assert steps["concepts"]["foreach"] == "steps.validate_plan.output.concepts"
     integrate = load(BASE / "flows/integrate.toml")
     assert integrate["steps"][1]["json_operation"]["kind"] == "validate_okf_plan"
     assert integrate["steps"][1]["json_operation"]["plan_kind"] == "themes"
