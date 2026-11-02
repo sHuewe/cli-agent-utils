@@ -44,7 +44,7 @@ def test_simple_plan_skips_mandatory_chunks_and_atomic_items():
     assert "group_items" not in str(build)
     prompt = (BASE / "prompts/01_plan_doctrine.md").read_text(encoding="utf-8")
     assert "FULL document" in prompt
-    assert "NEVER silently" in prompt
+    assert "never claim coverage" in prompt
 
 
 def test_conditional_repair_has_verify_fallback():
