@@ -38,8 +38,8 @@ def test_simple_flow_wiring_and_referenced_prompts():
 def test_simple_plan_skips_mandatory_chunks_and_atomic_items():
     build = load(BASE / "flows/build-doctrine.toml")
     ids = [step["id"] for step in build["steps"]]
-    assert ids == ["plan", "validate_plan", "concepts", "navigation", "manifest"]
-    assert build["steps"][2]["foreach"] == "steps.validate_plan.output.concepts"
+    assert ids == ["sections", "section_analysis", "plan", "validate_plan", "concepts", "navigation", "manifest"]
+    assert build["steps"][4]["foreach"] == "steps.validate_plan.output.concepts"
     assert "batch_routes" not in str(build)
     assert "group_items" not in str(build)
     prompt = (BASE / "prompts/01_plan_doctrine.md").read_text(encoding="utf-8")
@@ -140,11 +140,11 @@ def test_theme_membership_checked_on_disk_and_at_root():
 
 def test_plans_are_deterministically_validated_before_writes():
     build = load(BASE / "flows/build-doctrine.toml")
-    assert build["steps"][1]["json_operation"]["kind"] == "validate_okf_plan"
-    assert build["steps"][1]["json_operation"]["plan_kind"] == "doctrine"
-    assert build["steps"][1]["json_operation"]["expected_source_path"] == "${input.source.path}"
-    assert build["steps"][1]["json_operation"]["expected_source_slug"] == "${input.source.slug}"
-    assert build["steps"][2]["foreach"] == "steps.validate_plan.output.concepts"
+    assert build["steps"][3]["json_operation"]["kind"] == "validate_okf_plan"
+    assert build["steps"][3]["json_operation"]["plan_kind"] == "doctrine"
+    assert build["steps"][3]["json_operation"]["expected_source_path"] == "${input.source.path}"
+    assert build["steps"][3]["json_operation"]["expected_source_slug"] == "${input.source.slug}"
+    assert build["steps"][4]["foreach"] == "steps.validate_plan.output.concepts"
     integrate = load(BASE / "flows/integrate.toml")
     assert integrate["steps"][1]["json_operation"]["kind"] == "validate_okf_plan"
     assert integrate["steps"][1]["json_operation"]["plan_kind"] == "themes"
@@ -159,3 +159,17 @@ def test_manifest_uses_deterministic_complete_plan_projection():
     assert manifest["json_inputs"]["plan"]["path"].endswith("/validated-plan.json")
     assert manifest["json_inputs"]["navigation"]["path"].endswith("/navigation.json")
     assert "prompt_file" not in manifest
+
+
+def test_adaptive_sections_keep_existing_plan_checkpoint_path():
+    flow = load(BASE / "flows/build-doctrine.toml")
+    steps = {step["id"]: step for step in flow["steps"]}
+    assert steps["sections"]["filesystem_operation"]["kind"] == "markdown_sections"
+    assert steps["sections"]["filesystem_operation"]["source_path"] == "${input.source.path}"
+    assert steps["section_analysis"]["foreach"] == "steps.sections.output.sections"
+    assert steps["section_analysis"]["iteration_id"] == "${item.id}"
+    assert steps["plan"]["output"].endswith("/plan.json")
+    assert steps["plan"]["vars"]["section_analyses"] == "${steps.section_analysis.output.iterations}"
+    assert steps["plan"]["vars"]["sections"] == "${steps.sections.output}"
+    assert steps["validate_plan"]["json_inputs"]["plan"]["path"] == steps["plan"]["output"]
+    assert steps["manifest"]["json_inputs"]["plan"]["path"].endswith("/validated-plan.json")
