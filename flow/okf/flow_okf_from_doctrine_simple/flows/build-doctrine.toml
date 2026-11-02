@@ -77,6 +77,7 @@ overwrite_output = false
 kind = "assemble_doctrine_plan"
 input = "outline"
 results_step = "plan_details"
+batches_step = "plan_batches"
 [steps.json_inputs.outline]
 path = "flow/okf/flow_okf_from_doctrine_simple/state/modules/${input.source.path}/outline.json"
 
