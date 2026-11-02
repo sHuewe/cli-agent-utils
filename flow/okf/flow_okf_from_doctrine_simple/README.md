@@ -114,3 +114,22 @@ The existing final `outline.json`, `plan.json`, validation and concept
 checkpoints retain their locations. New intermediates are
 `outline-tasks.json` and `local-outline-s001.json` (one per section).
 The core extension is required before this flow can run.
+
+## Migration from the flat local-outline result
+
+The original `sections.json`, `section-*.json`, `outline-tasks.json` and
+`local-outline-*.json` remain valid and should **not** be deleted. After
+upgrading cli-agent and this flow, delete the affected doctrine's stale
+`outline.json`, `plan-batches.json`, `plan-detail-*.json`, `plan.json`,
+`validated-plan.json`, `navigation.json` and `manifest.json` if present.
+The new `outline-candidates.json`, `taxonomy-profile.json`, `taxonomy.json`,
+`consolidation-batches.json` and `consolidation-c*.json` are created by
+the new implementation. Remove them too when intentionally resetting a
+failed consolidation.
+
+**Never automatically remove user-authored OKF files.** If concepts or index
+files were already written from the old plan, review/backup the affected
+`okf-simple/doctrines/<source-slug>/` directory separately: removing
+only JSON checkpoints does not revert those actual generated files or
+per-concept subflow checkpoints. Restarting with these outputs still present
+can reuse stale concepts or produce path collisions.
