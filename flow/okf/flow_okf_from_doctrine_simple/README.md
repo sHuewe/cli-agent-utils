@@ -10,10 +10,14 @@ batches, topic assignment, and per-item coverage counting.
 
 Stages:
 1. Deterministically inventory Markdown doctrines.
-2. Per doctrine, **read/understand the whole source in one model step**
-   when feasible, or read successive bounded ranges within that SAME
-   conversation when necessary. Return a concise source-grounded concept plan
-   and optional semantic subfolders.
+2. Per doctrine, the runner determines contiguous, heading-aware source sections.
+   Doctrines up to 30,000 characters use the original direct whole-document
+   planning route. Longer doctrines receive a compact section analysis per
+   approximately 30,000-character range (no atomic knowledge-item routing);
+   each analysis reads the exact original source lines and has an independent
+   JSON checkpoint. One global planner then synthesizes the complete
+   doctrine concept plan from all section analyses, with source line references.
+   The planner rejects missing/incomplete sections rather than claiming coverage.
 3. Build each planned concept from bounded original evidence. Verify every
    concept; repair **only** actionable concept defects. Planning/evidence
    defects are reported separately, not silently treated as missing text.
@@ -42,8 +46,9 @@ The runner must contain the following already-merged changes:
 - [cli-agent PR #237](https://github.com/sHuewe/cli-agent/pull/237): pre-write OKF plan validation.
 - [cli-agent PR #238](https://github.com/sHuewe/cli-agent/pull/238): deterministic manifest creation.
 - [cli-agent PR #239](https://github.com/sHuewe/cli-agent/pull/239): binding source path/slug to inventory and validating theme links against current manifests.
+- [cli-agent PR #273](https://github.com/sHuewe/cli-agent/pull/273): deterministic heading-aware Markdown section ranges.
 
-These are available in `cli-agent` main after PR #239; an older runner will reject the simplified flow.
+The adaptive version requires the runner containing PR #273 in addition to those previous changes.
 
 The inventory source.slug is authoritative; unlike LLM kebab normalization
 it distinguishes source paths such as `a/b.md` and `a-b.md`.
@@ -57,10 +62,11 @@ under flow/okf/flow_okf_from_doctrine_simple/state/.
 
 ## Limitations and evaluation
 
-* A model may still hit file/tool/model token limits on unusually long
-  documents. No blanket promise to fit all sources in one prompt.
-  In that case it must read bounded successive ranges or return
-  needs_attention; it must never silently claim full coverage.
+* A model may still hit tool/model token limits for a long individual section.
+  The deterministic section operation fails rather than silently truncating
+  documents exceeding its supported range and size limits. Section analysis
+  returns needs_attention rather than silently claiming full coverage.
+  A long global plan may also be expensive when many section summaries accrue.
 * A concept plan is intentionally NOT a formally exhaustive registry of
   every independent normative statement. Compare completeness via actual
   domain questions, source-section sampling and reference checks.
