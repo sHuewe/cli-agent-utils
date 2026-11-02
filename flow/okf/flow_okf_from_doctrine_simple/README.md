@@ -15,10 +15,10 @@ Stages:
    planning route. Longer doctrines receive a compact section analysis per
    approximately 30,000-character range (no atomic knowledge-item routing);
    each analysis reads the exact original source lines and has an independent
-   JSON checkpoint. One global planner synthesizes the document-wide concept
-   structure (IDs, paths, folders and section associations) without emitting
-   detailed source ranges. A deterministic step divides these concepts into
-   groups of three. Each group gets its own evidence-planning model call and
+   JSON checkpoint. Instead of one large global outline request, a bounded
+   model request proposes concepts for each section. The runner merges repeated
+   semantic topic_keys into a flat, document-wide concept outline without another
+   model call. A deterministic step divides these concepts into groups of three. Each group gets its own evidence-planning model call and
    checkpoint. The runner combines complete, validated groups into the
    original plan.json without another model call. Missing/inconsistent evidence
    blocks subsequent writing.
@@ -99,3 +99,18 @@ but the newly introduced preceding stages may be executed unless their
 own checkpoints already exist. Do not assume that a resumed run skips
 all newly introduced upstream work. Do not merge the utils PR before
 its companion cli-agent PR adds the deterministic JSON operations.
+
+## Section-local outline consolidation
+
+The single expensive outline LLM request is replaced by checkpointed
+`local_outlines` calls (one per existing section analysis, or one for a short
+direct document). The runner assembles `outline.json` deterministically
+using exact `topic_key` matches. **Different keys referring to the same
+semantic topic are not automatically recognized as duplicates.** This is
+a deliberate trade-off to eliminate the document-wide model call; review
+the output for near-duplicates and missed cross-section relationships.
+
+The existing final `outline.json`, `plan.json`, validation and concept
+checkpoints retain their locations. New intermediates are
+`outline-tasks.json` and `local-outline-s001.json` (one per section).
+The core extension is required before this flow can run.
