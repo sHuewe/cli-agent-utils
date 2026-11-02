@@ -143,9 +143,9 @@ def test_theme_membership_checked_on_disk_and_at_root():
 def test_plans_are_deterministically_validated_before_writes():
     build = load(BASE / "flows/build-doctrine.toml")
     assert build["steps"][8]["json_operation"]["kind"] == "validate_okf_plan"
-    assert build["steps"][6]["json_operation"]["plan_kind"] == "doctrine"
-    assert build["steps"][6]["json_operation"]["expected_source_path"] == "${input.source.path}"
-    assert build["steps"][6]["json_operation"]["expected_source_slug"] == "${input.source.slug}"
+    assert build["steps"][8]["json_operation"]["plan_kind"] == "doctrine"
+    assert build["steps"][8]["json_operation"]["expected_source_path"] == "${input.source.path}"
+    assert build["steps"][8]["json_operation"]["expected_source_slug"] == "${input.source.slug}"
     assert build["steps"][9]["foreach"] == "steps.validate_plan.output.concepts"
     integrate = load(BASE / "flows/integrate.toml")
     assert integrate["steps"][1]["json_operation"]["kind"] == "validate_okf_plan"
