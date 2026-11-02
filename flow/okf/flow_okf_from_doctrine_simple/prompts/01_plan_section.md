@@ -12,7 +12,7 @@ task.source_path with bounded os__read_file requests. Otherwise use ONLY
 task.analysis, including its topics and warnings. Do not use file tools
 for non-direct tasks. Never invent information or source references.
 
-Each concept must have a stable lowercase kebab-case topic_key describing
+Each concept MUST contain nonempty string fields topic_key, title and description. tags MUST be an array of strings (use [] if none). Keep title and description concise, with title at most 200 characters and description at most 1000 characters. Avoid nested objects in these fields.\n\nEach concept must have a stable lowercase kebab-case topic_key describing
 its semantics, not its location or section number. Identical conceptual
 topics across separate sections MUST use the same topic_key so they can
 be joined by the runner. Prefer established domain terminology and
