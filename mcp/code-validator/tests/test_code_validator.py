@@ -714,6 +714,10 @@ def test_maven_uses_prepared_cache_selected_by_dependency_key(tmp_path: Path) ->
             "org.apache.maven.plugins:maven-surefire-plugin:3.5.0",
         ),
         (
+            "[ERROR] Could not resolve dependencies for project org.example:app:jar:1",
+            "",
+        ),
+        (
             "[ERROR] Some dependencies were not available: "
             "org.example:widget:jar:1.2.3",
             None,
@@ -765,7 +769,10 @@ def test_maven_stale_cache_user_diagnostics(
         return
     assert result["reason"] == "dependency_cache_may_be_stale"
     assert entry.key in result["message_to_user"]
-    assert expected_artifact in result["message_to_user"]
+    if expected_artifact:
+        assert expected_artifact in result["message_to_user"]
+    else:
+        assert "Fehlendes Maven-Artefakt:" not in result["message_to_user"]
     assert "prepare-maven" in result["message_to_user"]
 
 
