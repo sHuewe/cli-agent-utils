@@ -23,6 +23,35 @@ from .code_validator_redaction import (
 from .code_validator_snapshot import create_project_snapshot
 from .code_validator_types import CodeValidationError, CodeValidatorSettings, PublicValidationError
 
+# Only report Maven coordinates when the failure text identifies the artifact.
+# Do not guess from the project's own GAV or echo arbitrary build-log lines.
+_MAVEN_COORDINATE_PART = r"[A-Za-z0-9_.-]{1,128}"
+_MAVEN_ARTIFACT_COORDINATE = (
+    rf"{_MAVEN_COORDINATE_PART}(?::{_MAVEN_COORDINATE_PART}){{3,4}}"
+)
+_MAVEN_PLUGIN_COORDINATE = (
+    rf"{_MAVEN_COORDINATE_PART}(?::{_MAVEN_COORDINATE_PART}){{2}}"
+)
+_MAVEN_MISSING_ARTIFACT_PATTERNS = (
+    re.compile(
+        rf"(?:could not find artifact|failed to read artifact descriptor for|"
+        rf"the following artifacts could not be resolved:|"
+        rf"the following artifacts are missing:|the artifact)\s+"
+        rf"(?P<artifact>{_MAVEN_ARTIFACT_COORDINATE})(?![A-Za-z0-9_.:-])",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"(?P<artifact>{_MAVEN_ARTIFACT_COORDINATE})"
+        rf"\s+was not cached in the local repository",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"plugin\s+(?P<artifact>{_MAVEN_PLUGIN_COORDINATE})"
+        rf"\s+or one of its dependencies could not be resolved",
+        re.IGNORECASE,
+    ),
+)
+
 _JAVA_SELECTOR = re.compile(r"^[A-Za-z0-9_.$*#\[\],-]+$")
 _MAX_SELECTOR_CHARS = 512
 _GRADLE_MIN_SELECTOR_VERSION = (8, 3)
@@ -317,6 +346,25 @@ class DockerCodeValidator:
             for line in output.split("\n")
         )
         return self._bounded(output).strip()
+
+    @staticmethod
+    def _maven_missing_artifact(output: str) -> str | None:
+        """Extract a Maven coordinate only from a known missing-artifact diagnostic."""
+        for pattern in _MAVEN_MISSING_ARTIFACT_PATTERNS:
+            match = pattern.search(output)
+            if match is not None:
+                return match.group("artifact")
+        return None
+
+    @classmethod
+    def _maven_cache_user_diagnostics(
+        cls, cache_key: str | None, output: str
+    ) -> str:
+        lines = [f"Maven-Cache-ID: {cache_key or 'nicht verfügbar'}"]
+        artifact = cls._maven_missing_artifact(output)
+        if artifact is not None:
+            lines.append(f"Fehlendes Maven-Artefakt: {artifact}")
+        return "\n".join(lines)
 
     @staticmethod
     def _dependency_refresh_message(framework: str, output: str) -> str | None:
@@ -916,6 +964,14 @@ class DockerCodeValidator:
                         "weil benötigte Dependencies fehlen oder der Cache "
                         "unvollständig bzw. veraltet ist."
                     )
+                    if framework == "maven":
+                        refresh_message = (
+                            self._maven_cache_user_diagnostics(
+                                dependency_cache_key, output
+                            )
+                            + "\n\n"
+                            + refresh_message
+                        )
                     if redactor.suppresses_output:
                         result_payload["message_to_user"] += (
                             "\n\nEmpfohlene Maßnahme: " + refresh_message
@@ -1109,8 +1165,11 @@ class DockerCodeValidator:
                         ),
                         "message_to_user": (
                             "Maven-Dependencies sind noch nicht vorbereitet. Führe "
-                            "außerhalb des Agents 'cli-agent-dependency-cache prepare-maven "
-                            "<projekt>' aus und wiederhole den Test."
+                            f"Maven-Cache-ID: {entry.key}\n"
+                            f"Cache-Verzeichnis: {entry.directory}\n"
+                            "Führe außerhalb des Agents "
+                            "'cli-agent-dependency-cache prepare-maven <projekt>' "
+                            "aus und wiederhole den Test."
                         ),
                     }
                 dependency_repository = entry.repository
@@ -1220,8 +1279,11 @@ class DockerCodeValidator:
                     ),
                     "message_to_user": (
                         "Maven-Dependencies sind noch nicht vorbereitet. Führe "
-                        "außerhalb des Agents 'cli-agent-dependency-cache prepare-maven "
-                        "<projekt>' aus und wiederhole den Build."
+                        f"Maven-Cache-ID: {entry.key}\n"
+                        f"Cache-Verzeichnis: {entry.directory}\n"
+                        "Führe außerhalb des Agents "
+                        "'cli-agent-dependency-cache prepare-maven <projekt>' "
+                        "aus und wiederhole den Build."
                     ),
                 }
             dependency_repository = entry.repository
