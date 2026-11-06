@@ -696,6 +696,99 @@ def test_maven_uses_prepared_cache_selected_by_dependency_key(tmp_path: Path) ->
     assert "/tmp/m2" in transfer
 
 
+@pytest.mark.parametrize(
+    ("maven_output", "expected_artifact"),
+    [
+        (
+            "[ERROR] Could not find artifact org.example:widget:jar:1.2.3 in central",
+            "org.example:widget:jar:1.2.3",
+        ),
+        (
+            "[ERROR] Failed to read artifact descriptor for "
+            "org.example:widget:jar:2.0",
+            "org.example:widget:jar:2.0",
+        ),
+        (
+            "[ERROR] Plugin org.apache.maven.plugins:maven-surefire-plugin:3.5.0 "
+            "or one of its dependencies could not be resolved",
+            "org.apache.maven.plugins:maven-surefire-plugin:3.5.0",
+        ),
+        (
+            "[ERROR] Some dependencies were not available: "
+            "org.example:widget:jar:1.2.3",
+            None,
+        ),
+    ],
+)
+@pytest.mark.parametrize("operation", ["build", "test"])
+def test_maven_stale_cache_user_diagnostics(
+    tmp_path: Path, maven_output: str, expected_artifact: str | None,
+    operation: str,
+) -> None:
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    cache_root = tmp_path / "maven-cache"
+    entry = cache_entry(cache_root, tmp_path)
+    entry.repository.mkdir(parents=True)
+    (entry.repository / "example.jar").write_bytes(b"jar")
+    write_ready_metadata(entry.directory, entry.key)
+
+    class FailingMavenBackend(FakeBackend):
+        def run(self, arguments, *, timeout, input_bytes=None):
+            args = list(arguments)
+            self.calls.append((args, input_bytes))
+            if args[0] == "inspect":
+                return DockerCommandResult(0, inspect_payload(), "")
+            if args[0] == "exec" and "cat" in args:
+                return DockerCommandResult(0, maven_output, "")
+            if args[0] == "exec" and "sh" in args and "-s" in args:
+                return DockerCommandResult(1, "", "")
+            return DockerCommandResult(0, "ok", "")
+
+    validator = DockerCodeValidator(
+        tmp_path,
+        ValidatorSettings(
+            python_image=PINNED_PYTHON,
+            maven_image=PINNED_MAVEN,
+            gradle_image=PINNED_GRADLE,
+            maven_cache_root=cache_root,
+        ),
+        backend=FailingMavenBackend(),
+    )
+    result = (
+        validator.run_maven_build(".")
+        if operation == "build"
+        else validator.run_java_tests(".", build_system="maven")
+    )
+    if expected_artifact is None:
+        # Unrecognized errors must not be diagnosed as missing cached artifacts.
+        assert result.get("reason") != "dependency_cache_may_be_stale"
+        return
+    assert result["reason"] == "dependency_cache_may_be_stale"
+    assert entry.key in result["message_to_user"]
+    assert expected_artifact in result["message_to_user"]
+    assert "prepare-maven" in result["message_to_user"]
+
+
+def test_maven_missing_cache_user_diagnostics_include_id(tmp_path: Path) -> None:
+    (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
+    cache_root = tmp_path / "maven-cache"
+    validator = DockerCodeValidator(
+        tmp_path,
+        ValidatorSettings(
+            python_image=PINNED_PYTHON,
+            maven_image=PINNED_MAVEN,
+            gradle_image=PINNED_GRADLE,
+            maven_cache_root=cache_root,
+        ),
+        backend=FakeBackend(),
+    )
+    for run in (validator.run_maven_build, validator.run_java_tests):
+        result = run(".")
+        assert result["reason"] == "dependencies_not_prepared"
+        assert result["dependency_cache_key"] in result["message_to_user"]
+        assert "prepare-maven" in result["message_to_user"]
+
+
 def test_maven_reports_missing_prepared_dependency_cache(tmp_path: Path) -> None:
     (tmp_path / "pom.xml").write_text("<project/>", encoding="utf-8")
     cache_root = tmp_path / "dependency-cache"
