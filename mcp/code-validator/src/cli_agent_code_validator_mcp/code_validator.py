@@ -373,6 +373,8 @@ class DockerCodeValidator:
             "maven": (
                 "could not resolve dependencies",
                 "could not find artifact",
+                "failed to read artifact descriptor for",
+                "or one of its dependencies could not be resolved",
                 "was not cached in the local repository",
                 "cannot access",
                 "plugin or one of its dependencies could not be resolved",
