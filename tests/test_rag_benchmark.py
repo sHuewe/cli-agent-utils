@@ -3,21 +3,25 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-import importlib.util
+import ast
 import json
 from pathlib import Path
-from types import SimpleNamespace
-import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "flow/rag/generate_goldens/scripts/benchmark.py"
-SPEC = importlib.util.spec_from_file_location("rag_benchmark", SCRIPT)
-assert SPEC is not None and SPEC.loader is not None
-bm = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = bm
-SPEC.loader.exec_module(bm)
+NOTEBOOK = ROOT / "flow/rag/generate_goldens/benchmark.ipynb"
+BENCHMARK_SCRIPT = ROOT / "flow/rag/generate_goldens/scripts/benchmark.py"
+NOTEBOOK_DATA = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
+
+# Load notebook library cells only; never execute costly SDK/Judge cells in CI.
+bm = ModuleType("rag_benchmark")
+for cell in NOTEBOOK_DATA["cells"]:
+    if cell["cell_type"] == "code" and (
+        "benchmark-library" in cell.get("metadata", {}).get("tags", [])
+    ):
+        exec(compile("".join(cell["source"]), f"notebook:{cell['id']}", "exec"), bm.__dict__)
 
 
 def golden(gid="b0001-g0001"):
@@ -163,8 +167,12 @@ def test_evaluate_true_retrieval_context_and_stale_context_rejected(tmp_path):
         agent_factory=lambda: FakeAgent([]), timeout=5, fresh=False,
     ))
     cases = []
+    response = bm.read_json(
+        bm.case_path(tmp_path, goldens[0]["id"]), max_bytes=bm.MAX_CASE_BYTES
+    )
     contexts = {"b0001-g0001": {
-        "runner_sha256": "run", "chunks": ["Actual RAG result"]
+        "runner_sha256": "run", "response_sha256": bm.digest(response),
+        "chunks": ["Actual RAG result"]
     }}
     result = bm.evaluate_cases(
         goldens, output=tmp_path, runner_sha="run", threshold=0.7,
@@ -210,24 +218,71 @@ def test_error_does_not_reuse_or_claim_complete(tmp_path):
     assert summary["skipped"] == 1
 
 
-def test_cli_validation():
-    with pytest.raises(SystemExit):
-        bm.parse_args(["--threshold", "1.5"])
-    with pytest.raises(SystemExit):
-        bm.parse_args(["--approve-tool", "bad*tool"])
-    assert bm.parse_args(["--phase", "run", "--limit", "3"]).limit == 3
+def test_notebook_replaces_script_and_has_separate_phases():
+    assert not BENCHMARK_SCRIPT.exists()
+    assert NOTEBOOK_DATA["nbformat"] == 4
+    ids = [cell["id"] for cell in NOTEBOOK_DATA["cells"]]
+    assert "config" in ids
+    assert "sdk-run" in ids
+    assert "evaluate" in ids
+    assert ids.index("sdk-run") < ids.index("evaluate")
+    for cell in NOTEBOOK_DATA["cells"]:
+        if cell["cell_type"] == "code":
+            compile(
+                "".join(cell["source"]), f"notebook:{cell['id']}", "exec",
+                flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
+            )
+    assert any("await run_cases" in "".join(c["source"])
+               for c in NOTEBOOK_DATA["cells"] if c["id"] == "sdk-run")
+    assert any("evaluate_cases(" in "".join(c["source"])
+               for c in NOTEBOOK_DATA["cells"] if c["id"] == "evaluate")
 
 
 def test_observed_contexts_validated(tmp_path):
     path = tmp_path / "observed.json"
     path.write_text(json.dumps({"b0001-g0001": {
-        "runner_sha256": "run", "chunks": ["real first chunk"]
+        "runner_sha256": "run", "response_sha256": "0" * 64,
+        "chunks": ["real first chunk"]
     }}), encoding="utf-8")
     assert bm.validate_actual_contexts(path)["b0001-g0001"]["chunks"] == [
         "real first chunk"
     ]
     path.write_text(json.dumps({"b0001-g0001": {
-        "runner_sha256": "run", "chunks": [123]
+        "runner_sha256": "run", "response_sha256": "0" * 64,
+        "chunks": [123]
     }}), encoding="utf-8")
     with pytest.raises(ValueError):
         bm.validate_actual_contexts(path)
+
+
+
+def test_observed_contexts_bound_to_exact_execution_even_after_fresh(tmp_path):
+    goldens = [golden()]
+    agent_factory = lambda: FakeAgent([])
+    asyncio.run(bm.run_cases(
+        goldens, output=tmp_path, runner_sha="run",
+        agent_factory=agent_factory, timeout=5, fresh=False,
+    ))
+    answer_file = bm.case_path(tmp_path, goldens[0]["id"])
+    first = bm.read_json(answer_file, max_bytes=bm.MAX_CASE_BYTES)
+    old_contexts = {"b0001-g0001": {
+        "runner_sha256": "run",
+        "response_sha256": bm.digest(first),
+        "chunks": ["Captured before rerun"],
+    }}
+    assert first["execution_id"]
+    asyncio.run(bm.run_cases(
+        goldens, output=tmp_path, runner_sha="run",
+        agent_factory=agent_factory, timeout=5, fresh=True,
+    ))
+    second = bm.read_json(answer_file, max_bytes=bm.MAX_CASE_BYTES)
+    assert second["execution_id"] != first["execution_id"]
+    assert bm.digest(second) != old_contexts["b0001-g0001"]["response_sha256"]
+    with pytest.raises(ValueError, match="Stale retrieval"):
+        bm.evaluate_cases(
+            goldens, output=tmp_path, runner_sha="run",
+            judge_model="fake", threshold=0.7, fresh=False,
+            retrieval_contexts=old_contexts,
+            testcase_factory=lambda **kw: SimpleNamespace(**kw),
+            metrics_factory=lambda **kw: [FakeMetric()],
+        )

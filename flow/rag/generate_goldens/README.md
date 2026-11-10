@@ -78,27 +78,31 @@ generated data should be inspected before using it as ground truth.
 JSON outputs provide step-level checkpoints. Interrupted runs can be
 resumed, but the flow itself is sequential (no parallel calls).
 
-## Evaluate the generated goldens with cli-agent and DeepEval
+## Evaluate the generated goldens in Jupyter
 
-After running the golden generator and export.py, run the SDK-based
-end-to-end evaluator (no retrieval hints are passed to cli-agent):
+After generating and exporting goldens with `export.py`, open the
+**[SDK + DeepEval benchmark notebook](benchmark.ipynb)** from the workspace
+root. Configure the model, paths, number of questions, judge and evaluation
+threshold in the notebook's configuration cell. SDK calls and DeepEval scores
+run in **separate cells**, making reruns and exploratory analysis convenient.
 
-~~~sh
-python -m pip install deepeval
-python flow/rag/generate_goldens/scripts/benchmark.py \
-  --phase all --goldens rag-goldens/goldens.json --workspace .
-~~~
+```bash
+python -m pip install cli-agent deepeval jupyterlab ipykernel
+jupyter lab flow/rag/generate_goldens/benchmark.ipynb
+```
 
-The script creates **new isolated cli-agent SDK sessions for each question**,
-checkpoints answers and scores, and reports per-metric mean scores and sample
-counts in rag-goldens/evaluation/summary.json.
+The notebook runs each question in a **fresh cli-agent SDK session**, saves
+checkpointed answers and scores per golden, and provides tables for per-case
+status and per-metric averages. It sends **only the golden question** to the
+agent; source evidence and reference answers remain private to the judge.
 
-By default DeepEval scores answer correctness and relevancy. Faithfulness and
-contextual retrieval metrics require externally instrumented, **actual**
-retrieved chunks; they are deliberately not inferred from reference evidence.
+DeepEval scores answer correctness and relevance by default. Retrieval
+metrics require separately instrumented, **actual** retrieved chunks tied
+to the specific response checkpoint, never the reference quotations.
 
-See [scripts/README-benchmark.md](scripts/README-benchmark.md) for configuration,
-installation, CLI options, checkpoint behavior and evaluation caveats.
+See [the notebook instructions](scripts/README-benchmark.md) for
+configuration, checkpoint handling, retrieval-context instrumentation
+and privacy caveats.
 
 ## Limitations and safety considerations
 

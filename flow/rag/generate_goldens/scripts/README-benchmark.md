@@ -1,142 +1,113 @@
-# End-to-end cli-agent SDK / DeepEval RAG benchmark
+# RAG Golden Benchmark · Jupyter Notebook
 
-This benchmark evaluates the **real agent pipeline** rather than its golden generator.
-It reads the source-verified golden JSON written by export.py and asks each
-question through cli-agent's Python SDK. Only golden.input is sent to
-Agent.ask(): **no reference answer, evidence quotation, or source path is
-injected into the evaluated agent**.
+The executable **[benchmark.ipynb](../benchmark.ipynb)** replaces the former
+`scripts/benchmark.py`. It uses `AgentBuilder` from **cli-agent's Python SDK**
+to ask the real RAG each golden question and DeepEval to score the answers.
+There is no separate Python benchmark script to run.
 
-Two independently resumable phases:
+## Setup
 
-1. **SDK run** — fresh AgentBuilder session for every golden. Collect answer,
-   tool-call names/statuses and durations, elapsed time and provider-reported
-   token usage. Save individual JSON checkpoints under
-   rag-goldens/evaluation/responses/.
-2. **DeepEval** — score each saved response against the independently generated
-   expected_output. By default:
-   - GEval AnswerCorrectness checks factual accuracy, completeness and
-     multi-document reasoning.
-   - AnswerRelevancyMetric checks whether the answer addresses the question.
-   - Only with **real observed retrieval chunks**, optionally score
-     FaithfulnessMetric, ContextualRecallMetric and ContextualPrecisionMetric.
-   Save scores and reasons per golden and aggregate into summary.json.
+Open a Jupyter kernel with Python 3.11+ and the required packages:
 
-## Installation
+```bash
+python -m pip install "cli-agent" "deepeval" "jupyterlab" "ipykernel"
+jupyter lab flow/rag/generate_goldens/benchmark.ipynb
+```
 
-Python 3.11+ with cli-agent and DeepEval:
+Launch Jupyter **from your RAG workspace root** so `WORKSPACE = Path.cwd()`
+resolves to the directory with `rag-goldens/goldens.json`. You can also
+edit `WORKSPACE` explicitly in the notebook configuration cell.
 
-~~~sh
-python -m pip install cli-agent deepeval
-~~~
+For Chroma vector retrieval, install `cli-agent[rag]` and configure the
+existing collection. For OKF use the normal cli-agent OKF config.
+The notebook never builds or updates the knowledge database.
 
-For Chroma vector retrieval, install cli-agent[rag] and configure your
-existing collection. For OKF knowledge configure the normal cli-agent OKF
-settings. This benchmark does NOT build or alter the RAG index.
+DeepEval needs a separately configured LLM judge, often through
+`OPENAI_API_KEY`. `JUDGE_MODEL` selects another supported DeepEval model.
+If relevant, review the judge provider's confidentiality and data-handling
+requirements before submitting any references or actual answers.
 
-DeepEval's LLM-as-a-judge metrics require a separately configured judge
-model, often via OPENAI_API_KEY. Use --judge-model to select a judge
-supported by your DeepEval installation. The judge is independent of the
-cli-agent model; sending reference answers and actual answers to the judge
-may have confidentiality implications. Review DeepEval's environment and
-privacy settings before using sensitive documents.
+## Notebook cell sequence
 
-## Examples
+1. **Configuration:** set `WORKSPACE`, `GOLDENS_FILE`, `OUTPUT_DIR`,
+   `CONFIG_FILE`, `ADMIN_CONFIG_FILE`, exact `APPROVE_TOOLS`, `MAX_CASES`,
+   `SDK_TIMEOUT_SECONDS`, `JUDGE_MODEL` and `THRESHOLD`. The default
+   `MAX_CASES = 3` provides a small smoke test.
+2. **Load goldens:** obtain the model config and hashed fingerprint.
+3. **SDK run:** `await run_cases(...)` executes only the golden **input**
+   against a fresh cli-agent SDK session per question, saving the answer,
+   tool-call metadata and reported token counts into
+   `rag-goldens/evaluation/responses/<id>.json`.
+4. **Answers preview:** inspect answer excerpts and the individual response
+   fingerprint. Reference facts are **never** passed to the tested agent.
+5. **Optional observed retrieval:** supply an external JSON file containing
+   genuinely retrieved chunks from that exact SDK execution.
+6. **DeepEval:** `evaluate_cases(...)` scores the saved answers and writes
+   `scores/<id>.json` and `summary.json`, without rerunning SDK queries.
+7. **Summary:** display a table of metric mean scores and sample counts,
+   completed cases, passes, failures and technical errors.
 
-Execute all goldens with your existing cli-agent config and optional admin
-config (from workspace root):
+## Metrics
 
-~~~sh
-python flow/rag/generate_goldens/scripts/benchmark.py \
-  --phase all \
-  --goldens rag-goldens/goldens.json \
-  --workspace . \
-  --config config.toml \
-  --admin-config admin_config.toml \
-  --threshold 0.7
-~~~
+**Always available** with a configured judge:
 
-Smoke-test three goldens, then evaluate the stored responses:
+- `GEval` / AnswerCorrectness: semantic completeness and correctness
+  against `expected_output`, emphasizing multi-document dependencies.
+- `AnswerRelevancyMetric`: relevance to the question.
 
-~~~sh
-python flow/rag/generate_goldens/scripts/benchmark.py \
-  --phase run --limit 3 --config config.toml --workspace .
+**Optional, only with observed retrieval passages:**
 
-python flow/rag/generate_goldens/scripts/benchmark.py \
-  --phase evaluate --limit 3 --config config.toml --workspace .
-~~~
+- `FaithfulnessMetric`
+- `ContextualRecallMetric`
+- `ContextualPrecisionMetric`
 
-- --phase run: execute only cli-agent; DeepEval is not imported.
-- --phase evaluate: score only existing responses without running cli-agent.
-- --phase all: run then evaluate sequentially (default).
-- --limit N: process just first N goldens.
-- --timeout 600: limit each agent.ask() to 600 seconds. The start/close
-  operations are not included in that timeout.
-- --fresh: rerun even if compatible checkpoints exist.
-- --approve-tool server__tool: exact-name preapproval, may be repeated;
-  the SDK still enforces admin policy and capability restrictions.
-- Default output directory: rag-goldens/evaluation.
-- Exit code 1: at least one failed/unevaluated case. Low metric scores are
-  recorded as failures in summary.json but do not signal an execution error.
+The SDK returns tool-call names, statuses and durations, **not the actual
+retrieved RAG chunks**. The notebook therefore does not invent
+`retrieval_context` using the golden's `evidence` or
+`deepeval-goldens.json.context` fields. Such a substitution would falsely
+measure ideal reference context rather than the real retriever.
 
-Without --config the SDK uses the standard user config, and without
---admin-config it loads the normal machine-wide admin policy. If the admin
-file does not exist, the restrictive SDK default policy applies. The agent
-is configured with workspace_access="none" for evaluation to avoid granting
-arbitrary workspace tool reads; configure the read-only knowledge backend
-(OKF or vector) explicitly in the project config.
+## Observed retrieval JSON (optional)
 
-Each golden is handled by a fresh Agent instance (no conversation, evidence
-or prior approval leakage). Failed calls keep an error checkpoint containing
-only the error type, never raw exception text.
+If your retriever produces separate trace data, set
+`OBSERVED_RETRIEVAL_FILE` to a JSON document like:
 
-## Reproducibility and resuming
-
-Compatible response checkpoints are reused automatically. The fingerprint
-includes golden content, project and admin config hashes, the optional
-workspace .cli-agent/project.toml, workspace path, preapproved tool names
-and runner version. Scoring checkpoints additionally track answer hash,
-judge identity, threshold and observed retrieval chunks. Use --fresh or
-a new output directory after changing the *underlying knowledge corpus*,
-model weights or live MCP implementations: these external changes are not
-detectable by configuration hashing alone.
-
-Evaluation JSON may contain source-derived or sensitive answers, so keep
-the output directory out of public git commits.
-
-## Optional retrieval metrics (not automatic)
-
-AgentResult from cli-agent SDK exposes tool-call names/statuses but not
-the exact retrieved RAG passages. Retrieval metrics MUST NOT be calculated
-from golden.evidence quotes or deepeval-goldens.json context, as those are
-REFERENCE evidence rather than actual results.
-
-If your RAG backend is instrumented, supply a JSON mapping of *observed*
-chunks generated for the same run:
-
-~~~json
+```json
 {
   "b0001-g0001": {
-    "runner_sha256": "the full runner fingerprint printed at launch",
-    "chunks": [
-      "first chunk actually retrieved for this question",
-      "second chunk actually retrieved for this question"
-    ]
+    "runner_sha256": "<full RUNNER_SHA from the notebook>",
+    "response_sha256": "<response_sha256 from the answer-preview cell>",
+    "chunks": ["real retrieved chunk 1", "real retrieved chunk 2"]
   }
 }
-~~~
+```
 
-Pass --retrieval-context-file observed.json during --phase evaluate or all.
-If the observed retrieval context is empty, only answer metrics are run.
-When no such file is provided, faithfulness and contextual retrieval metrics
-remain disabled. Each metric in the summary reports a score **and sample
-count**, so missing retrieval coverage is visible.
+The `response_sha256` includes a unique `execution_id` generated for each
+successful SDK run. Changing a question **or rerunning the same question**
+invalidates older captured retrieval chunks. A mismatched fingerprint is a
+hard evaluation error, not a silently ignored context.
 
-Source hit-rate or MRR needs original source IDs from the retriever; the SDK
-tool-call summaries alone do not provide this.
+If the observed chunk list is empty, the notebook skips retrieval-dependent
+metrics for that particular case. The resulting per-metric sample counts
+show how many cases have actual retrieval context.
 
-## Interpretation
+## Checkpoints and repeatability
 
-This evaluates the full question-answering behavior but by default cannot
-separate retrieval failures from reasoning failures. Judge scores have
-variance; keep the judge model and metric settings stable when comparing
-runs. Human review of a subset of goldens and evaluations remains useful.
+The notebook reuses compatible response and evaluation checkpoints, allowing
+you to change the judge without rerunning the RAG. Set `FRESH_SDK = True`
+to force new SDK answers, or `FRESH_EVALUATION = True` to force new judge
+scores. Change `OUTPUT_DIR` to compare configurations independently.
+
+Configuration hashes account for user/admin config and the workspace's
+`.cli-agent/project.toml`, but **cannot detect changes to a live vector
+database, OKF documents, model weights or external MCP tools**. Rerun
+fresh after such changes.
+
+Each golden gets an isolated new agent session; no previous conversation
+history or approval state leaks between questions. Errors are recorded
+by type without raw exception text. For confidentiality, do not commit the
+output JSON containing source-derived answers or judge explanations.
+
+The notebook has static mock-based contract tests in
+`tests/test_rag_benchmark.py`; actual SDK and DeepEval model calls require
+your live knowledge backend and judge credentials.
