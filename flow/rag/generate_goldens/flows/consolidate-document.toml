@@ -29,7 +29,6 @@ response_format = "json"
 source = "${input.source}"
 batch = "${item}"
 layer = "section"
-profile_path = "null"
 
 # Further batching prevents the final per-document call from receiving
 # all raw scans or an unbounded number of partial profiles.
