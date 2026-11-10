@@ -387,3 +387,82 @@ def test_source_path_mismatch_not_guessed_from_basename():
         "selected": [{"source": "a.md"}, {"source": "b.md"}],
     }}
     assert bm.document_recall(g, response)["candidate_recall"] == 0.0
+
+def test_capture_setting_changes_fingerprint_and_invalidates_checkpoints(tmp_path):
+    # Enabling trace content must re-run the SDK and DeepEval, rather than
+    # silently reusing an earlier answer with metadata-only Knowledge data.
+    config = tmp_path / "config.toml"
+    admin = tmp_path / "admin.toml"
+    config.write_text("", encoding="utf-8")
+    admin.write_text("", encoding="utf-8")
+    base = dict(
+        config=config, admin=admin, workspace=tmp_path, approve_tools=(),
+    )
+    metadata_sha = bm.run_fingerprint(**base, capture_content=False)
+    content_sha = bm.run_fingerprint(**base, capture_content=True)
+    assert metadata_sha != content_sha
+    assert metadata_sha == bm.run_fingerprint(**base, capture_content=False)
+    assert content_sha == bm.run_fingerprint(**base, capture_content=True)
+
+    goldens = [golden()]
+    seen = []
+    metadata_stats = asyncio.run(bm.run_cases(
+        goldens, output=tmp_path, runner_sha=metadata_sha,
+        agent_factory=lambda: FakeAgent(seen),
+        timeout=5, fresh=False,
+    ))
+    assert metadata_stats["completed"] == 1
+
+    def make_case(**kwargs):
+        return SimpleNamespace(**kwargs)
+
+    first_evaluation = bm.evaluate_cases(
+        goldens, output=tmp_path, runner_sha=metadata_sha,
+        judge_model="mock", threshold=0.7, fresh=False,
+        testcase_factory=make_case,
+        metrics_factory=lambda **kwargs: [FakeMetric()],
+    )
+    assert first_evaluation["evaluated"] == 1
+
+    # The same question and model config with newly enabled capture must
+    # invalidate the previous answer checkpoint without --fresh.
+    content_stats = asyncio.run(bm.run_cases(
+        goldens, output=tmp_path, runner_sha=content_sha,
+        agent_factory=lambda: FakeTracedAgent(seen),
+        timeout=5, fresh=False,
+    ))
+    assert content_stats["completed"] == 1
+    assert content_stats["reused"] == 0
+    assert len(seen) == 2
+
+    record = bm.read_json(
+        bm.case_path(tmp_path, goldens[0]["id"]),
+        max_bytes=bm.MAX_CASE_BYTES,
+    )
+    assert record["runner_sha256"] == content_sha
+    assert record["knowledge_trace"]["content_included"] is True
+
+    second_evaluation = bm.evaluate_cases(
+        goldens, output=tmp_path, runner_sha=content_sha,
+        judge_model="mock", threshold=0.7, fresh=False,
+        testcase_factory=make_case,
+        metrics_factory=lambda **kwargs: [FakeMetric()],
+    )
+    assert second_evaluation["evaluated"] == 1
+    assert second_evaluation["reused"] == 0
+
+    assert bm.evaluate_cases(
+        goldens, output=tmp_path, runner_sha=content_sha,
+        judge_model="mock", threshold=0.7, fresh=False,
+        testcase_factory=make_case,
+        metrics_factory=lambda **kwargs: [FakeMetric()],
+    )["reused"] == 1
+
+
+def test_notebook_fingerprint_uses_capture_config():
+    fingerprint_cell = next(c for c in NOTEBOOK_DATA["cells"] if c["id"] == "helpers")
+    load_cell = next(c for c in NOTEBOOK_DATA["cells"] if c["id"] == "load-cases")
+    fingerprint_source = "".join(fingerprint_cell["source"])
+    load_source = "".join(load_cell["source"])
+    assert '"capture_knowledge_content": capture_content' in fingerprint_source
+    assert "capture_content=CAPTURE_KNOWLEDGE_CONTENT" in load_source

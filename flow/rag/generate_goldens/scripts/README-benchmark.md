@@ -135,10 +135,15 @@ you to change the judge without rerunning the RAG. Set `FRESH_SDK = True`
 to force new SDK answers, or `FRESH_EVALUATION = True` to force new judge
 scores. Change `OUTPUT_DIR` to compare configurations independently.
 
-Configuration hashes account for user/admin config and the workspace's
-`.cli-agent/project.toml`, but **cannot detect changes to a live vector
-database, OKF documents, model weights or external MCP tools**. Rerun
-fresh after such changes.
+Configuration hashes account for user/admin config, the workspace's
+`.cli-agent/project.toml`, and `CAPTURE_KNOWLEDGE_CONTENT`.
+Switching Knowledge-content capture on or off automatically invalidates both
+the response and evaluation checkpoints, so content-free results are never
+reused when the notebook now requires full selected chunks.
+
+Fingerprints **cannot detect changes to a live vector database, OKF
+documents, model weights or external MCP tools**. Rerun fresh after such
+changes.
 
 Each golden gets an isolated new agent session; no previous conversation
 history or approval state leaks between questions. Errors are recorded
