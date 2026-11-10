@@ -48,8 +48,14 @@ def test_flow_paths_and_prompt_variable_bindings():
                     r"\{\{var:([A-Za-z_][A-Za-z0-9_]*)\}\}",
                     prompt.read_text(encoding="utf-8")
                 ))
-                assert placeholders <= (set(step.get("vars", {})) |
-                                        set(step.get("json_inputs", {}))), (path, placeholders)
+                # The flow validator rejects both missing and UNUSED
+                # [steps.vars] entries; check the exact contract, not just
+                # whether all placeholders happen to be defined.
+                declared = set(step.get("vars", {}))
+                assert declared == placeholders, (
+                    path, step["id"], "missing", sorted(placeholders - declared),
+                    "unused", sorted(declared - placeholders),
+                )
             if "json_operation" in step:
                 kind = step["json_operation"]["kind"]
                 assert kind == "batch"
