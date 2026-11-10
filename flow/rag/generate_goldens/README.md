@@ -20,6 +20,8 @@ exporter does only deterministic validation and output formatting.
    with evidence; short documents have one direct profile. A deterministic
    file inventory collects profile paths, not topic contents. Crucially,
    there is no unbounded all-shards LLM consolidation at document level.
+   The consolidation prompt propagates upstream `needs_attention` statuses and
+   unresolved warnings at **both** layers, even when no topics remain.
 4. **Relate topics across documents** via batches of four profile shards (<=32 KB),
    then two further rounds of bounded grouping (five candidate responses /
    30 KB). The FINAL step also batches its input (three summaries /

@@ -342,3 +342,27 @@ def test_empty_registry_prompt_preserves_coverage_status():
     assert "batch.items[]" in prompt
     assert '"status":"ok","groups":[],"warnings":[]}' in prompt
     assert "when every input has status=ok" in prompt
+
+
+def test_document_consolidation_preserves_upstream_coverage_contract():
+    # Both stages share the same prompt: prevent any future revision from
+    # turning incomplete scans into an apparently complete document profile.
+    merge = config(BASE / "flows/consolidate-document.toml")["steps"]
+    reduce = config(BASE / "flows/reduce-document.toml")["steps"]
+    merge_step = next(s for s in merge if s["id"] == "merge_batches")
+    reduce_step = next(s for s in reduce if s["id"] == "reduce")
+    assert merge_step["prompt_file"] == reduce_step["prompt_file"]
+    assert merge_step["vars"]["layer"] == "section"
+    assert reduce_step["vars"]["layer"] == "final-document-shard"
+    prompt = (ROOT / merge_step["prompt_file"]).read_text(encoding="utf-8")
+    for required in (
+        "batch.items[]",
+        "If ANY upstream item has status=needs_attention",
+        "even if the current merge succeeds",
+        "topics list",
+        "Preserve all unresolved upstream warnings",
+        "Missing, malformed, or unknown upstream status/warnings",
+        "Return status=ok ONLY when every upstream item has status=ok",
+        "both",  # Both reduction levels use the same monotonic contract.
+    ):
+        assert required.casefold() in prompt.casefold()
