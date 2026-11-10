@@ -78,6 +78,28 @@ generated data should be inspected before using it as ground truth.
 JSON outputs provide step-level checkpoints. Interrupted runs can be
 resumed, but the flow itself is sequential (no parallel calls).
 
+## Evaluate the generated goldens with cli-agent and DeepEval
+
+After running the golden generator and export.py, run the SDK-based
+end-to-end evaluator (no retrieval hints are passed to cli-agent):
+
+~~~sh
+python -m pip install deepeval
+python flow/rag/generate_goldens/scripts/benchmark.py \
+  --phase all --goldens rag-goldens/goldens.json --workspace .
+~~~
+
+The script creates **new isolated cli-agent SDK sessions for each question**,
+checkpoints answers and scores, and reports per-metric mean scores and sample
+counts in rag-goldens/evaluation/summary.json.
+
+By default DeepEval scores answer correctness and relevancy. Faithfulness and
+contextual retrieval metrics require externally instrumented, **actual**
+retrieved chunks; they are deliberately not inferred from reference evidence.
+
+See [scripts/README-benchmark.md](scripts/README-benchmark.md) for configuration,
+installation, CLI options, checkpoint behavior and evaluation caveats.
+
 ## Limitations and safety considerations
 
 - **Source edits require checkpoint invalidation.** The runner uses stable
