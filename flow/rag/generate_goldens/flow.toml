@@ -1,6 +1,7 @@
 version = 1
-exclude_paths = ["flow/rag/generate_goldens/scripts"]
-result = "steps.generate.output"
+
+[vars]
+doctrine_path = "doctrines"
 
 [retry]
 max_attempts = 3
@@ -8,24 +9,41 @@ initial_delay_seconds = 2
 backoff_multiplier = 2
 max_delay_seconds = 15
 
-# Run scripts/prepare.py before this flow; its bounded packs are never passed
-# into the tested RAG system, only into the independent question generator.
+# The source corpus itself is inventoried at every run, not preselected pairs.
 [[steps]]
-id = "packs"
-output = "rag-goldens/state/pack-inventory.json"
+id = "inventory"
+output = "rag-goldens/state/source-inventory.json"
 overwrite_output = true
 [steps.filesystem_operation]
 kind = "inventory"
-directory = "rag-goldens/packs"
-recursive = false
-extensions = [".json"]
-max_entries = 1000
+directory = "${var.doctrine_path}"
+recursive = true
+extensions = [".md", ".markdown"]
+exclude_names = ["index.md"]
+max_entries = 10000
 stable_slugs = true
 
+# Independent per-doctrine steps. Each chapter receives its own checkpoint.
 [[steps]]
-id = "generate"
-flow = "flow/rag/generate_goldens/flows/process-pack.toml"
-foreach = "steps.packs.output.files"
+id = "analyze_documents"
+flow = "flow/rag/generate_goldens/flows/analyze-document.toml"
+foreach = "steps.inventory.output.files"
 iteration_id = "${item.slug}"
 [steps.input]
-pack = "${item}"
+source = "${item}"
+
+# All semantic cross-document analysis happens in bounded LLM batches.
+[[steps]]
+id = "global_topics"
+flow = "flow/rag/generate_goldens/flows/global-topics.toml"
+[steps.input]
+document_results = "${steps.analyze_documents.output.iterations}"
+
+# Each topic group is processed as an independent, resumable golden candidate.
+[[steps]]
+id = "goldens"
+flow = "flow/rag/generate_goldens/flows/process-group.toml"
+foreach = "steps.global_topics.output.groups"
+iteration_id = "${item.id}"
+[steps.input]
+group = "${item}"

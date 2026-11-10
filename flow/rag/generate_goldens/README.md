@@ -1,80 +1,96 @@
-# Cross-document RAG goldens (experimental)
+# RAG Golden Generator: cross-doctrine, source-grounded questions
 
-This tool generates **reference questions from original Markdown doctrines**,
-not from the RAG retriever under evaluation. It intentionally creates questions
-requiring information from two *different* original documents, including a
-grounded expected answer and exact source quotations. The evaluated RAG should
-receive **only** `input` (the question). Its retrieval and response are
-generated independently for DeepEval.
+Produces reference questions and answers from the **original Markdown
+doctrines** without querying the RAG being evaluated. Semantic processing is
+performed by a checkpointed `cli-agent-flow`; the Python standard-library
+exporter does only deterministic validation and output formatting.
+
+## Architecture
+
+1. **Inventory** all `.md` / `.markdown` source files in `doctrines/`.
+   Document identities are stable path-derived slugs.
+2. **Analyze each document** with `markdown_sections` (28,000 characters per
+   logical section, preferentially split at headings; <=96 sections). Short
+   documents are scanned directly. Each larger section gets its own bounded,
+   resumable LLM step. Extract subjects, aliases, concrete claims, qualifiers,
+   exact source path and inclusive line intervals.
+3. **Consolidate per document** in two layers of JSON batches (4 scans at
+   most and 32 KB per batch, then 4 partial summaries and 30 KB). Produce a
+   compact per-document topic profile with evidence. No prompt receives all
+   section texts of a document. One small final per-document pass follows.
+4. **Relate topics across documents** via batches of four profiles (<=32 KB),
+   then two further rounds of bounded grouping (five candidate responses /
+   30 KB). Preserve singleton topics between batches to allow matching a
+   concept against other documents at a later stage. The compact registry
+   selects up to 60 independently examinable document groups.
+5. **Generate one question per group** by reading ONLY bounded original
+   line ranges, never feeding reference passages into the tested RAG.
+   The reviewer separately reads the same authorized original passages and
+   rejects ungrounded, redundant, ambiguous or single-document questions.
+   Each generated question and review has a separate JSON checkpoint.
+6. **Export**, without another LLM call. `export.py` verifies approved
+   reviewers, accepted checks, exact quotations within the cited original
+   line ranges, valid document paths and at least two different source files.
+   It generates `goldens.json` and `deepeval-goldens.json`, including source
+   SHA-256 hashes computed at export time.
+
+**The tested RAG gets only `input`**. Do not supply original passages,
+`context` or the expected answer as its `retrieval_context`. For DeepEval,
+collect the RAG's own answer and retrieved context, and compare these against
+the reference answer, including contextual metrics where applicable.
 
 ## Run
 
-Use Python 3.11+ from the repository/workspace root containing `doctrines/`.
-The helper scripts use only the Python standard library.
+From the workspace containing `doctrines/` and the flow files:
 
-```sh
-python flow/rag/generate_goldens/scripts/prepare.py --workspace . \
-  --source-dir doctrines --max-packs 24
+```bash
 cli-agent-flow validate flow/rag/generate_goldens/flow.toml --workspace .
 cli-agent-flow run flow/rag/generate_goldens/flow.toml --workspace .
 python flow/rag/generate_goldens/scripts/export.py --workspace .
 ```
 
-Outputs:
+Set `[vars].doctrine_path` in `flow.toml` if the corpus is elsewhere in
+the workspace. Python 3.11+ and cli-agent with the existing `inventory`,
+`markdown_sections`, nested flows, conditional steps, and
+`json_operation=batch` are required. No external Python dependencies
+are needed for export. The flow does not install or run DeepEval, and the
+generated data should be inspected before using it as ground truth.
 
-- `rag-goldens/packs/pack-p*.json`: at most 12 KB each, containing two
-  bounded, semantically similar, different-doctrine source excerpts.
-- `rag-goldens/manifest.json`: source document SHA-256 fingerprints and pack IDs.
-- `rag-goldens/state/draft-*.json` and `review-*.json`: independently
-  checkpointed question-generation and adversarial-review steps.
-- `rag-goldens/goldens.json`: validated benchmark with question, answer,
-  exact source metadata and source hashes.
-- `rag-goldens/deepeval-goldens.json`: DeepEval-oriented `input`,
-  `expected_output`, `context` (evidence text for offline grading).
-  Do **not** pass `context` to your RAG when invoking it.
+## Output locations
 
-The pipeline deliberately **does not run RAG or DeepEval**. DeepEval is the
-external evaluator; invoke your actual RAG with each golden's `input`, collect
-its `actual_output` and `retrieval_context`, then evaluate those with
-DeepEval's faithfulness/answer correctness/contextual metrics. The generated
-`context` is *reference evidence*, not the retrieved context.
+- `rag-goldens/state/source-inventory.json`
+- `rag-goldens/state/docs/<slug>/...`: per-section scans and consolidated
+  doctrine topic profiles
+- `rag-goldens/state/topics/...`: bounded cross-doctrine candidate batches
+  and `registry.json`
+- `rag-goldens/state/draft-g0001.json`, `review-g0001.json`, etc.
+- `rag-goldens/goldens.json` and `deepeval-goldens.json`
 
-## Bounded execution and reproducibility
+JSON outputs provide step-level checkpoints. Interrupted runs can be
+resumed, but the flow itself is sequential (no parallel calls).
 
-- `prepare.py` partitions original Markdown into line-aligned windows
-  (default at most 2,400 characters), chooses similar windows from distinct
-  documents with deterministic TF-IDF cosine scoring, caps reused windows and
-  document-pair counts, and creates at most 24 packs by default.
-- Each pack is processed independently by one generator and one reviewer.
-  Both see at most one pack, **never the whole corpus**. Both can reject.
-- Every JSON result has an independent checkpoint; rerun the flow after a
-  timeout to reuse successful prior outputs. Flow retry policy handles transient
-  LLM errors. The runner executes sequentially, not in parallel.
-- `export.py` deterministically checks pack IDs, two-source citations, quoted
-  substrings and original-file hashes; it rejects stale sources, invalid or
-  missing reviews, and duplicates. There is no unbounded final LLM reduction.
+## Limitations and safety considerations
 
-**Checkpoint invalidation:** Each pack's filename and inventory slug change
-when any referenced source file changes. Do not edit the scripts or prompts
-during a running flow. On prompt/model changes, remove the existing
-`rag-goldens/state/draft-*.json` and `review-*.json` to force regeneration.
-The exporter refuses documents changed since preparation, but it is **not**
-a proof that a reviewer judged correctly. Human spot-checking of accepted
-goldens remains recommended.
+- **Source edits require checkpoint invalidation.** The runner uses stable
+  path-based IDs and saved outputs. If original files change or prompts/models
+  are changed, delete the affected `rag-goldens/state` before regenerating
+  the benchmark. The exporter checks citations against *current* source text
+  and stores current SHA-256; it cannot prove unquoted parts of a source
+  stayed unchanged during generation.
+- **Bounded, not guaranteed exhaustive.** Each scan and each global stage
+  imposes limits, reporting `needs_attention` for incomplete coverage.
+  Large individual model JSON outputs may exceed the 30–32 KB batch bound:
+  this is a hard failure to investigate, not silently truncated data.
+  Topic discovery is heuristic and may miss distant connections, even with
+  the later reductions. The reviewer is an LLM, not a correctness oracle.
+- **Large or abnormal documents.** `markdown_sections` rejects oversized
+  sources (>8 MB), huge lines and >96 sections. Documents that cannot fit
+  under the section limits need an explicit split, not an unbounded context.
+- **Review isolation.** Generated answers are evaluated with ORIGINAL source
+  ranges, not retrieval results. Source passages are untrusted and should
+  never be interpreted as executable instructions. Prompts limit tool access.
+- **Export status.** `needs_attention` in the registry is preserved in the
+  export summary. Missing/rejected groups are counted rather than fabricated
+  as successes. Duplicate question texts are deduplicated.
 
-The source corpus should be the *original* doctrines, not generated OKF/RAG
-chunks, unless you explicitly want to benchmark that downstream representation.
-Input supports `.md` and `.markdown` only; convert other document types first.
-
-## Limitations
-
-- Lexical overlap determines candidate pairs; semantically related passages
-  without shared terminology may be missed. It is a scalable **candidate
-  selection heuristic**, not an oracle for document necessity.
-- Very long single lines (> window size), source files over 8 MB, or extremely
-  large corpora fail explicitly instead of silently truncating source context.
-  For huge corpora, split the corpus into directories and run separately.
-- Document necessity is assessed by an LLM reviewer; exact quote matching
-  alone cannot prove entailment. Human validation is needed for high-stakes use.
-- Not every pair yields a valid multi-document question. A high rejection rate
-  can be expected and must not be silently converted into weaker examples.
+There is no TF-IDF pairing stage and no mandatory `prepare.py` step.

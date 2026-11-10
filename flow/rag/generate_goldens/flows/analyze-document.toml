@@ -1,0 +1,55 @@
+version = 1
+inputs = ["source"]
+result = "steps.consolidate_sections.output"
+result_fallback = "steps.direct_topics.output"
+
+# Built-in deterministic sectioning, preferentially at Markdown headings.
+# Max 96 sections; fail rather than silently omit sections of huge documents.
+[[steps]]
+id = "sections"
+output = "rag-goldens/state/docs/${input.source.slug}/sections.json"
+overwrite_output = false
+[steps.filesystem_operation]
+kind = "markdown_sections"
+source_path = "${input.source.path}"
+target_chars = 28000
+max_sections = 96
+
+# A short document (<= target_chars) needs its own scan.
+[[steps]]
+id = "direct_topics"
+when = { ref = "steps.sections.output.mode", eq = "direct" }
+prompt_file = "flow/rag/generate_goldens/prompts/01_scan_topics.md"
+output = "rag-goldens/state/docs/${input.source.slug}/profile-direct.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+section = "null"
+output_kind = "document_profile"
+profile_path = "rag-goldens/state/docs/${input.source.slug}/profile-direct.json"
+
+# Long documents have one fresh LLM context for every bounded section.
+[[steps]]
+id = "section_topics"
+prompt_file = "flow/rag/generate_goldens/prompts/01_scan_topics.md"
+foreach = "steps.sections.output.sections"
+iteration_id = "${item.id}"
+output = "rag-goldens/state/docs/${input.source.slug}/scan-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+section = "${item}"
+output_kind = "section_topics"
+profile_path = "null"
+
+[[steps]]
+id = "consolidate_sections"
+when = { ref = "steps.sections.output.mode", eq = "sections" }
+flow = "flow/rag/generate_goldens/flows/consolidate-document.toml"
+[steps.input]
+source = "${input.source}"
+sections = "${steps.sections.output.sections}"

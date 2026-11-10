@@ -1,160 +1,193 @@
 #!/usr/bin/env python3
-"""Validate reviewed multi-document questions and export reusable RAG goldens."""
+"""Export reviewed multi-doctrine goldens without requiring any extra dependency.
+
+Reads only the flow-generated registry/draft/review JSON and the cited original
+Markdown sources. No retrieval is run; the tested RAG receives only question.
+"""
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
 import re
 
-from prepare import secure_path
+MAX_JSON_BYTES = 4_000_000
+MAX_DOCUMENT_BYTES = 8_000_000
+GROUP_ID = re.compile(r"g[0-9]{4}\Z")
 
-ID = re.compile(r"p[0-9a-f]{16}")
-MAX_JSON = 256_000
+
+def confined(root: Path, path: str, *, must_exist: bool = True) -> Path:
+    if not isinstance(path, str) or not path.strip() or "\\" in path:
+        raise ValueError("Invalid path")
+    relative = Path(path)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"Workspace path traversal: {path!r}")
+    current = root
+    for component in relative.parts:
+        current = current / component
+        if current.is_symlink():
+            raise ValueError(f"Refusing symlink: {path}")
+    resolved = current.resolve(strict=must_exist)
+    if not resolved.is_relative_to(root):
+        raise ValueError("Path leaves workspace")
+    return resolved
 
 
-def read_json(path: Path) -> dict:
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_JSON:
-        raise ValueError(f"Missing, linked or oversized JSON file: {path}")
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
+def read_json(root: Path, path: str) -> dict:
+    file = confined(root, path)
+    if not file.is_file() or file.stat().st_size > MAX_JSON_BYTES:
+        raise ValueError(f"Missing/oversized JSON: {path}")
+    payload = json.loads(file.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
         raise ValueError(f"Expected JSON object: {path}")
-    return value
+    return payload
 
 
-def valid_golden(pack: dict, draft: dict, review: dict) -> dict | None:
-    if draft.get("status") == "rejected":
-        return None
+def source(root: Path, path: str, cache: dict) -> tuple[list[str], str]:
+    if path not in cache:
+        file = confined(root, path)
+        if (not file.is_file() or file.suffix.casefold() not in {".md", ".markdown"}
+                or file.stat().st_size > MAX_DOCUMENT_BYTES):
+            raise ValueError(f"Invalid Markdown source: {path}")
+        raw = file.read_bytes()
+        cache[path] = (raw.decode("utf-8-sig").splitlines(keepends=True),
+                       hashlib.sha256(raw).hexdigest())
+    return cache[path]
+
+
+def make_golden(root: Path, group: dict, draft: dict, review: dict, cache: dict) -> dict | None:
+    gid = group.get("id")
+    if (not isinstance(gid, str) or not GROUP_ID.fullmatch(gid)
+            or draft.get("group_id") != gid or review.get("group_id") != gid):
+        raise ValueError(f"Group identity mismatch: {gid!r}")
     if draft.get("status") != "ok" or review.get("status") != "accepted":
         return None
-    pack_id = pack["pack_id"]
-    if draft.get("pack_id") != pack_id or review.get("pack_id") != pack_id:
-        return None
     checks = review.get("checks")
-    if not isinstance(checks, dict) or set(checks) != {
-        "grounded", "both_documents_necessary", "unambiguous", "no_source_leakage"
-    } or not all(value is True for value in checks.values()):
+    if (not isinstance(checks, dict)
+            or set(checks) != {"grounded", "both_documents_necessary",
+                              "unambiguous", "no_source_leakage"}
+            or not all(v is True for v in checks.values())):
         return None
-    question, answer = draft.get("question"), draft.get("expected_output")
-    if (not isinstance(question, str) or not 10 <= len(question.strip()) <= 500
-            or not isinstance(answer, str) or not 10 <= len(answer.strip()) <= 1800):
+    text = draft.get("question")
+    answer = draft.get("expected_output")
+    if (not isinstance(text, str) or not 10 <= len(text.strip()) <= 500
+            or not isinstance(answer, str) or not 10 <= len(answer.strip()) <= 1800
+            or draft.get("category") != "multi_document"):
         return None
-    if draft.get("category") != "multi_document":
+    declared = group.get("sources")
+    if not isinstance(declared, list) or not 2 <= len(declared) <= 3:
         return None
-    sources = pack.get("sources")
-    if (not isinstance(sources, list) or len(sources) != 2
-            or sources[0]["path"] == sources[1]["path"]):
-        return None
-    indexed = {s["id"]: s for s in sources}
-    if set(indexed) != {"s1", "s2"}:
-        return None
-    citations = draft.get("evidence")
-    if not isinstance(citations, list) or not 2 <= len(citations) <= 4:
-        return None
-    used = set()
-    clean_citations = []
-    for citation in citations:
-        if not isinstance(citation, dict) or citation.get("source_id") not in indexed:
+    allowed: dict[str, dict] = {}
+    for d in declared:
+        if not isinstance(d, dict):
             return None
-        s = indexed[citation["source_id"]]
-        quote, support = citation.get("quote"), citation.get("supports")
-        lo, hi = citation.get("start_line"), citation.get("end_line")
-        if (not isinstance(quote, str) or not 4 <= len(quote) <= 400
-                or not isinstance(support, str) or not support or len(support) > 400
+        name, lo, hi = d.get("path"), d.get("start_line"), d.get("end_line")
+        if (not isinstance(name, str) or type(lo) is not int or type(hi) is not int
+                or lo < 1 or hi < lo or hi - lo > 500
+                or name in allowed):
+            return None
+        allowed[name] = d
+    if len(allowed) < 2:
+        return None
+    evidence = draft.get("evidence")
+    if not isinstance(evidence, list) or not 2 <= len(evidence) <= 4:
+        return None
+    referenced_paths: set[str] = set()
+    clean = []
+    for e in evidence:
+        if not isinstance(e, dict):
+            return None
+        path, quote, reason = e.get("path"), e.get("quote"), e.get("supports")
+        lo, hi = e.get("start_line"), e.get("end_line")
+        if (not isinstance(path, str) or path not in allowed
+                or not isinstance(quote, str) or not 4 <= len(quote) <= 400
+                or not isinstance(reason, str) or not 1 <= len(reason) <= 400
                 or type(lo) is not int or type(hi) is not int
-                or not s["start_line"] <= lo <= hi <= s["end_line"]):
+                or not allowed[path]["start_line"] <= lo <= hi <= allowed[path]["end_line"]):
             return None
-        # A quote must be found in the specified lines, not merely somewhere
-        # in the same document or nearby window.
-        lines = s["text"].splitlines(keepends=True)
-        offset_lo, offset_hi = lo - s["start_line"], hi - s["start_line"] + 1
-        if quote not in "".join(lines[offset_lo:offset_hi]):
+        lines, digest = source(root, path, cache)
+        if hi > len(lines):
             return None
-        used.add(citation["source_id"])
-        clean_citations.append({
-            "source_id": citation["source_id"], "path": s["path"],
-            "start_line": lo, "end_line": hi, "quote": quote, "supports": support,
-        })
-    if used != {"s1", "s2"}:
+        if quote not in "".join(lines[lo - 1:hi]):
+            return None
+        referenced_paths.add(path)
+        clean.append({"path": path, "sha256": digest, "start_line": lo,
+                      "end_line": hi, "quote": quote, "supports": reason})
+    if len(referenced_paths) < 2:
         return None
     necessity = draft.get("necessity")
-    if not isinstance(necessity, dict) or not all(
-        isinstance(necessity.get(key), str) and necessity[key].strip()
-        for key in ("without_s1", "without_s2")
-    ):
+    if (not isinstance(necessity, dict)
+            or not all(isinstance(necessity.get(k), str) and necessity[k].strip()
+                       for k in ("without_first", "without_second"))):
         return None
     return {
-        "id": pack_id, "input": question.strip(),
-        "expected_output": answer.strip(), "category": "multi_document",
-        "difficulty": draft.get("difficulty", "hard"),
-        "evidence": clean_citations, "necessity": necessity,
-        "sources": [
-            {"path": s["path"], "sha256": s["sha256"],
-             "start_line": s["start_line"], "end_line": s["end_line"]}
-            for s in sources
-        ],
+        "id": gid, "input": text.strip(), "expected_output": answer.strip(),
+        "category": "multi_document", "difficulty": draft.get("difficulty", "hard"),
+        "topic": group.get("topic", ""), "relationship": group.get("relation", ""),
+        "sources": [{"path": p, "sha256": source(root, p, cache)[1],
+                     "start_line": allowed[p]["start_line"],
+                     "end_line": allowed[p]["end_line"]}
+                    for p in sorted(referenced_paths)],
+        "evidence": clean, "necessity": necessity,
         "review": {"status": "accepted", "reason": review.get("reason", "")},
     }
 
 
-def export(workspace: Path, output_dir: str) -> dict:
-    root = secure_path(workspace, output_dir)
-    manifest = read_json(root / "manifest.json")
-    source_hashes = manifest.get("sources")
-    if not isinstance(source_hashes, dict) or len(source_hashes) < 2:
-        raise ValueError("Invalid source manifest")
-    for path, expected in source_hashes.items():
-        source = secure_path(workspace, path)
-        if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != expected:
-            raise ValueError(f"Stale source since preparation: {path}")
-    ids = manifest.get("pack_ids")
-    if not isinstance(ids, list) or len(ids) != len(set(ids)) or not ids:
-        raise ValueError("Empty or duplicate pack manifest")
-    goldens: list[dict] = []
-    counts = {"reviewed": 0, "rejected": 0, "missing": 0}
-    for name in ids:
-        if not isinstance(name, str) or not re.fullmatch(r"pack-p[0-9a-f]{16}\.json", name):
-            raise ValueError(f"Invalid pack path: {name}")
-        pack = read_json(root / "packs" / name)
-        pack_id = name[len("pack-"):-len(".json")]
-        if pack.get("pack_id") != pack_id or not ID.fullmatch(pack_id):
-            raise ValueError(f"Pack identity mismatch: {name}")
-        # Generated paths match cli-agent inventory stable_slugs.
-        # Use the same deterministic scheme as the flow inventory operation.
-        rel = f"{output_dir}/packs/{name}"
-        prefix = re.sub(r"[^a-z0-9]+", "-", rel.casefold()).strip("-")[:60].strip("-")
-        slug = f"{prefix or 'source'}-{hashlib.sha256(rel.encode('utf-8')).hexdigest()[:16]}"
-        draft_path = root / "state" / f"draft-{slug}.json"
-        review_path = root / "state" / f"review-{slug}.json"
-        if not draft_path.is_file() or not review_path.is_file():
-            counts["missing"] += 1
+def export(root: Path, output_dir: str = "rag-goldens") -> dict:
+    root = root.resolve(strict=True)
+    registry = read_json(root, f"{output_dir}/state/topics/registry.json")
+    if registry.get("status") not in {"ok", "needs_attention"}:
+        raise ValueError("Invalid global topic registry")
+    groups = registry.get("groups")
+    if not isinstance(groups, list) or not groups or len(groups) > 60:
+        raise ValueError("Missing/oversized registry")
+    identifiers = [g.get("id") for g in groups if isinstance(g, dict)]
+    if len(identifiers) != len(groups) or len(set(identifiers)) != len(groups):
+        raise ValueError("Duplicate/invalid registry group IDs")
+    stats = Counter()
+    cache: dict = {}
+    result = []
+    dedup = set()
+    for group in groups:
+        gid = group["id"]
+        if not isinstance(gid, str) or not GROUP_ID.fullmatch(gid):
+            raise ValueError(f"Invalid group ID: {gid!r}")
+        draft_path = f"{output_dir}/state/draft-{gid}.json"
+        review_path = f"{output_dir}/state/review-{gid}.json"
+        if not confined(root, draft_path, must_exist=False).is_file() or not confined(
+                root, review_path, must_exist=False).is_file():
+            stats["missing"] += 1
             continue
-        draft, review = read_json(draft_path), read_json(review_path)
-        counts["reviewed"] += 1
-        candidate = valid_golden(pack, draft, review)
-        if candidate is None:
-            counts["rejected"] += 1
-        else:
-            goldens.append(candidate)
-    unique: dict[str, dict] = {}
-    for golden in goldens:
-        key = re.sub(r"\s+", " ", golden["input"].casefold()).strip()
-        unique.setdefault(key, golden)
-    result = sorted(unique.values(), key=lambda x: x["id"])
-    # Context is REFERENCE EVIDENCE, not retrieval_context from tested RAG.
-    deepeval = [{
-        "input": g["input"], "expected_output": g["expected_output"],
-        "context": [c["quote"] for c in g["evidence"]],
-    } for g in result]
-    for filename, value in (
+        draft, review = read_json(root, draft_path), read_json(root, review_path)
+        stats["reviewed"] += 1
+        golden = make_golden(root, group, draft, review, cache)
+        if golden is None:
+            stats["rejected"] += 1
+            continue
+        normalized = " ".join(golden["input"].casefold().split())
+        if normalized in dedup:
+            stats["duplicates"] += 1
+            continue
+        dedup.add(normalized)
+        result.append(golden)
+    output = confined(root, output_dir, must_exist=False)
+    output.mkdir(parents=True, exist_ok=True)
+    result.sort(key=lambda x: x["id"])
+    for name, payload in (
         ("goldens.json", result),
-        ("deepeval-goldens.json", deepeval),
+        ("deepeval-goldens.json", [
+            {"input": g["input"], "expected_output": g["expected_output"],
+             "context": [item["quote"] for item in g["evidence"]]}
+            for g in result
+        ]),
     ):
-        (root / filename).write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n",
-                                     encoding="utf-8")
-    return {"accepted": len(result), "duplicates": len(goldens) - len(result),
-            **counts, "total_packs": len(ids)}
+        file = confined(root, f"{output_dir}/{name}", must_exist=False)
+        file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8")
+    return {"accepted": len(result), "total_groups": len(groups),
+            "registry_status": registry["status"], **dict(stats)}
 
 
 def main() -> None:
@@ -162,8 +195,7 @@ def main() -> None:
     parser.add_argument("--workspace", default=".")
     parser.add_argument("--output-dir", default="rag-goldens")
     args = parser.parse_args()
-    workspace = Path(args.workspace).resolve(strict=True)
-    print(json.dumps(export(workspace, args.output_dir), indent=2))
+    print(json.dumps(export(Path(args.workspace), args.output_dir), indent=2))
 
 
 if __name__ == "__main__":

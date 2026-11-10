@@ -1,0 +1,43 @@
+version = 1
+inputs = ["source", "batches"]
+result = "steps.profile.output"
+
+[[steps]]
+id = "reduce_batches"
+output = "rag-goldens/state/docs/${input.source.slug}/reduce-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch"
+input = "merges"
+batch_size = 4
+max_batch_bytes = 30000
+[steps.json_inputs.merges]
+iterate = "input.batches[]"
+path = "rag-goldens/state/docs/${input.source.slug}/merged-${each.id}.json"
+
+[[steps]]
+id = "reduce"
+prompt_file = "flow/rag/generate_goldens/prompts/02_merge_topics.md"
+foreach = "steps.reduce_batches.output.batches"
+iteration_id = "${item.id}"
+output = "rag-goldens/state/docs/${input.source.slug}/reduced-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+batch = "${item}"
+layer = "intermediate"
+profile_path = "null"
+
+[[steps]]
+id = "profile"
+prompt_file = "flow/rag/generate_goldens/prompts/03_document_profile.md"
+output = "rag-goldens/state/docs/${input.source.slug}/profile-sections.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+partials = "${steps.reduce.output.iterations}"
+profile_path = "rag-goldens/state/docs/${input.source.slug}/profile-sections.json"

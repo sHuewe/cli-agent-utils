@@ -1,0 +1,16 @@
+version = 1
+inputs = ["batches"]
+result = "steps.batch.output"
+
+[[steps]]
+id = "batch"
+output = "rag-goldens/state/topics/candidate-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch"
+input = "candidates"
+batch_size = 5
+max_batch_bytes = 30000
+[steps.json_inputs.candidates]
+iterate = "input.batches[]"
+path = "rag-goldens/state/topics/candidates-${each.id}.json"
