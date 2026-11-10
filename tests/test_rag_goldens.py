@@ -25,7 +25,7 @@ def config(path: Path) -> dict:
 
 def test_flow_paths_and_prompt_variable_bindings():
     paths = [BASE / "flow.toml", *sorted((BASE / "flows").glob("*.toml"))]
-    assert len(paths) >= 8
+    assert len(paths) >= 10
     for path in paths:
         flow = config(path)
         assert flow["version"] == 1
@@ -84,7 +84,19 @@ def test_design_scales_by_document_and_section():
     assert global_steps["profile_batches"]["json_inputs"]["profiles"]["path"] == (
         "${each.output.profile_path}"
     )
-    assert global_steps["registry"]["workspace_access"] == "none"
+    assert "registry" not in global_steps
+    assert global_steps["registry_batches"]["flow"].endswith("/batch-reduce2.toml")
+    final = config(BASE / "flows/batch-reduce2.toml")["steps"][0]
+    assert final["json_operation"] == {
+        "kind": "batch", "input": "summaries",
+        "batch_size": 3, "max_batch_bytes": 24000
+    }
+    assert final["json_inputs"]["summaries"]["iterate"] == "input.batches[]"
+    shard = config(BASE / "flows/process-registry-batch.toml")
+    assert shard["steps"][0]["workspace_access"] == "none"
+    assert shard["steps"][0]["vars"]["batch"] == "${input.batch}"
+    assert shard["steps"][1]["foreach"] == "steps.registry.output.groups"
+    assert root["steps"][-1]["foreach"] == "steps.global_topics.output.batches"
 
 
 def fixture(tmp_path: Path):
@@ -97,7 +109,7 @@ def fixture(tmp_path: Path):
     for name, value in files.items():
         (docs / name).write_text(value, encoding="utf-8")
     group = {
-        "id": "g0001", "topic": "authentication", "relation": "constraint",
+        "id": "b0001-g0001", "topic": "authentication", "relation": "constraint",
         "sources": [
             {"path": "doctrines/a.md", "start_line": 2, "end_line": 2,
              "claim": "The gateway validates bearer tokens"},
@@ -106,7 +118,7 @@ def fixture(tmp_path: Path):
         ]
     }
     draft = {
-        "status": "ok", "group_id": "g0001",
+        "status": "ok", "group_id": "b0001-g0001",
         "question": "What does the gateway do with authentication tokens?",
         "expected_output": "The gateway validates tokens and rejects requests lacking them.",
         "category": "multi_document", "difficulty": "hard",
@@ -147,12 +159,16 @@ def test_export_two_source_goldens(tmp_path):
     group, draft, review = fixture(tmp_path)
     state = tmp_path / "rag-goldens/state"
     (state / "topics").mkdir(parents=True)
-    (state / "topics/registry.json").write_text(
+    (state / "topics/registry-batches.json").write_text(
+        json.dumps({"batches": [{"id": "b0001", "items": [{"id": "b0001"}]}]}),
+        encoding="utf-8"
+    )
+    (state / "topics/registry-b0001.json").write_text(
         json.dumps({"status": "ok", "groups": [group], "warnings": []}),
         encoding="utf-8"
     )
-    (state / "draft-g0001.json").write_text(json.dumps(draft), encoding="utf-8")
-    (state / "review-g0001.json").write_text(json.dumps(review), encoding="utf-8")
+    (state / "draft-b0001-g0001.json").write_text(json.dumps(draft), encoding="utf-8")
+    (state / "review-b0001-g0001.json").write_text(json.dumps(review), encoding="utf-8")
     result = export(tmp_path)
     assert result["accepted"] == 1
     exported = json.loads((tmp_path / "rag-goldens/goldens.json").read_text())
@@ -167,3 +183,49 @@ def test_export_two_source_goldens(tmp_path):
         group["sources"][0]["path"] = "doctrines/link.md"
         draft["evidence"][0]["path"] = "doctrines/link.md"
         make_golden(tmp_path, group, draft, review, {})
+
+
+def test_empty_registry_exports_empty_benchmark(tmp_path):
+    root = tmp_path / "rag-goldens"
+    state = root / "state/topics"
+    state.mkdir(parents=True)
+    (state / "registry-batches.json").write_text(
+        json.dumps({"batches": [{"id": "b0001", "items": []}]}),
+        encoding="utf-8"
+    )
+    (state / "registry-b0001.json").write_text(
+        json.dumps({"status": "ok", "groups": [], "warnings": []}),
+        encoding="utf-8"
+    )
+    # Stale output must be overwritten by legitimate zero-result export.
+    (root / "goldens.json").write_text('[{"old": true}]', encoding="utf-8")
+    assert export(tmp_path)["accepted"] == 0
+    assert json.loads((root / "goldens.json").read_text()) == []
+    assert json.loads((root / "deepeval-goldens.json").read_text()) == []
+    # Equivalent user-provided output spellings must resolve consistently.
+    assert export(tmp_path, "./rag-goldens")["total_groups"] == 0
+
+
+def test_registry_shards_required_and_no_cross_shard_id_collision(tmp_path):
+    root = tmp_path / "rag-goldens"
+    state = root / "state/topics"
+    state.mkdir(parents=True)
+    (state / "registry-batches.json").write_text(
+        json.dumps({"batches": [{"id": "b0001", "items": []},
+                                 {"id": "b0002", "items": []}]}),
+        encoding="utf-8"
+    )
+    (state / "registry-b0001.json").write_text(
+        json.dumps({"status": "ok", "groups": [], "warnings": []}),
+        encoding="utf-8"
+    )
+    with pytest.raises(FileNotFoundError):
+        export(tmp_path)  # Missing shard must fail, not produce empty output.
+    assert not (root / "goldens.json").exists()
+    (state / "registry-b0002.json").write_text(
+        json.dumps({"status": "needs_attention", "groups": [], "warnings": []}),
+        encoding="utf-8"
+    )
+    stats = export(tmp_path)
+    assert stats["registry_count"] == 2
+    assert stats["registry_status"] == "needs_attention"

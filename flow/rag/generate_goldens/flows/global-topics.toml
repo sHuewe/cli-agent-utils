@@ -1,6 +1,6 @@
 version = 1
 inputs = ["document_results"]
-result = "steps.registry.output"
+result = "steps.registry_batches.output"
 
 # Read only declared flow-generated per-document profiles. Do NOT embed the
 # entire corpus in a model context.
@@ -68,12 +68,11 @@ response_format = "json"
 batch = "${item}"
 stage = "reduce2"
 
+# The LAST stage is also bounded. The result is a deterministic batch
+# manifest, not a giant JSON array inserted into a model prompt. Each final
+# batch becomes an independent registry shard in the parent flow.
 [[steps]]
-id = "registry"
-prompt_file = "flow/rag/generate_goldens/prompts/05_registry.md"
-output = "rag-goldens/state/topics/registry.json"
-overwrite_output = false
-workspace_access = "none"
-response_format = "json"
-[steps.vars]
-summaries = "${steps.reduce2.output.iterations}"
+id = "registry_batches"
+flow = "flow/rag/generate_goldens/flows/batch-reduce2.toml"
+[steps.input]
+batches = "${steps.batch_reduce1.output.batches}"

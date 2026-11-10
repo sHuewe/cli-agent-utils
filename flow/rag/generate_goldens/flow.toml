@@ -39,11 +39,12 @@ flow = "flow/rag/generate_goldens/flows/global-topics.toml"
 [steps.input]
 document_results = "${steps.analyze_documents.output.iterations}"
 
-# Each topic group is processed as an independent, resumable golden candidate.
+# Each final-registry batch is a separate bounded LLM invocation, followed
+# by independent question generation. There is no unbounded global registry.
 [[steps]]
-id = "goldens"
-flow = "flow/rag/generate_goldens/flows/process-group.toml"
-foreach = "steps.global_topics.output.groups"
+id = "registry_shards"
+flow = "flow/rag/generate_goldens/flows/process-registry-batch.toml"
+foreach = "steps.global_topics.output.batches"
 iteration_id = "${item.id}"
 [steps.input]
-group = "${item}"
+batch = "${item}"

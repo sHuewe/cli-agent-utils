@@ -137,25 +137,58 @@ def make_golden(root: Path, group: dict, draft: dict, review: dict, cache: dict)
 
 def export(root: Path, output_dir: str = "rag-goldens") -> dict:
     root = root.resolve(strict=True)
-    registry = read_json(root, f"{output_dir}/state/topics/registry.json")
-    if registry.get("status") not in {"ok", "needs_attention"}:
-        raise ValueError("Invalid global topic registry")
-    groups = registry.get("groups")
-    if not isinstance(groups, list) or not groups or len(groups) > 60:
-        raise ValueError("Missing/oversized registry")
-    identifiers = [g.get("id") for g in groups if isinstance(g, dict)]
-    if len(identifiers) != len(groups) or len(set(identifiers)) != len(groups):
-        raise ValueError("Duplicate/invalid registry group IDs")
+    # Normalize equivalent spellings (./rag-goldens, rag-goldens/).
+    output = confined(root, output_dir, must_exist=False)
+    directory = output.relative_to(root).as_posix()
+    if directory == ".":
+        raise ValueError("Refusing to write benchmark files to workspace root")
+    manifest = read_json(root, f"{directory}/state/topics/registry-batches.json")
+    batches = manifest.get("batches")
+    if not isinstance(batches, list) or len(batches) > 1000:
+        raise ValueError("Missing or malformed registry batch manifest")
+    batch_ids: list[str] = []
+    for batch in batches:
+        if not isinstance(batch, dict):
+            raise ValueError("Malformed registry batch entry")
+        bid = batch.get("id")
+        if not isinstance(bid, str) or not BATCH_ID.fullmatch(bid):
+            raise ValueError("Invalid registry batch ID")
+        if bid in batch_ids:
+            raise ValueError("Duplicate registry batch ID")
+        batch_ids.append(bid)
+
+    # Validate and load ALL registry shards before writing any benchmark file.
+    # A missing shard must not be interpreted as a legitimate empty benchmark.
+    groups: list[dict] = []
+    statuses: list[str] = []
+    for bid in batch_ids:
+        registry = read_json(root, f"{directory}/state/topics/registry-{bid}.json")
+        if registry.get("status") not in {"ok", "needs_attention"}:
+            raise ValueError(f"Invalid registry status in batch {bid}")
+        local = registry.get("groups")
+        if not isinstance(local, list) or len(local) > 15:
+            raise ValueError(f"Invalid group list in batch {bid}")
+        for group in local:
+            if not isinstance(group, dict):
+                raise ValueError(f"Non-object group in batch {bid}")
+            gid = group.get("id")
+            if not isinstance(gid, str) or not GROUP_ID.fullmatch(gid):
+                raise ValueError(f"Invalid group ID: {gid!r}")
+            if not gid.startswith(f"{bid}-"):
+                raise ValueError(f"Group belongs to wrong registry batch: {gid}")
+        groups.extend(local)
+        statuses.append(registry["status"])
+    if len({group["id"] for group in groups}) != len(groups):
+        raise ValueError("Duplicate group IDs across registry batches")
+
     stats = Counter()
     cache: dict = {}
-    result = []
-    dedup = set()
+    result: list[dict] = []
+    dedup: set[str] = set()
     for group in groups:
         gid = group["id"]
-        if not isinstance(gid, str) or not GROUP_ID.fullmatch(gid):
-            raise ValueError(f"Invalid group ID: {gid!r}")
-        draft_path = f"{output_dir}/state/draft-{gid}.json"
-        review_path = f"{output_dir}/state/review-{gid}.json"
+        draft_path = f"{directory}/state/draft-{gid}.json"
+        review_path = f"{directory}/state/review-{gid}.json"
         if not confined(root, draft_path, must_exist=False).is_file() or not confined(
                 root, review_path, must_exist=False).is_file():
             stats["missing"] += 1
@@ -172,7 +205,6 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
             continue
         dedup.add(normalized)
         result.append(golden)
-    output = confined(root, output_dir, must_exist=False)
     output.mkdir(parents=True, exist_ok=True)
     result.sort(key=lambda x: x["id"])
     for name, payload in (
@@ -183,11 +215,13 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
             for g in result
         ]),
     ):
-        file = confined(root, f"{output_dir}/{name}", must_exist=False)
+        file = confined(root, f"{directory}/{name}", must_exist=False)
         file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
                         encoding="utf-8")
     return {"accepted": len(result), "total_groups": len(groups),
-            "registry_status": registry["status"], **dict(stats)}
+            "registry_count": len(batch_ids),
+            "registry_status": ("needs_attention" if "needs_attention" in statuses
+                                else "ok"), **dict(stats)}
 
 
 def main() -> None:

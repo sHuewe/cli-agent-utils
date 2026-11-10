@@ -20,9 +20,12 @@ exporter does only deterministic validation and output formatting.
    section texts of a document. One small final per-document pass follows.
 4. **Relate topics across documents** via batches of four profiles (<=32 KB),
    then two further rounds of bounded grouping (five candidate responses /
-   30 KB). Preserve singleton topics between batches to allow matching a
-   concept against other documents at a later stage. The compact registry
-   selects up to 60 independently examinable document groups.
+   30 KB). The FINAL step also batches its input (three summaries /
+   24 KB) and produces separately checkpointed registries per shard.
+   Preserve singleton topics between batches to allow matching a
+   concept against other documents at a later stage. Each registry shard
+   selects up to 15 independently examinable document groups.
+   There is deliberately no unbounded all-shard LLM aggregation.
 5. **Generate one question per group** by reading ONLY bounded original
    line ranges, never feeding reference passages into the tested RAG.
    The reviewer separately reads the same authorized original passages and
@@ -61,9 +64,10 @@ generated data should be inspected before using it as ground truth.
 - `rag-goldens/state/source-inventory.json`
 - `rag-goldens/state/docs/<slug>/...`: per-section scans and consolidated
   doctrine topic profiles
-- `rag-goldens/state/topics/...`: bounded cross-doctrine candidate batches
-  and `registry.json`
-- `rag-goldens/state/draft-g0001.json`, `review-g0001.json`, etc.
+- `rag-goldens/state/topics/...`: bounded cross-doctrine candidate batches,
+  `registry-batches.json` and `registry-b0001.json` etc.
+- `rag-goldens/state/draft-b0001-g0001.json`,
+  `review-b0001-g0001.json`, etc.
 - `rag-goldens/goldens.json` and `deepeval-goldens.json`
 
 JSON outputs provide step-level checkpoints. Interrupted runs can be
@@ -89,8 +93,15 @@ resumed, but the flow itself is sequential (no parallel calls).
 - **Review isolation.** Generated answers are evaluated with ORIGINAL source
   ranges, not retrieval results. Source passages are untrusted and should
   never be interpreted as executable instructions. Prompts limit tool access.
-- **Export status.** `needs_attention` in the registry is preserved in the
-  export summary. Missing/rejected groups are counted rather than fabricated
-  as successes. Duplicate question texts are deduplicated.
+- **Export status.** `needs_attention` in any registry shard is preserved
+  in the export summary. A valid registry with zero eligible groups produces
+  empty JSON benchmark arrays. Missing registry shards remain hard errors;
+  missing/rejected individual questions are counted. Duplicate question texts
+  are deduplicated across all shards.
+- **Cross-shard scope.** A group created only by combining topics from
+  different final registry shards may be missed. This bounded design favors
+  reliable completion over a claim of globally exhaustive matching. The
+  registry count and `needs_attention` flags should be considered when
+  reviewing the resulting benchmark.
 
 There is no TF-IDF pairing stage and no mandatory `prepare.py` step.

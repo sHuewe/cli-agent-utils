@@ -1,0 +1,23 @@
+version = 1
+inputs = ["batch"]
+result = "steps.registry.output"
+
+# Registry creation is guaranteed to receive at most one 24 KiB batch.
+[[steps]]
+id = "registry"
+prompt_file = "flow/rag/generate_goldens/prompts/05_registry.md"
+output = "rag-goldens/state/topics/registry-${input.batch.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${input.batch}"
+
+# Each question and review remains independently checkpointed across shards.
+[[steps]]
+id = "goldens"
+flow = "flow/rag/generate_goldens/flows/process-group.toml"
+foreach = "steps.registry.output.groups"
+iteration_id = "${item.id}"
+[steps.input]
+group = "${item}"
