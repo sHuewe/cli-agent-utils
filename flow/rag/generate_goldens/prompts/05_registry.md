@@ -21,8 +21,18 @@ IDs must be unique in this batch, match ^b[0-9]{4}-g[0-9]{4}$, and use
 batch.id as prefix so different shards cannot overwrite checkpoints. Sources must contain
 original path, inclusive start_line/end_line and claim from the input.
 Max 3 source references per group, 600 characters in total for rationale.
-If incomplete coverage, status=needs_attention and report warnings; output
-groups may still be processed but are not exhaustive.
+Propagate upstream coverage status and warnings from EVERY batch.items[]
+entry (each item is a reduction output):
+- If ANY item has status=needs_attention, return status=needs_attention,
+  including when groups is empty. Include specific upstream warnings,
+  identifying the affected reduction when possible.
+- Never convert needs_attention back to ok just because a batch contains
+  no eligible cross-document pairs. A missing or invalid upstream status
+  is also needs_attention, with an explicit warning.
+- An output of status=ok is permitted only when all upstream statuses are
+  ok AND this registry step has no unresolved coverage problems.
+- Groups may still be processed when coverage is incomplete; they are not
+  an exhaustive representation of the corpus.
 
 JSON:
 {"status":"ok|needs_attention",
@@ -38,5 +48,8 @@ JSON:
  ],
  "warnings":[]}
 
-If the batch has no eligible cross-document relationships, return
-{"status":"ok","groups":[],"warnings":[]} without inventing any.
+When the batch has no eligible cross-document relationships, return
+groups=[] WITHOUT inventing any. Preserve status=needs_attention and relevant
+upstream warnings if any input has incomplete/unknown coverage; ONLY return
+{"status":"ok","groups":[],"warnings":[]} when every input has status=ok
+and there are no warnings or other coverage issues.

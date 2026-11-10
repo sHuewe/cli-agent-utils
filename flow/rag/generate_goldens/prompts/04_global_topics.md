@@ -34,4 +34,13 @@ Limits: at most 50 groups, each group max 3 sources, each claim <=200
 characters, rationale <=240 characters. Minimize duplicated proposals.
 If a source theme cannot be retained within these caps, return
 needs_attention; do not represent incomplete coverage as success.
+
+Coverage status is MONOTONIC across reduction stages: each batch.items[]
+record may already have status=needs_attention and warnings from an
+upstream step. Propagate needs_attention and explanatory warnings into the
+output even if no suitable relationship or group is identified. Never change
+needs_attention to ok because groups are empty or because the current
+analysis succeeded. If any input lacks a valid status, mark needs_attention
+with a warning. Return status=ok only if ALL upstream statuses are ok,
+all input warnings are resolved, and this output has no coverage loss.
 No fenced Markdown.

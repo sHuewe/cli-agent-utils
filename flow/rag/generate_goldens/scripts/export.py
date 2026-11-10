@@ -148,6 +148,10 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
     if not isinstance(batches, list) or len(batches) > 1000:
         raise ValueError("Missing or malformed registry batch manifest")
     batch_ids: list[str] = []
+    # Source statuses are retained in the deterministic batch artifact.
+    # Do not trust the final LLM to carry needs_attention through unchanged.
+    upstream_incomplete: set[str] = set()
+    upstream_warnings: list[str] = []
     for batch in batches:
         if not isinstance(batch, dict):
             raise ValueError("Malformed registry batch entry")
@@ -157,6 +161,29 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
         if bid in batch_ids:
             raise ValueError("Duplicate registry batch ID")
         batch_ids.append(bid)
+        items = batch.get("items")
+        if not isinstance(items, list):
+            raise ValueError(f"Invalid registry input items in {bid}")
+        for position, item in enumerate(items, start=1):
+            if not isinstance(item, dict):
+                raise ValueError(f"Invalid registry input item in {bid}")
+            status = item.get("status")
+            if status not in {"ok", "needs_attention"}:
+                raise ValueError(f"Invalid upstream coverage status in {bid}")
+            warnings = item.get("warnings", [])
+            if not isinstance(warnings, list) or any(
+                not isinstance(w, str) for w in warnings
+            ):
+                raise ValueError(f"Invalid upstream warnings in {bid}")
+            if status == "needs_attention" or warnings:
+                upstream_incomplete.add(bid)
+                if len(upstream_warnings) < 32:
+                    label = f"{bid} input {position}"
+                    reason = "; ".join(warnings[:3])
+                    upstream_warnings.append(
+                        f"{label}: {reason[:320]}" if reason
+                        else f"{label}: incomplete coverage"
+                    )
 
     # Validate and load ALL registry shards before writing any benchmark file.
     # A missing shard must not be interpreted as a legitimate empty benchmark.
@@ -221,8 +248,14 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
                         encoding="utf-8")
     return {"accepted": len(result), "total_groups": len(groups),
             "registry_count": len(batch_ids),
-            "registry_status": ("needs_attention" if "needs_attention" in statuses
-                                else "ok"), **dict(stats)}
+            "registry_status": (
+                "needs_attention"
+                if upstream_incomplete or "needs_attention" in statuses
+                else "ok"
+            ),
+            "upstream_incomplete_batches": len(upstream_incomplete),
+            "upstream_warnings": upstream_warnings,
+            **dict(stats)}
 
 
 def main() -> None:

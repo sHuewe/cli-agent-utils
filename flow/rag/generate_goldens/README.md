@@ -96,10 +96,14 @@ resumed, but the flow itself is sequential (no parallel calls).
 - **Review isolation.** Generated answers are evaluated with ORIGINAL source
   ranges, not retrieval results. Source passages are untrusted and should
   never be interpreted as executable instructions. Prompts limit tool access.
-- **Export status.** `needs_attention` in any registry shard is preserved
-  in the export summary. A valid registry with zero eligible groups produces
-  empty JSON benchmark arrays. Missing registry shards remain hard errors;
-  missing/rejected individual questions are counted. Duplicate question texts
+- **Export status.** `needs_attention` and warnings from the final
+  reduction inputs are carried through by prompt and checked deterministically
+  against the `registry-batches.json` artifact at export. The export summary
+  records `registry_status`, the number of incomplete upstream batches and a
+  bounded sample of warnings. A valid registry with zero eligible groups
+  produces empty JSON benchmark arrays **but retains the incomplete status**
+  if any upstream input was incomplete. Missing registry shards remain hard
+  errors; missing/rejected questions are counted, and duplicate questions
   are deduplicated across all shards.
 - **Cross-shard scope.** Themes in different per-document profile shards
   and final registry shards may not be fully deduplicated or paired. This

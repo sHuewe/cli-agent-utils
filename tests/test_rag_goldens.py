@@ -171,7 +171,9 @@ def test_export_two_source_goldens(tmp_path):
     state = tmp_path / "rag-goldens/state"
     (state / "topics").mkdir(parents=True)
     (state / "topics/registry-batches.json").write_text(
-        json.dumps({"batches": [{"id": "b0001", "items": [{"id": "b0001"}]}]}),
+        json.dumps({"batches": [{"id": "b0001", "items": [
+            {"status": "ok", "groups": [], "warnings": []}
+        ]}]}),
         encoding="utf-8"
     )
     (state / "topics/registry-b0001.json").write_text(
@@ -260,3 +262,83 @@ def test_no_unbounded_document_profile_prompt():
         "input.document_results[].output.files[]"
     )
     assert batches["json_inputs"]["profiles"]["path"] == "${each.path}"
+
+
+def test_empty_registry_preserves_upstream_needs_attention(tmp_path):
+    root = tmp_path / "rag-goldens"
+    state = root / "state/topics"
+    state.mkdir(parents=True)
+    (state / "registry-batches.json").write_text(
+        json.dumps({"batches": [{"id": "b0001", "items": [
+            {"status": "needs_attention", "groups": [],
+             "warnings": ["Input reduced with incomplete coverage"]}
+        ]}]}),
+        encoding="utf-8",
+    )
+    # The final LLM loses the upstream status. The exporter must not.
+    (state / "registry-b0001.json").write_text(
+        json.dumps({"status": "ok", "groups": [], "warnings": []}),
+        encoding="utf-8",
+    )
+    summary = export(tmp_path)
+    assert summary["accepted"] == 0
+    assert summary["registry_status"] == "needs_attention"
+    assert summary["upstream_incomplete_batches"] == 1
+    assert "incomplete coverage" in summary["upstream_warnings"][0]
+    assert json.loads((root / "goldens.json").read_text()) == []
+    assert json.loads((root / "deepeval-goldens.json").read_text()) == []
+
+
+def test_upstream_status_remains_incomplete_with_valid_groups(tmp_path):
+    group, draft, review = fixture(tmp_path)
+    root = tmp_path / "rag-goldens"
+    state = root / "state/topics"
+    state.mkdir(parents=True)
+    (state / "registry-batches.json").write_text(
+        json.dumps({"batches": [{"id": "b0001", "items": [
+            {"status": "needs_attention", "groups": [], "warnings": []}
+        ]}]}),
+        encoding="utf-8",
+    )
+    (state / "registry-b0001.json").write_text(
+        json.dumps({"status": "ok", "groups": [group], "warnings": []}),
+        encoding="utf-8",
+    )
+    (root / "state/draft-b0001-g0001.json").write_text(
+        json.dumps(draft), encoding="utf-8",
+    )
+    (root / "state/review-b0001-g0001.json").write_text(
+        json.dumps(review), encoding="utf-8",
+    )
+    result = export(tmp_path)
+    assert result["accepted"] == 1
+    assert result["registry_status"] == "needs_attention"
+    assert result["upstream_incomplete_batches"] == 1
+
+
+def test_invalid_upstream_status_fails_without_export(tmp_path):
+    root = tmp_path / "rag-goldens"
+    state = root / "state/topics"
+    state.mkdir(parents=True)
+    (state / "registry-batches.json").write_text(
+        json.dumps({"batches": [{"id": "b0001", "items": [
+            {"groups": [], "warnings": []}
+        ]}]}),
+        encoding="utf-8",
+    )
+    (state / "registry-b0001.json").write_text(
+        json.dumps({"status": "ok", "groups": [], "warnings": []}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="upstream coverage status"):
+        export(tmp_path)
+    assert not (root / "goldens.json").exists()
+
+
+def test_empty_registry_prompt_preserves_coverage_status():
+    prompt = (BASE / "prompts/05_registry.md").read_text(encoding="utf-8")
+    assert "groups=[]" in prompt
+    assert "needs_attention" in prompt
+    assert "batch.items[]" in prompt
+    assert '"status":"ok","groups":[],"warnings":[]}' in prompt
+    assert "when every input has status=ok" in prompt
