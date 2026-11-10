@@ -75,14 +75,25 @@ def test_design_scales_by_document_and_section():
     assert sectioner["max_sections"] <= 100
     assert by_id["section_topics"]["foreach"] == "steps.sections.output.sections"
     assert by_id["section_topics"]["overwrite_output"] is False
-    assert analyzer["result_fallback"] == "steps.direct_topics.output"
+    assert analyzer["result"] == "steps.profile_inventory.output"
+    assert "result_fallback" not in analyzer
+    assert by_id["direct_topics"]["output"].endswith("/profiles/direct.json")
+    assert by_id["profile_inventory"]["filesystem_operation"]["kind"] == "inventory"
+    assert by_id["profile_inventory"]["filesystem_operation"]["recursive"] is False
+    document_reduction = config(BASE / "flows/reduce-document.toml")
+    assert document_reduction["result"] == "steps.reduce.output"
+    assert not any(step["id"] == "profile" for step in document_reduction["steps"])
+    reduced = document_reduction["steps"][-1]
+    assert reduced["foreach"] == "steps.reduce_batches.output.batches"
+    assert "/profiles/reduced-" in reduced["output"]
+    assert reduced["overwrite_output"] is False
     global_flow = config(BASE / "flows/global-topics.toml")
     global_steps = {step["id"]: step for step in global_flow["steps"]}
     assert global_steps["profile_batches"]["json_inputs"]["profiles"]["iterate"] == (
-        "input.document_results[]"
+        "input.document_results[].output.files[]"
     )
     assert global_steps["profile_batches"]["json_inputs"]["profiles"]["path"] == (
-        "${each.output.profile_path}"
+        "${each.path}"
     )
     assert "registry" not in global_steps
     assert global_steps["registry_batches"]["flow"].endswith("/batch-reduce2.toml")
@@ -229,3 +240,23 @@ def test_registry_shards_required_and_no_cross_shard_id_collision(tmp_path):
     stats = export(tmp_path)
     assert stats["registry_count"] == 2
     assert stats["registry_status"] == "needs_attention"
+
+
+def test_no_unbounded_document_profile_prompt():
+    # Regression: 96 section scans must never produce one LLM prompt containing
+    # every reduced profile, even if source chunks were individually bounded.
+    flow = config(BASE / "flows/reduce-document.toml")
+    assert all(step["id"] != "profile" for step in flow["steps"])
+    assert not any(
+        "${steps.reduce.output.iterations}" in str(step.get("vars", {}))
+        for step in flow["steps"]
+    )
+    # The global collector consumes per-document manifests as file paths and
+    # batches actual JSON source files, not full aggregated foreach output.
+    global_steps = config(BASE / "flows/global-topics.toml")["steps"]
+    batches = next(step for step in global_steps if step["id"] == "profile_batches")
+    assert batches["json_operation"]["max_batch_bytes"] <= 32000
+    assert batches["json_inputs"]["profiles"]["iterate"] == (
+        "input.document_results[].output.files[]"
+    )
+    assert batches["json_inputs"]["profiles"]["path"] == "${each.path}"

@@ -2,8 +2,10 @@ version = 1
 inputs = ["document_results"]
 result = "steps.registry_batches.output"
 
-# Read only declared flow-generated per-document profiles. Do NOT embed the
-# entire corpus in a model context.
+# Read only declared flow-generated profiles discovered by each document's
+# final profile inventory (one or more bounded shards per doctrine).
+# The double [] flattens per-document file manifests; no whole-doc
+# reductions are interpolated into a model prompt.
 [[steps]]
 id = "profile_batches"
 output = "rag-goldens/state/topics/profile-batches.json"
@@ -14,8 +16,8 @@ input = "profiles"
 batch_size = 4
 max_batch_bytes = 32000
 [steps.json_inputs.profiles]
-iterate = "input.document_results[]"
-path = "${each.output.profile_path}"
+iterate = "input.document_results[].output.files[]"
+path = "${each.path}"
 
 [[steps]]
 id = "candidates"

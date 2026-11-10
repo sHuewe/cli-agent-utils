@@ -15,10 +15,12 @@ exporter does only deterministic validation and output formatting.
    resumable LLM step. Extract subjects, aliases, concrete claims, qualifiers,
    exact source path and inclusive line intervals.
 3. **Consolidate per document** in two layers of JSON batches (4 scans at
-   most and 32 KB per batch, then 4 partial summaries and 30 KB). Produce a
-   compact per-document topic profile with evidence. No prompt receives all
-   section texts of a document. One small final per-document pass follows.
-4. **Relate topics across documents** via batches of four profiles (<=32 KB),
+   most and 32 KB per batch, then 4 partial summaries and 30 KB). Each
+   final reduction writes a separate, checkpointed topic-profile **shard**
+   with evidence; short documents have one direct profile. A deterministic
+   file inventory collects profile paths, not topic contents. Crucially,
+   there is no unbounded all-shards LLM consolidation at document level.
+4. **Relate topics across documents** via batches of four profile shards (<=32 KB),
    then two further rounds of bounded grouping (five candidate responses /
    30 KB). The FINAL step also batches its input (three summaries /
    24 KB) and produces separately checkpointed registries per shard.
@@ -62,8 +64,9 @@ generated data should be inspected before using it as ground truth.
 ## Output locations
 
 - `rag-goldens/state/source-inventory.json`
-- `rag-goldens/state/docs/<slug>/...`: per-section scans and consolidated
-  doctrine topic profiles
+- `rag-goldens/state/docs/<slug>/...`: per-section scans and small,
+  separately checkpointed `profiles/*.json` shards plus
+  `profile-inventory.json` with paths only
 - `rag-goldens/state/topics/...`: bounded cross-doctrine candidate batches,
   `registry-batches.json` and `registry-b0001.json` etc.
 - `rag-goldens/state/draft-b0001-g0001.json`,
@@ -98,10 +101,12 @@ resumed, but the flow itself is sequential (no parallel calls).
   empty JSON benchmark arrays. Missing registry shards remain hard errors;
   missing/rejected individual questions are counted. Duplicate question texts
   are deduplicated across all shards.
-- **Cross-shard scope.** A group created only by combining topics from
-  different final registry shards may be missed. This bounded design favors
-  reliable completion over a claim of globally exhaustive matching. The
-  registry count and `needs_attention` flags should be considered when
-  reviewing the resulting benchmark.
+- **Cross-shard scope.** Themes in different per-document profile shards
+  and final registry shards may not be fully deduplicated or paired. This
+  bounded design favors reliable completion over a claim of globally
+  exhaustive matching. Review the resulting candidate diversity and
+  `needs_attention` status, and invalidate stale outputs on source changes.
+  The profile directory is scanned afresh each run: old, unproduced shard
+  files are deliberately not accepted by the flow's secure JSON-input reads.
 
 There is no TF-IDF pairing stage and no mandatory `prepare.py` step.
