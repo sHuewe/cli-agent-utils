@@ -134,7 +134,7 @@ def fixture(tmp_path: Path):
                       "without_second": "missing token rejection missing"}
     }
     review = {
-        "status": "accepted", "group_id": "g0001", "reason": "Both sources required",
+        "status": "accepted", "group_id": "b0001-g0001", "reason": "Both sources required",
         "checks": {"grounded": True, "both_documents_necessary": True,
                    "unambiguous": True, "no_source_leakage": True}
     }
