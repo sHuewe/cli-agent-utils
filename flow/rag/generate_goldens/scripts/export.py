@@ -14,6 +14,12 @@ from pathlib import Path
 import re
 
 MAX_JSON_BYTES = 4_000_000
+# The registry-batches.json file holds up to 1000 independently bounded
+# 24 KB batches. Its *aggregate* size can therefore legitimately exceed
+# the ordinary single-result JSON cap. 32 MB accommodates the entire
+# bounded manifest while still rejecting unexpectedly large inputs.
+MAX_REGISTRY_MANIFEST_BYTES = 32_000_000
+MAX_REGISTRY_BATCH_BYTES = 24_000
 MAX_DOCUMENT_BYTES = 8_000_000
 GROUP_ID = re.compile(r"b[0-9]{4}-g[0-9]{4}\Z")
 BATCH_ID = re.compile(r"b[0-9]{4}\Z")
@@ -36,9 +42,9 @@ def confined(root: Path, path: str, *, must_exist: bool = True) -> Path:
     return resolved
 
 
-def read_json(root: Path, path: str) -> dict:
+def read_json(root: Path, path: str, *, max_bytes: int = MAX_JSON_BYTES) -> dict:
     file = confined(root, path)
-    if not file.is_file() or file.stat().st_size > MAX_JSON_BYTES:
+    if not file.is_file() or file.stat().st_size > max_bytes:
         raise ValueError(f"Missing/oversized JSON: {path}")
     payload = json.loads(file.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -143,7 +149,10 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
     directory = output.relative_to(root).as_posix()
     if directory == ".":
         raise ValueError("Refusing to write benchmark files to workspace root")
-    manifest = read_json(root, f"{directory}/state/topics/registry-batches.json")
+    manifest = read_json(
+        root, f"{directory}/state/topics/registry-batches.json",
+        max_bytes=MAX_REGISTRY_MANIFEST_BYTES,
+    )
     batches = manifest.get("batches")
     if not isinstance(batches, list) or len(batches) > 1000:
         raise ValueError("Missing or malformed registry batch manifest")
@@ -155,6 +164,14 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
     for batch in batches:
         if not isinstance(batch, dict):
             raise ValueError("Malformed registry batch entry")
+        # Independently enforce the same per-batch byte budget as the
+        # flow's deterministic batch operation. Aggregate growth is
+        # permitted, but individual model inputs must remain bounded.
+        batch_size = len(json.dumps(
+            batch, ensure_ascii=False, separators=(",", ":"),
+        ).encode("utf-8"))
+        if batch_size > MAX_REGISTRY_BATCH_BYTES:
+            raise ValueError("Oversized registry input batch")
         bid = batch.get("id")
         if not isinstance(bid, str) or not BATCH_ID.fullmatch(bid):
             raise ValueError("Invalid registry batch ID")

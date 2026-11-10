@@ -98,6 +98,11 @@ resumed, but the flow itself is sequential (no parallel calls).
 - **Review isolation.** Generated answers are evaluated with ORIGINAL source
   ranges, not retrieval results. Source passages are untrusted and should
   never be interpreted as executable instructions. Prompts limit tool access.
+- **Aggregate manifest size.** `registry-batches.json` contains the
+  complete bounded batch inventory and may legitimately exceed the 4 MB
+  limit used for individual JSON results. Its dedicated export limit is
+  32 MB (up to 1,000 batches), while each individual registry input batch
+  remains limited to 24 KB. An oversized aggregate still fails explicitly.
 - **Export status.** `needs_attention` and warnings from the final
   reduction inputs are carried through by prompt and checked deterministically
   against the `registry-batches.json` artifact at export. The export summary

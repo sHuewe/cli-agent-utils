@@ -15,7 +15,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / "flow/rag/generate_goldens"
 sys.path.insert(0, str(BASE / "scripts"))
-from export import make_golden, export  # noqa: E402
+from export import (
+    make_golden, export, read_json, MAX_JSON_BYTES,
+    MAX_REGISTRY_MANIFEST_BYTES, MAX_REGISTRY_BATCH_BYTES,
+)  # noqa: E402
 
 
 def config(path: Path) -> dict:
@@ -366,3 +369,59 @@ def test_document_consolidation_preserves_upstream_coverage_contract():
         "both",  # Both reduction levels use the same monotonic contract.
     ):
         assert required.casefold() in prompt.casefold()
+
+
+def test_large_registry_manifest_keeps_per_batch_limits(tmp_path):
+    # 200 legal 21-KB batches aggregate to >4 MB. Every individual batch
+    # remains below the flow's 24 KB context budget.
+    root = tmp_path / "rag-goldens"
+    state = root / "state/topics"
+    state.mkdir(parents=True)
+    single = {"status": "ok", "groups": [], "warnings": [], "note": "x" * 7088}
+    batches = []
+    for i in range(1, 201):
+        bid = f"b{i:04d}"
+        batch = {"id": bid, "items": [single, single, single]}
+        assert len(json.dumps(
+            batch, ensure_ascii=False, separators=(",", ":"),
+        ).encode("utf-8")) <= MAX_REGISTRY_BATCH_BYTES
+        batches.append(batch)
+        (state / f"registry-{bid}.json").write_text(
+            json.dumps({"status": "ok", "groups": [], "warnings": []}),
+            encoding="utf-8",
+        )
+    file = state / "registry-batches.json"
+    file.write_text(json.dumps({"batches": batches}), encoding="utf-8")
+    assert file.stat().st_size > MAX_JSON_BYTES
+    assert file.stat().st_size < MAX_REGISTRY_MANIFEST_BYTES
+    assert export(tmp_path) == {
+        "accepted": 0, "total_groups": 0, "registry_count": 200,
+        "registry_status": "ok", "upstream_incomplete_batches": 0,
+        "upstream_warnings": [],
+    }
+    assert json.loads((root / "goldens.json").read_text()) == []
+    assert json.loads((root / "deepeval-goldens.json").read_text()) == []
+    # Ordinary individual JSON outputs retain their smaller size limit.
+    with pytest.raises(ValueError, match="Missing/oversized JSON"):
+        read_json(tmp_path, "rag-goldens/state/topics/registry-batches.json")
+
+
+def test_manifest_and_individual_batch_still_bounded(tmp_path):
+    root = tmp_path / "rag-goldens"
+    state = root / "state/topics"
+    state.mkdir(parents=True)
+    manifest = state / "registry-batches.json"
+    with manifest.open("wb") as stream:
+        stream.truncate(MAX_REGISTRY_MANIFEST_BYTES + 1)
+    with pytest.raises(ValueError, match="Missing/oversized JSON"):
+        export(tmp_path)
+    assert not (root / "goldens.json").exists()
+
+    manifest.write_text(json.dumps({"batches": [{
+        "id": "b0001",
+        "items": [{"status": "ok", "groups": [], "warnings": [],
+                   "note": "x" * MAX_REGISTRY_BATCH_BYTES}],
+    }]}), encoding="utf-8")
+    with pytest.raises(ValueError, match="Oversized registry input batch"):
+        export(tmp_path)
+    assert not (root / "goldens.json").exists()
