@@ -491,7 +491,7 @@ def main(argv: list[str] | None = None) -> int:
         config=config, admin=admin, workspace=workspace,
         approve_tools=tuple(args.approve_tool),
     )
-    print(f"Loaded {len(goldens)} goldens; runner_sha256={runner_sha[:12]}", flush=True)
+    print(f"Loaded {len(goldens)} goldens; runner_sha256={runner_sha}", flush=True)
     run_summary: dict[str, Any] | None = None
     if args.phase in {"run", "all"}:
         run_summary = asyncio.run(run_cases(
