@@ -286,3 +286,104 @@ def test_observed_contexts_bound_to_exact_execution_even_after_fresh(tmp_path):
             testcase_factory=lambda **kw: SimpleNamespace(**kw),
             metrics_factory=lambda **kw: [FakeMetric()],
         )
+
+
+@dataclass(frozen=True)
+class FakeKnowledgeTrace:
+    searches: list[dict]
+    selected: list[dict]
+    calls: list[dict]
+    truncated: bool = False
+    content_included: bool = True
+
+
+class FakeTracedAgent(FakeAgent):
+    async def ask(self, prompt):
+        result = await super().ask(prompt)
+        result.knowledge_trace = FakeKnowledgeTrace(
+            searches=[
+                {"backend": "chroma", "stage": "initial", "query": prompt,
+                 "hits": [
+                     {"id": "chunk-a", "source": "doctrines/a.md",
+                      "rank": 1, "content": "a rule"},
+                     {"id": "chunk-b", "source": "doctrines/b.md",
+                      "rank": 2, "content": "b rule"},
+                 ]},
+            ],
+            selected=[
+                {"id": "chunk-a", "source": "doctrines/a.md",
+                 "rank": 1, "content": "a rule"}
+            ],
+            calls=[{"origin": "initial", "status": "selected", "duration_ms": 50.0}],
+        )
+        return result
+
+
+def test_sdk_trace_auto_enables_context_metrics_and_source_recall(tmp_path):
+    goldens = [dict(golden(), sources=[
+        {"path": "doctrines/a.md"}, {"path": "doctrines/b.md"}
+    ])]
+    asyncio.run(bm.run_cases(
+        goldens, output=tmp_path, runner_sha="run",
+        agent_factory=lambda: FakeTracedAgent([]), timeout=5, fresh=False,
+    ))
+    record = bm.read_json(
+        bm.case_path(tmp_path, goldens[0]["id"]), max_bytes=bm.MAX_CASE_BYTES
+    )
+    assert record["knowledge_trace"]["selected"][0]["content"] == "a rule"
+    assert record["knowledge_trace"]["searches"][0]["hits"][1]["rank"] == 2
+    assert bm.sdk_selected_context(record) == ["a rule"]
+    assert bm.document_recall(goldens[0], record) == {
+        "required_count": 2, "initial_recall": 1.0,
+        "candidate_recall": 1.0, "selection_recall": 0.5,
+        "missing_candidates": [], "missing_selected": ["doctrines/b.md"],
+        "path_match_exact": True,
+    }
+
+    received = []
+    def metric_builder(**kwargs):
+        received.append(kwargs)
+        return [FakeMetric("Faithfulness")]
+
+    cases = []
+    summary = bm.evaluate_cases(
+        goldens, output=tmp_path, runner_sha="run", threshold=0.7,
+        judge_model="mock-judge", fresh=False,
+        testcase_factory=lambda **kw: cases.append(kw) or SimpleNamespace(**kw),
+        metrics_factory=metric_builder,
+    )
+    assert summary["complete"] is True
+    assert cases[0]["retrieval_context"] == ["a rule"]
+    assert received[0]["has_retrieval"] is True
+    assert summary["source_recalls"]["initial_recall"]["mean"] == 1.0
+    assert summary["source_recalls"]["selection_recall"]["mean"] == 0.5
+    score = bm.read_json(
+        bm.score_path(tmp_path, goldens[0]["id"]), max_bytes=bm.MAX_CASE_BYTES
+    )
+    assert score["knowledge_calls"][0]["duration_ms"] == 50.0
+
+
+def test_incomplete_trace_is_not_used_as_grounding_context():
+    response = {"knowledge_trace": {
+        "content_included": True, "truncated": True,
+        "selected": [{"source": "a.md", "content": "A partial chunk"}],
+        "searches": [],
+    }}
+    assert bm.sdk_selected_context(response) is None
+    assert bm.document_recall({"sources": [{"path": "a.md"}]}, response) is None
+    response["knowledge_trace"]["truncated"] = False
+    assert bm.sdk_selected_context(response) == ["A partial chunk"]
+    response["knowledge_trace"]["selected"][0]["content"] = None
+    assert bm.sdk_selected_context(response) is None
+
+
+def test_source_path_mismatch_not_guessed_from_basename():
+    g = {"sources": [{"path": "doctrines/a.md"}, {"path": "doctrines/b.md"}]}
+    response = {"knowledge_trace": {
+        "truncated": False, "content_included": True,
+        "searches": [{"stage": "initial", "hits": [
+            {"source": "a.md"}, {"source": "b.md"}
+        ]}],
+        "selected": [{"source": "a.md"}, {"source": "b.md"}],
+    }}
+    assert bm.document_recall(g, response)["candidate_recall"] == 0.0

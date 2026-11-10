@@ -96,9 +96,13 @@ checkpointed answers and scores per golden, and provides tables for per-case
 status and per-metric averages. It sends **only the golden question** to the
 agent; source evidence and reference answers remain private to the judge.
 
-DeepEval scores answer correctness and relevance by default. Retrieval
-metrics require separately instrumented, **actual** retrieved chunks tied
-to the specific response checkpoint, never the reference quotations.
+DeepEval scores answer correctness and relevance by default. With the
+optional Knowledge trace from **cli-agent PR #303**, the notebook
+automatically receives verified selected chunks and enables faithfulness and
+contextual retrieval metrics without manual instrumentation. It also
+calculates deterministic initial/candidate/selection document recall against
+the required sources in each golden. Reference quotations are never
+substituted for actual retrieved chunks.
 
 See [the notebook instructions](scripts/README-benchmark.md) for
 configuration, checkpoint handling, retrieval-context instrumentation

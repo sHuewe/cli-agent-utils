@@ -31,21 +31,25 @@ requirements before submitting any references or actual answers.
 
 1. **Configuration:** set `WORKSPACE`, `GOLDENS_FILE`, `OUTPUT_DIR`,
    `CONFIG_FILE`, `ADMIN_CONFIG_FILE`, exact `APPROVE_TOOLS`, `MAX_CASES`,
-   `SDK_TIMEOUT_SECONDS`, `JUDGE_MODEL` and `THRESHOLD`. The default
+   `SDK_TIMEOUT_SECONDS`, `CAPTURE_KNOWLEDGE_CONTENT`, `JUDGE_MODEL` and
+   `THRESHOLD`. The default
    `MAX_CASES = 3` provides a small smoke test.
 2. **Load goldens:** obtain the model config and hashed fingerprint.
 3. **SDK run:** `await run_cases(...)` executes only the golden **input**
    against a fresh cli-agent SDK session per question, saving the answer,
    tool-call metadata and reported token counts into
    `rag-goldens/evaluation/responses/<id>.json`.
-4. **Answers preview:** inspect answer excerpts and the individual response
-   fingerprint. Reference facts are **never** passed to the tested agent.
-5. **Optional observed retrieval:** supply an external JSON file containing
-   genuinely retrieved chunks from that exact SDK execution.
+4. **Answers preview:** inspect answer excerpts, Knowledge searches,
+   selected chunks and the individual response fingerprint. Reference
+   facts are **never** passed to the tested agent.
+5. **Observed retrieval:** by default the SDK trace is captured and stored
+   with the response. An external JSON file is optional for independent
+   instrumentation; it must match the exact SDK execution.
 6. **DeepEval:** `evaluate_cases(...)` scores the saved answers and writes
    `scores/<id>.json` and `summary.json`, without rerunning SDK queries.
-7. **Summary:** display a table of metric mean scores and sample counts,
-   completed cases, passes, failures and technical errors.
+7. **Summary:** display DeepEval metric averages and deterministic
+   document recall from initial search, all found/read candidates and
+   final Knowledge selection, alongside completed/passed/failed cases.
 
 ## Metrics
 
@@ -61,15 +65,22 @@ requirements before submitting any references or actual answers.
 - `ContextualRecallMetric`
 - `ContextualPrecisionMetric`
 
-The SDK returns tool-call names, statuses and durations, **not the actual
-retrieved RAG chunks**. The notebook therefore does not invent
-`retrieval_context` using the golden's `evidence` or
-`deepeval-goldens.json.context` fields. Such a substitution would falsely
-measure ideal reference context rather than the real retriever.
+The **new optional Knowledge trace** (`AgentBuilder.with_knowledge_trace`,
+cli-agent PR #303) captures verified Chroma/OKF search results and selected
+content directly from the SDK. The notebook enables this explicitly in the
+SDK factory and uses only **selected** content as DeepEval
+`retrieval_context`. When content capture is disabled, incomplete, truncated
+or empty, only answer metrics run.
 
-## Observed retrieval JSON (optional)
+The notebook never substitutes golden `evidence` or
+`deepeval-goldens.json.context` fields for actual retrieval. Such a
+substitution would falsely score ideal reference context rather than the
+retriever.
 
-If your retriever produces separate trace data, set
+## Observed retrieval JSON (optional external override)
+
+The notebook ordinarily uses the SDK's captured selected context. If a
+separate trusted retriever produces its own trace data, set
 `OBSERVED_RETRIEVAL_FILE` to a JSON document like:
 
 ```json
@@ -90,6 +101,32 @@ hard evaluation error, not a silently ignored context.
 If the observed chunk list is empty, the notebook skips retrieval-dependent
 metrics for that particular case. The resulting per-metric sample counts
 show how many cases have actual retrieval context.
+
+## Document recall and diagnostic attribution
+
+The notebook uses `golden.sources[].path` as the expected source document
+set and compares those paths to `KnowledgeTrace.searches[].hits[].source`
+and `KnowledgeTrace.selected[].source`, reporting:
+
+- `initial_recall`: required documents seen in the initial search;
+- `candidate_recall`: required documents found across all searches or
+  verified OKF reads;
+- `selection_recall`: required documents finally passed to the main LLM.
+
+This distinguishes **missing search candidates** from **candidates rejected
+by the Knowledge LLM**. Reentry searches are included in candidate recall.
+In OKF-only mode without a vector index, initial recall may be zero because
+there is no ranked initial vector search; the meaningful discovery measure
+is candidate recall, including actual `knowledge_read` documents.
+
+Only normalized matching source paths are compared. There is **no guessing
+from filenames**, so externally supplied Chroma metadata must use source
+identifiers aligned with the golden source paths. A zero recall can reflect
+an ID mismatch; inspect the stored trace before interpreting it.
+
+The trace shows what the system retrieved/selected, not which passages the
+main LLM actually relied on. Do not treat a high recall as proof of correct
+reasoning.
 
 ## Checkpoints and repeatability
 
