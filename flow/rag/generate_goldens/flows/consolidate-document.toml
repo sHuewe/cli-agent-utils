@@ -1,0 +1,41 @@
+version = 1
+inputs = ["source", "sections"]
+result = "steps.finalize.output"
+
+# JSON inputs come from completed section scans, no OS reads or LLM here.
+[[steps]]
+id = "scan_batches"
+output = "rag-goldens/state/docs/${input.source.slug}/scan-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch"
+input = "scans"
+batch_size = 4
+max_batch_bytes = 32000
+[steps.json_inputs.scans]
+iterate = "input.sections[]"
+path = "rag-goldens/state/docs/${input.source.slug}/scan-${each.id}.json"
+
+[[steps]]
+id = "merge_batches"
+prompt_file = "flow/rag/generate_goldens/prompts/02_merge_topics.md"
+foreach = "steps.scan_batches.output.batches"
+iteration_id = "${item.id}"
+output = "rag-goldens/state/docs/${input.source.slug}/merged-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+batch = "${item}"
+layer = "section"
+profile_path = "null"
+
+# Further batching prevents the final per-document call from receiving
+# all raw scans or an unbounded number of partial profiles.
+[[steps]]
+id = "finalize"
+flow = "flow/rag/generate_goldens/flows/reduce-document.toml"
+[steps.input]
+source = "${input.source}"
+batches = "${steps.scan_batches.output.batches}"

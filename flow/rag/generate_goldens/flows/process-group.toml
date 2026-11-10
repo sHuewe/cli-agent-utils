@@ -1,0 +1,25 @@
+version = 1
+inputs = ["group"]
+result = "steps.review.output"
+
+# The RAG under test never sees this source bundle.
+[[steps]]
+id = "draft"
+prompt_file = "flow/rag/generate_goldens/prompts/06_generate.md"
+output = "rag-goldens/state/draft-${input.group.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+group = "${input.group}"
+
+[[steps]]
+id = "review"
+prompt_file = "flow/rag/generate_goldens/prompts/07_review.md"
+output = "rag-goldens/state/review-${input.group.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+group = "${input.group}"
+draft = "${steps.draft.output}"

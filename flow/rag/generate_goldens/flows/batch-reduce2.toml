@@ -1,0 +1,19 @@
+version = 1
+inputs = ["batches"]
+result = "steps.batch.output"
+
+# The final registry LLM sees no more than 3 reduced summaries AND 24 KiB.
+# In particular, the full list of second-stage reductions is NEVER rendered
+# into one prompt, regardless of how many source doctrines are indexed.
+[[steps]]
+id = "batch"
+output = "rag-goldens/state/topics/registry-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch"
+input = "summaries"
+batch_size = 3
+max_batch_bytes = 24000
+[steps.json_inputs.summaries]
+iterate = "input.batches[]"
+path = "rag-goldens/state/topics/reduce2-${each.id}.json"

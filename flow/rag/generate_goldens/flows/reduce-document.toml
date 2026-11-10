@@ -1,0 +1,35 @@
+version = 1
+inputs = ["source", "batches"]
+result = "steps.reduce.output"
+
+[[steps]]
+id = "reduce_batches"
+output = "rag-goldens/state/docs/${input.source.slug}/reduce-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch"
+input = "merges"
+batch_size = 4
+max_batch_bytes = 30000
+[steps.json_inputs.merges]
+iterate = "input.batches[]"
+path = "rag-goldens/state/docs/${input.source.slug}/merged-${each.id}.json"
+
+# Every reduction has its own bounded input and checkpoint. There is NO
+# final model call that receives the complete list of reduce outputs.
+# Each reduction is a standalone source-grounded profile shard, later
+# discovered by profile_inventory and consumed in bounded global batches.
+[[steps]]
+id = "reduce"
+prompt_file = "flow/rag/generate_goldens/prompts/02_merge_topics.md"
+foreach = "steps.reduce_batches.output.batches"
+iteration_id = "${item.id}"
+output = "rag-goldens/state/docs/${input.source.slug}/profiles/reduced-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+batch = "${item}"
+layer = "final-document-shard"
+profile_path = "rag-goldens/state/docs/${input.source.slug}/profiles/reduced-${iteration.id}.json"

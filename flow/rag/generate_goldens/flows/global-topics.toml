@@ -1,0 +1,80 @@
+version = 1
+inputs = ["document_results"]
+result = "steps.registry_batches.output"
+
+# Read only declared flow-generated profiles discovered by each document's
+# final profile inventory (one or more bounded shards per doctrine).
+# The double [] flattens per-document file manifests; no whole-doc
+# reductions are interpolated into a model prompt.
+[[steps]]
+id = "profile_batches"
+output = "rag-goldens/state/topics/profile-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch"
+input = "profiles"
+batch_size = 4
+max_batch_bytes = 32000
+[steps.json_inputs.profiles]
+iterate = "input.document_results[].output.files[]"
+path = "${each.path}"
+
+[[steps]]
+id = "candidates"
+prompt_file = "flow/rag/generate_goldens/prompts/04_global_topics.md"
+foreach = "steps.profile_batches.output.batches"
+iteration_id = "${item.id}"
+output = "rag-goldens/state/topics/candidates-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${item}"
+stage = "local"
+
+[[steps]]
+id = "batch_candidates"
+flow = "flow/rag/generate_goldens/flows/batch-candidates.toml"
+[steps.input]
+batches = "${steps.profile_batches.output.batches}"
+
+[[steps]]
+id = "reduce1"
+prompt_file = "flow/rag/generate_goldens/prompts/04_global_topics.md"
+foreach = "steps.batch_candidates.output.batches"
+iteration_id = "${item.id}"
+output = "rag-goldens/state/topics/reduce1-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${item}"
+stage = "reduce1"
+
+[[steps]]
+id = "batch_reduce1"
+flow = "flow/rag/generate_goldens/flows/batch-reduce1.toml"
+[steps.input]
+batches = "${steps.batch_candidates.output.batches}"
+
+[[steps]]
+id = "reduce2"
+prompt_file = "flow/rag/generate_goldens/prompts/04_global_topics.md"
+foreach = "steps.batch_reduce1.output.batches"
+iteration_id = "${item.id}"
+output = "rag-goldens/state/topics/reduce2-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${item}"
+stage = "reduce2"
+
+# The LAST stage is also bounded. The result is a deterministic batch
+# manifest, not a giant JSON array inserted into a model prompt. Each final
+# batch becomes an independent registry shard in the parent flow.
+[[steps]]
+id = "registry_batches"
+flow = "flow/rag/generate_goldens/flows/batch-reduce2.toml"
+[steps.input]
+batches = "${steps.batch_reduce1.output.batches}"

@@ -1,0 +1,16 @@
+version = 1
+inputs = ["batches"]
+result = "steps.batch.output"
+
+[[steps]]
+id = "batch"
+output = "rag-goldens/state/topics/reduce1-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch"
+input = "themes"
+batch_size = 5
+max_batch_bytes = 30000
+[steps.json_inputs.themes]
+iterate = "input.batches[]"
+path = "rag-goldens/state/topics/reduce1-${each.id}.json"

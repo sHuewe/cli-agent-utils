@@ -1,0 +1,50 @@
+version = 1
+
+[vars]
+doctrine_path = "doctrines"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 2
+backoff_multiplier = 2
+max_delay_seconds = 15
+
+# The source corpus itself is inventoried at every run, not preselected pairs.
+[[steps]]
+id = "inventory"
+output = "rag-goldens/state/source-inventory.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "inventory"
+directory = "${var.doctrine_path}"
+recursive = true
+extensions = [".md", ".markdown"]
+exclude_names = ["index.md"]
+max_entries = 10000
+stable_slugs = true
+
+# Independent per-doctrine steps. Each chapter receives its own checkpoint.
+[[steps]]
+id = "analyze_documents"
+flow = "flow/rag/generate_goldens/flows/analyze-document.toml"
+foreach = "steps.inventory.output.files"
+iteration_id = "${item.slug}"
+[steps.input]
+source = "${item}"
+
+# All semantic cross-document analysis happens in bounded LLM batches.
+[[steps]]
+id = "global_topics"
+flow = "flow/rag/generate_goldens/flows/global-topics.toml"
+[steps.input]
+document_results = "${steps.analyze_documents.output.iterations}"
+
+# Each final-registry batch is a separate bounded LLM invocation, followed
+# by independent question generation. There is no unbounded global registry.
+[[steps]]
+id = "registry_shards"
+flow = "flow/rag/generate_goldens/flows/process-registry-batch.toml"
+foreach = "steps.global_topics.output.batches"
+iteration_id = "${item.id}"
+[steps.input]
+batch = "${item}"
