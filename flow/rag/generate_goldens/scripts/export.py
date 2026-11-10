@@ -15,7 +15,8 @@ import re
 
 MAX_JSON_BYTES = 4_000_000
 MAX_DOCUMENT_BYTES = 8_000_000
-GROUP_ID = re.compile(r"g[0-9]{4}\Z")
+GROUP_ID = re.compile(r"b[0-9]{4}-g[0-9]{4}\Z")
+BATCH_ID = re.compile(r"b[0-9]{4}\Z")
 
 
 def confined(root: Path, path: str, *, must_exist: bool = True) -> Path:
