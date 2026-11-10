@@ -1,0 +1,31 @@
+version = 1
+exclude_paths = ["flow/rag/generate_goldens/scripts"]
+result = "steps.generate.output"
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 2
+backoff_multiplier = 2
+max_delay_seconds = 15
+
+# Run scripts/prepare.py before this flow; its bounded packs are never passed
+# into the tested RAG system, only into the independent question generator.
+[[steps]]
+id = "packs"
+output = "rag-goldens/state/pack-inventory.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "inventory"
+directory = "rag-goldens/packs"
+recursive = false
+extensions = [".json"]
+max_entries = 1000
+stable_slugs = true
+
+[[steps]]
+id = "generate"
+flow = "flow/rag/generate_goldens/flows/process-pack.toml"
+foreach = "steps.packs.output.files"
+iteration_id = "${item.slug}"
+[steps.input]
+pack = "${item}"

@@ -1,0 +1,28 @@
+version = 1
+inputs = ["pack"]
+result = "steps.review.output"
+
+# Each pack is at most 12 KB; the agent reads exactly this pack once.
+# Per-pack checkpoints survive timeout or network errors.
+[[steps]]
+id = "draft"
+prompt_file = "flow/rag/generate_goldens/prompts/01_generate.md"
+output = "rag-goldens/state/draft-${input.pack.slug}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+pack = "${input.pack}"
+
+# Independent reviewer: receives the candidate and may check exact passages
+# against the original documents, not the RAG system.
+[[steps]]
+id = "review"
+prompt_file = "flow/rag/generate_goldens/prompts/02_review.md"
+output = "rag-goldens/state/review-${input.pack.slug}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+pack = "${input.pack}"
+draft = "${steps.draft.output}"
