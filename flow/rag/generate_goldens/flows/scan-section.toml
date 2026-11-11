@@ -1,0 +1,51 @@
+version = 1
+inputs = ["source", "section", "scan_id", "output_kind", "profile_path", "output_path"]
+result = "steps.assemble.output"
+
+# Discover at most 12 *brief* major topics. This call reads the bounded
+# section once, but produces very little JSON: no evidence-rich profiles.
+[[steps]]
+id = "discover"
+prompt_file = "flow/rag/generate_goldens/prompts/01_discover_topics.md"
+output = "rag-goldens/state/docs/${input.source.slug}/discovery-${input.scan_id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+section = "${input.section}"
+scan_id = "${input.scan_id}"
+
+# Every topic is enriched in a FRESH model context with only a short source
+# range. The result is saved individually, allowing cheap retries/resumption.
+[[steps]]
+id = "enrich_topics"
+prompt_file = "flow/rag/generate_goldens/prompts/01_enrich_topic.md"
+foreach = "steps.discover.output.candidates"
+iteration_id = "${item.id}"
+output = "rag-goldens/state/docs/${input.source.slug}/evidence-${input.scan_id}-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+section = "${input.section}"
+candidate = "${item}"
+scan_id = "${input.scan_id}"
+
+# No document read here. Assemble only <=12 short enrichment results into
+# the original, downstream-compatible scan/profile JSON contract.
+[[steps]]
+id = "assemble"
+prompt_file = "flow/rag/generate_goldens/prompts/01_assemble_topics.md"
+output = "${input.output_path}"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+section = "${input.section}"
+output_kind = "${input.output_kind}"
+profile_path = "${input.profile_path}"
+discovery = "${steps.discover.output}"
+details = "${steps.enrich_topics.output.iterations}"
