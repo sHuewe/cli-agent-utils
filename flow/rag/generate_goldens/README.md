@@ -85,6 +85,36 @@ generated data should be inspected before using it as ground truth.
 JSON outputs provide step-level checkpoints. Interrupted runs can be
 resumed, but the flow itself is sequential (no parallel calls).
 
+## Evaluate the generated goldens in Jupyter
+
+After generating and exporting goldens with `export.py`, open the
+**[SDK + DeepEval benchmark notebook](benchmark.ipynb)** from the workspace
+root. Configure the model, paths, number of questions, judge and evaluation
+threshold in the notebook's configuration cell. SDK calls and DeepEval scores
+run in **separate cells**, making reruns and exploratory analysis convenient.
+
+```bash
+python -m pip install cli-agent deepeval jupyterlab ipykernel
+jupyter lab flow/rag/generate_goldens/benchmark.ipynb
+```
+
+The notebook runs each question in a **fresh cli-agent SDK session**, saves
+checkpointed answers and scores per golden, and provides tables for per-case
+status and per-metric averages. It sends **only the golden question** to the
+agent; source evidence and reference answers remain private to the judge.
+
+DeepEval scores answer correctness and relevance by default. With the
+optional Knowledge trace from **cli-agent PR #303**, the notebook
+automatically receives verified selected chunks and enables faithfulness and
+contextual retrieval metrics without manual instrumentation. It also
+calculates deterministic initial/candidate/selection document recall against
+the required sources in each golden. Reference quotations are never
+substituted for actual retrieved chunks.
+
+See [the notebook instructions](scripts/README-benchmark.md) for
+configuration, checkpoint handling, retrieval-context instrumentation
+and privacy caveats.
+
 ## Limitations and safety considerations
 
 - **Generic splitting operation.** The Flow JSON `batch_arrays` operation
