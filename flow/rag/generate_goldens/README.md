@@ -10,11 +10,13 @@ exporter does only deterministic validation and output formatting.
 1. **Inventory** all `.md` / `.markdown` source files in `doctrines/`.
    Document identities are stable path-derived slugs.
 2. **Analyze each document** with `markdown_sections` (12,000 characters per
-   logical section, preferentially split at headings; <=96 sections). Short
-   documents are scanned directly. Each larger section gets its own bounded,
-   resumable LLM step. The scan records up to 12 distinct major topics with
-   short descriptions and verifiable line references; the following stages
-   consolidate details and relationships.
+   logical section, preferentially split at headings; <=96 sections). Each
+   section, including short direct documents, runs a *three-stage subflow*:
+   a very short LLM discovery of at most 12 topic titles and their source
+   line ranges; independent, checkpointed LLM enrichment of **one topic
+   per call** (read only its <=50-line source span); and a tool-free assembly
+   call that produces the unchanged downstream scan JSON schema. The later
+   consolidation layers still handle cross-topic semantic reasoning.
 3. **Consolidate per document** in two layers of JSON batches (4 scans at
    most and 32 KB per batch, then 4 partial summaries and 30 KB). Each
    final reduction writes a separate, checkpointed topic-profile **shard**
@@ -67,9 +69,10 @@ generated data should be inspected before using it as ground truth.
 ## Output locations
 
 - `rag-goldens/state/source-inventory.json`
-- `rag-goldens/state/docs/<slug>/...`: per-section scans and small,
-  separately checkpointed `profiles/*.json` shards plus
-  `profile-inventory.json` with paths only
+- `rag-goldens/state/docs/<slug>/...`: `discovery-*.json` topic
+  inventories, `evidence-*.json` per-topic enrichment checkpoints,
+  `scan-*.json` assembled scans and final `profiles/*.json` shards,
+  plus `profile-inventory.json` containing paths only
 - `rag-goldens/state/topics/...`: bounded cross-doctrine candidate batches,
   `registry-batches.json` and `registry-b0001.json` etc.
 - `rag-goldens/state/draft-b0001-g0001.json`,
@@ -81,22 +84,27 @@ resumed, but the flow itself is sequential (no parallel calls).
 
 ## Limitations and safety considerations
 
-- **Scan configuration changes require checkpoint invalidation.** When
-  changing `target_chars`, old `sections.json` and scan checkpoints are not
-  automatically invalidated. Delete `rag-goldens/state` before regenerating
-  after this update or a source/prompt change; this removes intermediate
-  progress but leaves the original doctrines untouched.
+- **Scan configuration changes require checkpoint invalidation.** This
+  release changes the per-section step graph and output contracts: old
+  `sections.json`, `scan-*.json` and `profiles/*.json` checkpoints may
+  no longer match the discovery/enrichment pipeline. Before the first run
+  after upgrading, delete `rag-goldens/state`; this removes intermediate
+  progress but leaves the original doctrines untouched. Do the same when
+  changing `target_chars`, source files or prompts.
 - **Source edits require checkpoint invalidation.** The runner uses stable
   path-based IDs and saved outputs. If original files change or prompts/models
   are changed, delete the affected `rag-goldens/state` before regenerating
   the benchmark. The exporter checks citations against *current* source text
   and stores current SHA-256; it cannot prove unquoted parts of a source
   stayed unchanged during generation.
-- **Bounded, not guaranteed exhaustive.** Each scan reports at most 12
-  distinct major topics; if this omits important topics, it must report
-  `needs_attention`. Smaller sections reduce the work per model request,
-  but may increase the number of requests and are not a guaranteed fix for
-  provider-side timeouts. Each global stage also imposes limits.
+- **Bounded, not guaranteed exhaustive.** Discovery reports at most 12
+  distinct major topics and at most 50 source lines per candidate. If
+  relevant topics or dispersed evidence exceed those bounds, it must
+  report `needs_attention` rather than inventing missing information.
+  The assembly step must propagate any such status and unresolved warnings.
+  More small LLM calls may incur more cost and latency overall; this design
+  aims to reduce per-request generation time, not guarantee that the
+  provider can never time out. Each global stage also imposes limits.
   Large individual model JSON outputs may exceed the 30–32 KB batch bound:
   this is a hard failure to investigate, not silently truncated data.
   Topic discovery is heuristic and may miss distant connections, even with

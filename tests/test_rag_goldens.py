@@ -83,7 +83,11 @@ def test_design_scales_by_document_and_section():
     assert 8000 <= sectioner["target_chars"] <= 12000
     assert sectioner["max_sections"] <= 100
     assert by_id["section_topics"]["foreach"] == "steps.sections.output.sections"
-    assert by_id["section_topics"]["overwrite_output"] is False
+    assert by_id["section_topics"]["flow"].endswith("/scan-section.toml")
+    assert by_id["direct_topics"]["flow"] == by_id["section_topics"]["flow"]
+    assert by_id["section_topics"]["input"]["output_path"].endswith(
+        "/scan-${item.id}.json"
+    )
     assert analyzer["result"] == "steps.profile_inventory.output"
     assert "result_fallback" not in analyzer
     assert by_id["direct_topics"]["output"].endswith("/profiles/direct.json")
@@ -434,15 +438,48 @@ def test_manifest_and_individual_batch_still_bounded(tmp_path):
 
 
 
-def test_scan_prompt_is_bounded_and_preserves_coverage_signals():
+def test_section_scan_is_split_into_bounded_checkpointed_calls():
     analyzer = config(BASE / "flows/analyze-document.toml")
-    sections = next(s for s in analyzer["steps"] if s["id"] == "sections")
-    prompt_path = next(s for s in analyzer["steps"] if s["id"] == "section_topics")["prompt_file"]
-    prompt = (ROOT / prompt_path).read_text(encoding="utf-8")
-    assert sections["filesystem_operation"]["target_chars"] == 12000
-    assert "at most 12 distinct topics" in prompt
-    assert "summary" in prompt and "<=180 characters" in prompt
-    assert "status=needs_attention" in prompt
-    assert "Do not invent claims or line numbers" in prompt
-    assert "at most 12,000 characters" in prompt
-    assert "consolidation" in prompt
+    steps = {s["id"]: s for s in analyzer["steps"]}
+    assert steps["sections"]["filesystem_operation"]["target_chars"] == 12000
+
+    scan = config(BASE / "flows/scan-section.toml")
+    assert scan["result"] == "steps.assemble.output"
+    assert set(scan["inputs"]) == {
+        "source", "section", "scan_id", "output_kind", "profile_path",
+        "output_path",
+    }
+    by_id = {step["id"]: step for step in scan["steps"]}
+    assert set(by_id) == {"discover", "enrich_topics", "assemble"}
+    assert by_id["enrich_topics"]["foreach"] == "steps.discover.output.candidates"
+    assert by_id["enrich_topics"]["iteration_id"] == "${item.id}"
+    assert by_id["enrich_topics"]["overwrite_output"] is False
+    assert by_id["discover"]["overwrite_output"] is False
+    assert by_id["assemble"]["overwrite_output"] is False
+    assert by_id["assemble"]["output"] == "${input.output_path}"
+    assert by_id["enrich_topics"]["workspace_access"] == "read"
+    assert by_id["assemble"]["workspace_access"] == "none"
+
+    discovery = (ROOT / by_id["discover"]["prompt_file"]).read_text()
+    enrichment = (ROOT / by_id["enrich_topics"]["prompt_file"]).read_text()
+    assembly = (ROOT / by_id["assemble"]["prompt_file"]).read_text()
+    assert "At most 12 distinct major topics" in discovery
+    assert "at most 50 lines" in discovery
+    assert "Topic candidate:" in enrichment
+    assert "Read ONLY source.path" in enrichment
+    assert "No tool calls" in assembly
+    assert "STATUS IS MONOTONIC" in assembly
+    assert "profile_path" in assembly
+
+    # Existing consolidation consumes exactly the same scan file paths.
+    consolidation = config(BASE / "flows/consolidate-document.toml")
+    source = consolidation["steps"][0]["json_inputs"]["scans"]
+    assert source["path"] == (
+        "rag-goldens/state/docs/${input.source.slug}/scan-${each.id}.json"
+    )
+    assert steps["section_topics"]["input"]["output_path"] == (
+        "rag-goldens/state/docs/${input.source.slug}/scan-${item.id}.json"
+    )
+    assert steps["direct_topics"]["input"]["output_path"].endswith(
+        "/profiles/direct.json"
+    )
