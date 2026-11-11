@@ -9,11 +9,12 @@ exporter does only deterministic validation and output formatting.
 
 1. **Inventory** all `.md` / `.markdown` source files in `doctrines/`.
    Document identities are stable path-derived slugs.
-2. **Analyze each document** with `markdown_sections` (28,000 characters per
+2. **Analyze each document** with `markdown_sections` (12,000 characters per
    logical section, preferentially split at headings; <=96 sections). Short
    documents are scanned directly. Each larger section gets its own bounded,
-   resumable LLM step. Extract subjects, aliases, concrete claims, qualifiers,
-   exact source path and inclusive line intervals.
+   resumable LLM step. The scan records up to 12 distinct major topics with
+   short descriptions and verifiable line references; the following stages
+   consolidate details and relationships.
 3. **Consolidate per document** in two layers of JSON batches (4 scans at
    most and 32 KB per batch, then 4 partial summaries and 30 KB). Each
    final reduction writes a separate, checkpointed topic-profile **shard**
@@ -80,14 +81,22 @@ resumed, but the flow itself is sequential (no parallel calls).
 
 ## Limitations and safety considerations
 
+- **Scan configuration changes require checkpoint invalidation.** When
+  changing `target_chars`, old `sections.json` and scan checkpoints are not
+  automatically invalidated. Delete `rag-goldens/state` before regenerating
+  after this update or a source/prompt change; this removes intermediate
+  progress but leaves the original doctrines untouched.
 - **Source edits require checkpoint invalidation.** The runner uses stable
   path-based IDs and saved outputs. If original files change or prompts/models
   are changed, delete the affected `rag-goldens/state` before regenerating
   the benchmark. The exporter checks citations against *current* source text
   and stores current SHA-256; it cannot prove unquoted parts of a source
   stayed unchanged during generation.
-- **Bounded, not guaranteed exhaustive.** Each scan and each global stage
-  imposes limits, reporting `needs_attention` for incomplete coverage.
+- **Bounded, not guaranteed exhaustive.** Each scan reports at most 12
+  distinct major topics; if this omits important topics, it must report
+  `needs_attention`. Smaller sections reduce the work per model request,
+  but may increase the number of requests and are not a guaranteed fix for
+  provider-side timeouts. Each global stage also imposes limits.
   Large individual model JSON outputs may exceed the 30–32 KB batch bound:
   this is a hard failure to investigate, not silently truncated data.
   Topic discovery is heuristic and may miss distant connections, even with

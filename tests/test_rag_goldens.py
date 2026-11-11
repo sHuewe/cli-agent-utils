@@ -80,7 +80,7 @@ def test_design_scales_by_document_and_section():
     by_id = {step["id"]: step for step in analyzer["steps"]}
     sectioner = by_id["sections"]["filesystem_operation"]
     assert sectioner["kind"] == "markdown_sections"
-    assert 25000 <= sectioner["target_chars"] <= 30000
+    assert 8000 <= sectioner["target_chars"] <= 12000
     assert sectioner["max_sections"] <= 100
     assert by_id["section_topics"]["foreach"] == "steps.sections.output.sections"
     assert by_id["section_topics"]["overwrite_output"] is False
@@ -431,3 +431,18 @@ def test_manifest_and_individual_batch_still_bounded(tmp_path):
     with pytest.raises(ValueError, match="Oversized registry input batch"):
         export(tmp_path)
     assert not (root / "goldens.json").exists()
+
+
+
+def test_scan_prompt_is_bounded_and_preserves_coverage_signals():
+    analyzer = config(BASE / "flows/analyze-document.toml")
+    sections = next(s for s in analyzer["steps"] if s["id"] == "sections")
+    prompt_path = next(s for s in analyzer["steps"] if s["id"] == "section_topics")["prompt_file"]
+    prompt = (ROOT / prompt_path).read_text(encoding="utf-8")
+    assert sections["filesystem_operation"]["target_chars"] == 12000
+    assert "at most 12 distinct topics" in prompt
+    assert "summary" in prompt and "<=180 characters" in prompt
+    assert "status=needs_attention" in prompt
+    assert "Do not invent claims or line numbers" in prompt
+    assert "at most 12,000 characters" in prompt
+    assert "consolidation" in prompt
