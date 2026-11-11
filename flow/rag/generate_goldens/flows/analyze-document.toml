@@ -11,7 +11,7 @@ overwrite_output = false
 [steps.filesystem_operation]
 kind = "markdown_sections"
 source_path = "${input.source.path}"
-target_chars = 28000
+target_chars = 12000
 max_sections = 96
 
 # A short document (<= target_chars) needs one direct, checkpointed profile.
