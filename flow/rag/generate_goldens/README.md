@@ -20,7 +20,7 @@ exporter does only deterministic validation and output formatting.
 3. **Consolidate per document** in two layers of JSON batches (4 scans at
    most and 32 KB per batch, then 4 partial summaries and 30 KB). Each
    final reduction writes a separate, checkpointed topic-profile **shard**
-   with evidence. Before reduction, `batch_topic_profiles` deterministically
+   with evidence. Before reduction, `batch_arrays` deterministically
    fragments oversized merge results at complete topic/warning boundaries
    (12 KB target, 30 KB maximum batch) without dropping evidence or warnings.
    Short documents have one direct profile. A deterministic
@@ -87,6 +87,10 @@ resumed, but the flow itself is sequential (no parallel calls).
 
 ## Limitations and safety considerations
 
+- **Generic splitting operation.** The Flow JSON `batch_arrays` operation
+  accepts configurable JSON Pointer array paths, here `/topics` and
+  `/warnings`. All other fields are copied without interpretation.
+  Other flows can apply it to different object-array structures.
 - **Existing merge checkpoints can be reused.** The new
   `batch_topic_profiles` operation consumes existing `merged-*.json` files
   unchanged. If a previous `reduce-batches.json` checkpoint exists,

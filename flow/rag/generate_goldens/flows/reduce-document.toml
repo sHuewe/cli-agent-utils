@@ -10,8 +10,9 @@ id = "reduce_batches"
 output = "rag-goldens/state/docs/${input.source.slug}/reduce-batches.json"
 overwrite_output = false
 [steps.json_operation]
-kind = "batch_topic_profiles"
+kind = "batch_arrays"
 input = "merges"
+array_paths = ["/topics", "/warnings"]
 batch_size = 4
 max_batch_bytes = 30000
 target_fragment_bytes = 12000

@@ -58,7 +58,7 @@ def test_flow_paths_and_prompt_variable_bindings():
                 )
             if "json_operation" in step:
                 kind = step["json_operation"]["kind"]
-                assert kind in {"batch", "batch_topic_profiles"}
+                assert kind in {"batch", "batch_arrays"}
                 assert 1 <= step["json_operation"]["batch_size"] <= 5
                 assert step["json_operation"]["max_batch_bytes"] <= 32000
             for data in step.get("json_inputs", {}).values():
@@ -97,8 +97,9 @@ def test_design_scales_by_document_and_section():
     assert document_reduction["result"] == "steps.reduce.output"
     assert not any(step["id"] == "profile" for step in document_reduction["steps"])
     assert document_reduction["steps"][0]["json_operation"] == {
-        "kind": "batch_topic_profiles",
+        "kind": "batch_arrays",
         "input": "merges",
+        "array_paths": ["/topics", "/warnings"],
         "batch_size": 4,
         "max_batch_bytes": 30000,
         "target_fragment_bytes": 12000,
@@ -498,7 +499,8 @@ def test_reduce_batches_uses_lossless_topic_profile_fragmentation():
     split = flow["steps"][0]
     op = split["json_operation"]
     assert split["id"] == "reduce_batches"
-    assert op["kind"] == "batch_topic_profiles"
+    assert op["kind"] == "batch_arrays"
+    assert op["array_paths"] == ["/topics", "/warnings"]
     assert op["target_fragment_bytes"] < op["max_batch_bytes"]
     assert op["target_fragment_bytes"] == 12000
     assert split["json_inputs"]["merges"]["iterate"] == "input.batches[]"
