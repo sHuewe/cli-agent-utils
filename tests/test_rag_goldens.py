@@ -58,7 +58,7 @@ def test_flow_paths_and_prompt_variable_bindings():
                 )
             if "json_operation" in step:
                 kind = step["json_operation"]["kind"]
-                assert kind == "batch"
+                assert kind in {"batch", "batch_topic_profiles"}
                 assert 1 <= step["json_operation"]["batch_size"] <= 5
                 assert step["json_operation"]["max_batch_bytes"] <= 32000
             for data in step.get("json_inputs", {}).values():
@@ -96,6 +96,13 @@ def test_design_scales_by_document_and_section():
     document_reduction = config(BASE / "flows/reduce-document.toml")
     assert document_reduction["result"] == "steps.reduce.output"
     assert not any(step["id"] == "profile" for step in document_reduction["steps"])
+    assert document_reduction["steps"][0]["json_operation"] == {
+        "kind": "batch_topic_profiles",
+        "input": "merges",
+        "batch_size": 4,
+        "max_batch_bytes": 30000,
+        "target_fragment_bytes": 12000,
+    }
     reduced = document_reduction["steps"][-1]
     assert reduced["foreach"] == "steps.reduce_batches.output.batches"
     assert "/profiles/reduced-" in reduced["output"]
@@ -483,3 +490,20 @@ def test_section_scan_is_split_into_bounded_checkpointed_calls():
     assert steps["direct_topics"]["input"]["output_path"].endswith(
         "/profiles/direct.json"
     )
+
+
+
+def test_reduce_batches_uses_lossless_topic_profile_fragmentation():
+    flow = config(BASE / "flows/reduce-document.toml")
+    split = flow["steps"][0]
+    op = split["json_operation"]
+    assert split["id"] == "reduce_batches"
+    assert op["kind"] == "batch_topic_profiles"
+    assert op["target_fragment_bytes"] < op["max_batch_bytes"]
+    assert op["target_fragment_bytes"] == 12000
+    assert split["json_inputs"]["merges"]["iterate"] == "input.batches[]"
+    assert split["json_inputs"]["merges"]["path"].endswith(
+        "/merged-${each.id}.json"
+    )
+    assert split["overwrite_output"] is False
+    assert flow["steps"][1]["foreach"] == "steps.reduce_batches.output.batches"
