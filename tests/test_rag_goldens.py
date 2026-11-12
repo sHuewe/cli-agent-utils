@@ -85,12 +85,12 @@ def test_design_scales_by_document_and_section():
     assert by_id["section_topics"]["foreach"] == "steps.sections.output.sections"
     assert by_id["section_topics"]["flow"].endswith("/scan-section.toml")
     assert by_id["direct_topics"]["flow"] == by_id["section_topics"]["flow"]
-    assert by_id["section_topics"]["input"]["output_path"].endswith(
-        "/scan-${item.id}.json"
+    assert by_id["section_topics"]["input"]["output_file"] == (
+        "scan-${item.id}.json"
     )
     assert analyzer["result"] == "steps.profile_inventory.output"
     assert "result_fallback" not in analyzer
-    assert by_id["direct_topics"]["input"]["output_path"].endswith("/profiles/direct.json")
+    assert by_id["direct_topics"]["input"]["output_file"] == "profiles/direct.json"
     assert by_id["profile_inventory"]["filesystem_operation"]["kind"] == "inventory"
     assert by_id["profile_inventory"]["filesystem_operation"]["recursive"] is False
     document_reduction = config(BASE / "flows/reduce-document.toml")
