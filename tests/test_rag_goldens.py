@@ -521,3 +521,15 @@ def test_large_document_section_cap_matches_cli_agent():
     assert sectioning["max_sections"] == 512
     assert section_step["overwrite_output"] is False
     assert analyzer["steps"][2]["foreach"] == "steps.sections.output.sections"
+
+
+
+def test_rag_golden_checkpoint_snapshot_and_json_restarts_are_bounded():
+    root = config(BASE / "flow.toml")
+    assert root["checkpoint"] == {"max_snapshot_bytes": 600_000_000}
+    scan = config(BASE / "flows/scan-section.toml")
+    for step in scan["steps"]:
+        assert step["id"] in {"discover", "enrich_topics", "assemble"}
+        assert step["response_format"] == "json"
+        assert step["json_restart_attempts"] == 1
+        assert step["overwrite_output"] is False

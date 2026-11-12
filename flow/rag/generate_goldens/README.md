@@ -83,6 +83,13 @@ generated data should be inspected before using it as ground truth.
   `review-b0001-g0001.json`, etc.
 - `rag-goldens/goldens.json` and `deepeval-goldens.json`
 
+The root flow opts into a 600 MB startup budget for existing dynamic JSON
+checkpoints (`[checkpoint].max_snapshot_bytes`); cli-agent keeps its 200 MB
+default for other flows and enforces a 1 GB maximum. Discovery, evidence,
+and assembly steps each permit one fresh agent run if the model still returns
+invalid JSON after its normal in-context repair attempts. All other failures
+remain terminal, and no completed JSON checkpoint is overwritten.
+
 JSON outputs provide step-level checkpoints. Interrupted runs can be
 resumed, but the flow itself is sequential (no parallel calls).
 
