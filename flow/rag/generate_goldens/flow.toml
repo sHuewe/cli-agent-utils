@@ -1,5 +1,10 @@
 version = 1
 
+# Opt in to a higher, still bounded startup snapshot budget for extensive
+# checkpointed corpora. Default cli-agent limit remains 200 MB.
+[checkpoint]
+max_snapshot_bytes = 600000000
+
 [vars]
 doctrine_path = "doctrines"
 

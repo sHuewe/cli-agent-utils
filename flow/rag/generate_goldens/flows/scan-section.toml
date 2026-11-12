@@ -6,6 +6,8 @@ result = "steps.assemble.output"
 # section once, but produces very little JSON: no evidence-rich profiles.
 [[steps]]
 id = "discover"
+# One fresh model run after exhausting in-context JSON format repairs.
+json_restart_attempts = 1
 prompt_file = "flow/rag/generate_goldens/prompts/01_discover_topics.md"
 output = "rag-goldens/state/docs/${input.source.slug}/discovery-${input.scan_id}.json"
 overwrite_output = false
@@ -20,6 +22,8 @@ scan_id = "${input.scan_id}"
 # range. The result is saved individually, allowing cheap retries/resumption.
 [[steps]]
 id = "enrich_topics"
+# One fresh model run after exhausting in-context JSON format repairs.
+json_restart_attempts = 1
 prompt_file = "flow/rag/generate_goldens/prompts/01_enrich_topic.md"
 foreach = "steps.discover.output.candidates"
 iteration_id = "${item.id}"
@@ -37,6 +41,8 @@ scan_id = "${input.scan_id}"
 # the original, downstream-compatible scan/profile JSON contract.
 [[steps]]
 id = "assemble"
+# One fresh model run after exhausting in-context JSON format repairs.
+json_restart_attempts = 1
 prompt_file = "flow/rag/generate_goldens/prompts/01_assemble_topics.md"
 output = "${input.output_path}"
 overwrite_output = false
