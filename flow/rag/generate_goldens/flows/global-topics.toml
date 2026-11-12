@@ -5,13 +5,16 @@ result = "steps.registry_batches.output"
 # Read only declared flow-generated profiles discovered by each document's
 # final profile inventory (one or more bounded shards per doctrine).
 # The double [] flattens per-document file manifests; no whole-doc
-# reductions are interpolated into a model prompt.
+# reductions are interpolated into a model prompt. Large profiles are
+# deterministically fragmented at complete topic/warning boundaries.
 [[steps]]
 id = "profile_batches"
 output = "rag-goldens/state/topics/profile-batches.json"
 overwrite_output = false
 [steps.json_operation]
-kind = "batch"
+kind = "batch_arrays"
+array_paths = ["/topics", "/warnings"]
+target_fragment_bytes = 12000
 input = "profiles"
 batch_size = 4
 max_batch_bytes = 32000
