@@ -565,7 +565,11 @@ def test_cross_document_batching_splits_complete_arrays_at_every_stage():
         }
         assert target < limit
         assert step["overwrite_output"] is False
-        assert step["json_inputs"][input_name]["path"].endswith(".json")
+        input_path = step["json_inputs"][input_name]["path"]
+        if file == "global-topics.toml":
+            assert input_path == "${each.path}"
+        else:
+            assert input_path.endswith(".json")
 
 
 def test_cross_document_batching_retains_existing_downstream_contracts():
