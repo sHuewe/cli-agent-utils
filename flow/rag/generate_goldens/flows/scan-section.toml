@@ -1,5 +1,5 @@
 version = 1
-inputs = ["source", "section", "scan_id", "output_kind", "profile_path", "output_path"]
+inputs = ["source", "section", "scan_id", "output_kind", "profile_path", "output_file"]
 result = "steps.assemble.output"
 
 # Discover at most 12 *brief* major topics. This call reads the bounded
@@ -44,7 +44,11 @@ id = "assemble"
 # One fresh model run after exhausting in-context JSON format repairs.
 json_restart_attempts = 1
 prompt_file = "flow/rag/generate_goldens/prompts/01_assemble_topics.md"
-output = "${input.output_path}"
+# Anchor this dynamic checkpoint template under document state. An
+# unrestricted ${input.output_path} matched every workspace JSON checkpoint,
+# including global_topics.profile_batches, preventing safe resume.
+# The rendered paths are unchanged: scan-sNNN.json and profiles/direct.json.
+output = "rag-goldens/state/docs/${input.source.slug}/${input.output_file}"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"

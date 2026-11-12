@@ -457,7 +457,7 @@ def test_section_scan_is_split_into_bounded_checkpointed_calls():
     assert scan["result"] == "steps.assemble.output"
     assert set(scan["inputs"]) == {
         "source", "section", "scan_id", "output_kind", "profile_path",
-        "output_path",
+        "output_file",
     }
     by_id = {step["id"]: step for step in scan["steps"]}
     assert set(by_id) == {"discover", "enrich_topics", "assemble"}
@@ -466,7 +466,9 @@ def test_section_scan_is_split_into_bounded_checkpointed_calls():
     assert by_id["enrich_topics"]["overwrite_output"] is False
     assert by_id["discover"]["overwrite_output"] is False
     assert by_id["assemble"]["overwrite_output"] is False
-    assert by_id["assemble"]["output"] == "${input.output_path}"
+    assert by_id["assemble"]["output"] == (
+        "rag-goldens/state/docs/${input.source.slug}/${input.output_file}"
+    )
     assert by_id["enrich_topics"]["workspace_access"] == "read"
     assert by_id["assemble"]["workspace_access"] == "none"
 
@@ -487,11 +489,11 @@ def test_section_scan_is_split_into_bounded_checkpointed_calls():
     assert source["path"] == (
         "rag-goldens/state/docs/${input.source.slug}/scan-${each.id}.json"
     )
-    assert steps["section_topics"]["input"]["output_path"] == (
-        "rag-goldens/state/docs/${input.source.slug}/scan-${item.id}.json"
+    assert steps["section_topics"]["input"]["output_file"] == (
+        "scan-${item.id}.json"
     )
-    assert steps["direct_topics"]["input"]["output_path"].endswith(
-        "/profiles/direct.json"
+    assert steps["direct_topics"]["input"]["output_file"] == (
+        "profiles/direct.json"
     )
 
 
@@ -592,3 +594,23 @@ def test_cross_document_batching_retains_existing_downstream_contracts():
         subflow = config(BASE / "flows" / file)
         assert subflow["result"] == "steps.batch.output"
         assert subflow["steps"][0]["json_operation"]["kind"] == "batch_arrays"
+
+
+def test_scan_assemble_checkpoint_template_is_scoped_to_doc_state():
+    """Do not let scan assembly claim unrelated global topics checkpoints."""
+    import re
+
+    scan = config(BASE / "flows/scan-section.toml")
+    assemble = next(step for step in scan["steps"] if step["id"] == "assemble")
+    template = assemble["output"]
+    assert template.startswith("rag-goldens/state/docs/")
+    # Model the conservative full-template matcher used by cli-agent: every
+    # placeholder can match arbitrary characters including separators.
+    pattern = re.escape(template)
+    for placeholder in ("${input.source.slug}", "${input.output_file}"):
+        pattern = pattern.replace(re.escape(placeholder), ".*?")
+    regex = re.compile(r"\A" + pattern + r"\Z", re.DOTALL)
+    assert regex.fullmatch("rag-goldens/state/docs/test/scan-s027.json")
+    assert regex.fullmatch("rag-goldens/state/docs/test/profiles/direct.json")
+    assert not regex.fullmatch("rag-goldens/state/topics/profile-batches.json")
+    assert not regex.fullmatch("rag-goldens/state/topics/registry-batches.json")

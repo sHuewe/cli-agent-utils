@@ -197,3 +197,8 @@ and privacy caveats.
   files are deliberately not accepted by the flow's secure JSON-input reads.
 
 There is no TF-IDF pairing stage and no mandatory `prepare.py` step.
+
+The scan assembly checkpoint template is anchored under `rag-goldens/state/docs/`
+(instead of an unconstrained output-path placeholder), so it cannot match
+static global-topic checkpoint paths. Existing per-document scan/profile
+checkpoint filenames remain unchanged and reusable.
