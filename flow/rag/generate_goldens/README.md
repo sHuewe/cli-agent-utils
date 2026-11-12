@@ -90,7 +90,10 @@ generated data should be inspected before using it as ground truth.
 
 The root flow opts into a 600 MB startup budget for existing dynamic JSON
 checkpoints (`[checkpoint].max_snapshot_bytes`); cli-agent keeps its 200 MB
-default for other flows and enforces a 1 GB maximum. Discovery, evidence,
+default for other flows and enforces a 1 GB maximum. The Golden Flow also
+raises the separately bounded dynamic-checkpoint discovery limit to 100,000
+filesystem entries via `[checkpoint].max_candidates` (default 20,000,
+maximum 200,000). Entries include directories and unrelated files. Discovery, evidence,
 and assembly steps each permit one fresh agent run if the model still returns
 invalid JSON after its normal in-context repair attempts. All other failures
 remain terminal, and no completed JSON checkpoint is overwritten.
