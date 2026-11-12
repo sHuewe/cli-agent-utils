@@ -25,7 +25,7 @@ section = "null"
 scan_id = "direct"
 output_kind = "document_profile"
 profile_path = "rag-goldens/state/docs/${input.source.slug}/profiles/direct.json"
-output_path = "rag-goldens/state/docs/${input.source.slug}/profiles/direct.json"
+output_file = "profiles/direct.json"
 
 # Each source section has independent discovery, per-topic enrichment, and
 # deterministic checkpoint paths. The child result still has the legacy
@@ -41,7 +41,7 @@ section = "${item}"
 scan_id = "${item.id}"
 output_kind = "section_topics"
 profile_path = "null"
-output_path = "rag-goldens/state/docs/${input.source.slug}/scan-${item.id}.json"
+output_file = "scan-${item.id}.json"
 
 [[steps]]
 id = "consolidate_sections"
