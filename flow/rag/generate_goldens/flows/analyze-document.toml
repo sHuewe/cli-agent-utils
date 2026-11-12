@@ -12,7 +12,7 @@ overwrite_output = false
 kind = "markdown_sections"
 source_path = "${input.source.path}"
 target_chars = 12000
-max_sections = 96
+max_sections = 512
 
 # Short doctrines take the same two-stage analysis path as longer sections.
 [[steps]]

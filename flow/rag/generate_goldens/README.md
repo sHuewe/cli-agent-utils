@@ -10,7 +10,8 @@ exporter does only deterministic validation and output formatting.
 1. **Inventory** all `.md` / `.markdown` source files in `doctrines/`.
    Document identities are stable path-derived slugs.
 2. **Analyze each document** with `markdown_sections` (12,000 characters per
-   logical section, preferentially split at headings; <=96 sections). Each
+   logical section, preferentially split at headings after at least two-thirds
+   of the target; <=512 sections). Each
    section, including short direct documents, runs a *three-stage subflow*:
    a very short LLM discovery of at most 12 topic titles and their source
    line ranges; independent, checkpointed LLM enrichment of **one topic

@@ -81,7 +81,7 @@ def test_design_scales_by_document_and_section():
     sectioner = by_id["sections"]["filesystem_operation"]
     assert sectioner["kind"] == "markdown_sections"
     assert 8000 <= sectioner["target_chars"] <= 12000
-    assert sectioner["max_sections"] <= 100
+    assert sectioner["max_sections"] == 512
     assert by_id["section_topics"]["foreach"] == "steps.sections.output.sections"
     assert by_id["section_topics"]["flow"].endswith("/scan-section.toml")
     assert by_id["direct_topics"]["flow"] == by_id["section_topics"]["flow"]
@@ -509,3 +509,15 @@ def test_reduce_batches_uses_lossless_topic_profile_fragmentation():
     )
     assert split["overwrite_output"] is False
     assert flow["steps"][1]["foreach"] == "steps.reduce_batches.output.batches"
+
+
+
+def test_large_document_section_cap_matches_cli_agent():
+    analyzer = config(BASE / "flows/analyze-document.toml")
+    section_step = next(s for s in analyzer["steps"] if s["id"] == "sections")
+    sectioning = section_step["filesystem_operation"]
+    assert sectioning["kind"] == "markdown_sections"
+    assert sectioning["target_chars"] == 12000
+    assert sectioning["max_sections"] == 512
+    assert section_step["overwrite_output"] is False
+    assert analyzer["steps"][2]["foreach"] == "steps.sections.output.sections"
