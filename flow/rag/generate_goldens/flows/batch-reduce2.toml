@@ -9,8 +9,12 @@ result = "steps.batch.output"
 id = "batch"
 output = "rag-goldens/state/topics/registry-batches.json"
 overwrite_output = false
+# Each generated cross-document group is indivisible; split whole groups
+# (and warnings) before bounded repacking, without dropping provenance.
 [steps.json_operation]
-kind = "batch"
+kind = "batch_arrays"
+array_paths = ["/groups", "/warnings"]
+target_fragment_bytes = 9000
 input = "summaries"
 batch_size = 3
 max_batch_bytes = 24000

@@ -29,12 +29,17 @@ exporter does only deterministic validation and output formatting.
    there is no unbounded all-shards LLM consolidation at document level.
    The consolidation prompt propagates upstream `needs_attention` statuses and
    unresolved warnings at **both** layers, even when no topics remain.
-4. **Relate topics across documents** via batches of four profile shards (<=32 KB),
-   then two further rounds of bounded grouping (five candidate responses /
-   30 KB). The FINAL step also batches its input (three summaries /
-   24 KB) and produces separately checkpointed registries per shard.
+4. **Relate topics across documents** via batches of four profile fragments
+   (<=32 KB), then two further rounds of bounded grouping (five candidate
+   fragments / 30 KB). Large profiles are split at complete topic and
+   warning boundaries; later cross-document proposals are split at complete
+   group and warning boundaries. The FINAL step also batches its fragments
+   (three per batch / 24 KB) and produces separately checkpointed registries
+   per shard.
    Preserve singleton topics between batches to allow matching a
-   concept against other documents at a later stage. Each registry shard
+   concept against other documents at a later stage. Fragments retain
+   source/status metadata; individual groups and their evidence are atomic.
+   An indivisible oversized group still raises an explicit size error. Each registry shard
    selects up to 15 independently examinable document groups.
    There is deliberately no unbounded all-shard LLM aggregation.
 5. **Generate one question per group** by reading ONLY bounded original

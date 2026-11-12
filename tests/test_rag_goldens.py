@@ -120,7 +120,9 @@ def test_design_scales_by_document_and_section():
     assert global_steps["registry_batches"]["flow"].endswith("/batch-reduce2.toml")
     final = config(BASE / "flows/batch-reduce2.toml")["steps"][0]
     assert final["json_operation"] == {
-        "kind": "batch", "input": "summaries",
+        "kind": "batch_arrays", "input": "summaries",
+        "array_paths": ["/groups", "/warnings"],
+        "target_fragment_bytes": 9000,
         "batch_size": 3, "max_batch_bytes": 24000
     }
     assert final["json_inputs"]["summaries"]["iterate"] == "input.batches[]"
@@ -533,3 +535,53 @@ def test_rag_golden_checkpoint_snapshot_and_json_restarts_are_bounded():
         assert step["response_format"] == "json"
         assert step["json_restart_attempts"] == 1
         assert step["overwrite_output"] is False
+
+
+
+def test_cross_document_batching_splits_complete_arrays_at_every_stage():
+    """All four semantic batching stages must tolerate oversized JSON records."""
+    cases = [
+        ("global-topics.toml", "profile_batches", "profiles",
+         ["/topics", "/warnings"], 32000, 12000),
+        ("batch-candidates.toml", "batch", "candidates",
+         ["/groups", "/warnings"], 30000, 12000),
+        ("batch-reduce1.toml", "batch", "themes",
+         ["/groups", "/warnings"], 30000, 12000),
+        ("batch-reduce2.toml", "batch", "summaries",
+         ["/groups", "/warnings"], 24000, 9000),
+    ]
+    for file, step_id, input_name, paths, limit, target in cases:
+        steps = config(BASE / "flows" / file)["steps"]
+        step = next(step for step in steps if step["id"] == step_id)
+        assert step["json_operation"] == {
+            "kind": "batch_arrays",
+            "array_paths": paths,
+            "target_fragment_bytes": target,
+            "input": input_name,
+            "batch_size": 4 if file == "global-topics.toml" else (
+                3 if file == "batch-reduce2.toml" else 5
+            ),
+            "max_batch_bytes": limit,
+        }
+        assert target < limit
+        assert step["overwrite_output"] is False
+        assert step["json_inputs"][input_name]["path"].endswith(".json")
+
+
+def test_cross_document_batching_retains_existing_downstream_contracts():
+    global_steps = config(BASE / "flows/global-topics.toml")["steps"]
+    global_by_id = {step["id"]: step for step in global_steps}
+    assert global_by_id["candidates"]["foreach"] == (
+        "steps.profile_batches.output.batches"
+    )
+    assert global_by_id["reduce1"]["foreach"] == (
+        "steps.batch_candidates.output.batches"
+    )
+    assert global_by_id["reduce2"]["foreach"] == (
+        "steps.batch_reduce1.output.batches"
+    )
+    for file in ("batch-candidates.toml", "batch-reduce1.toml",
+                 "batch-reduce2.toml"):
+        subflow = config(BASE / "flows" / file)
+        assert subflow["result"] == "steps.batch.output"
+        assert subflow["steps"][0]["json_operation"]["kind"] == "batch_arrays"
