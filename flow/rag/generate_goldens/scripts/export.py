@@ -50,6 +50,13 @@ def question_is_about_sources(question: str) -> bool:
 
 
 
+def question_dedup_key(question: str) -> str:
+    """Normalize superficial formatting without changing technical syntax."""
+    # C#, C++, .NET and Node.js must remain semantically distinct.
+    normalized = " ".join(question.casefold().split())
+    return normalized.rstrip("?？").rstrip()
+
+
 def confined(root: Path, path: str, *, must_exist: bool = True) -> Path:
     if not isinstance(path, str) or not path.strip() or "\\" in path:
         raise ValueError("Invalid path")
@@ -309,8 +316,8 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
             if golden is None:
                 stats["rejected"] += 1
                 continue
-            # Punctuation-only changes do not turn a paraphrase into a new case.
-            normalized = " ".join(re.findall(r"\w+", golden["input"].casefold()))
+            # Ignore superficial formatting; keep punctuation in technical terms.
+            normalized = question_dedup_key(golden["input"])
             if normalized in dedup:
                 stats["duplicates"] += 1
                 continue
