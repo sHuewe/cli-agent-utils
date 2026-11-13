@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / "flow/rag/generate_goldens"
 sys.path.insert(0, str(BASE / "scripts"))
 from export import (
-    make_golden, export, read_json, question_is_about_sources, MAX_JSON_BYTES,
+    make_golden, export, read_json, question_is_about_sources, question_dedup_key, MAX_JSON_BYTES,
     MAX_REGISTRY_MANIFEST_BYTES, MAX_REGISTRY_BATCH_BYTES,
 )  # noqa: E402
 
@@ -738,3 +738,50 @@ def test_variant_flow_contract_and_bounded_global_matching():
     global_steps = {s["id"]: s for s in config(BASE / "flows/global-topics.toml")["steps"]}
     assert global_steps["reduce3"]["foreach"] == "steps.batch_reduce2.output.batches"
     assert global_steps["registry_batches"]["flow"].endswith("/batch-reduce3.toml")
+
+
+
+def test_question_dedup_keeps_technical_punctuation():
+    assert question_dedup_key("How do C++ clients authenticate?") != (
+        question_dedup_key("How do C# clients authenticate?")
+    )
+    assert question_dedup_key("How does Node.js authenticate?") != (
+        question_dedup_key("How does Nodejs authenticate?")
+    )
+    assert question_dedup_key("How does .NET authenticate?") != (
+        question_dedup_key("How does NET authenticate?")
+    )
+    assert question_dedup_key("  HOW   DO C++ clients authenticate?? ") == (
+        question_dedup_key("How do C++ clients authenticate?")
+    )
+
+
+def test_export_preserves_csharp_and_cpp_cases(tmp_path):
+    group, draft, review = fixture(tmp_path)
+    state = tmp_path / "rag-goldens/state"
+    (state / "topics").mkdir(parents=True)
+    (state / "plans").mkdir()
+    variants = state / "variants" / group["id"]
+    variants.mkdir(parents=True)
+    (state / "topics/registry-batches.json").write_text(json.dumps({
+        "batches": [{"id": "b0001", "items": [
+            {"status": "ok", "groups": [], "warnings": []}]}]
+    }), encoding="utf-8")
+    (state / "topics/registry-b0001.json").write_text(json.dumps({
+        "status": "ok", "groups": [group], "warnings": []}), encoding="utf-8")
+    baseline = {**draft, "question":
+        "How do C++ clients authenticate requests through the gateway and policy?"}
+    (state / ("draft-" + group["id"] + ".json")).write_text(json.dumps(baseline))
+    (state / ("review-" + group["id"] + ".json")).write_text(json.dumps(review))
+    (state / "plans" / ("plan-" + group["id"] + ".json")).write_text(
+        json.dumps({"group_id": group["id"], "variants": [
+            {"id": "v0001", "focus": "C# authentication handling"}
+        ]}))
+    alternate = {**draft, "variant_id": "v0001", "question":
+        "How do C# clients authenticate requests through the gateway and policy?"}
+    alternate_review = {**review, "variant_id": "v0001"}
+    (variants / "draft-v0001.json").write_text(json.dumps(alternate))
+    (variants / "review-v0001.json").write_text(json.dumps(alternate_review))
+    outcome = export(tmp_path)
+    assert outcome["accepted"] == 2
+    assert outcome.get("duplicates", 0) == 0
