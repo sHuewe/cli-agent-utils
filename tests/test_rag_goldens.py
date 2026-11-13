@@ -680,6 +680,7 @@ def test_source_location_questions_rejected_even_if_reviewer_accepts(tmp_path):
             tmp_path, group, {**draft, "question": question}, review, {}
         ) is None
     for question in (
+        "Welche Dokumentationspflichten gelten bei der Tokenvalidierung?",
         "Was passiert bei fehlendem Authentifizierungstoken?",
         "Wie müssen Gateway und Policy mit fehlenden Tokens umgehen?",
         "How does the gateway enforce authentication for requests?",
@@ -730,6 +731,10 @@ def test_variant_flow_contract_and_bounded_global_matching():
     child = config(BASE / "flows/process-variant.toml")
     assert child["steps"][0]["output"] != child["steps"][1]["output"]
     assert all("variants/" in step["output"] for step in child["steps"])
+    assert child["steps"][1]["vars"]["base_draft"] == "${input.base_draft}"
+    assert "{{var:base_draft}}" in (
+        BASE / "prompts/10_review_variant.md"
+    ).read_text(encoding="utf-8")
     global_steps = {s["id"]: s for s in config(BASE / "flows/global-topics.toml")["steps"]}
     assert global_steps["reduce3"]["foreach"] == "steps.batch_reduce2.output.batches"
     assert global_steps["registry_batches"]["flow"].endswith("/batch-reduce3.toml")

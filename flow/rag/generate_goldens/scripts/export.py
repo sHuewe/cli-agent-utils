@@ -28,9 +28,9 @@ VARIANT_ID = re.compile(r"v000[12]\Z")
 # Backup validation for LLM reviewers: reject questions about source location.
 _SOURCE_QUESTION_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
     r"\b(?:welche[msrn]?|in\s+welche[msrn]?|aus\s+welche[msrn]?)\s+"
-    r"(?:dokument\w*|datei\w*|quelle\w*|abschnitt\w*|kapitel\w*)\b",
+    r"(?:dokument(?:e|en|s|es)?|datei(?:en|s)?|quelle(?:n)?|abschnitt(?:s|e|en)?|kapitel(?:s|n)?)\b",
     r"\b(?:in|aus|laut|gemäß|nach)\s+(?:dem|den|der|einem|einer|diesem|dieser)\s+"
-    r"(?:dokument\w*|datei\w*|quelle\w*|abschnitt\w*|kapitel\w*)\b",
+    r"(?:dokument(?:e|en|s|es)?|datei(?:en|s)?|quelle(?:n)?|abschnitt(?:s|e|en)?|kapitel(?:s|n)?)\b",
     r"\b(?:wo|an\s+welcher\s+stelle)\b.{0,120}\b"
     r"(?:beschrieben|dokumentiert|erwähnt|genannt|nachzulesen|zu\s+finden)\b",
     r"\b(?:auf\s+welche[msrn]?\s+seite|welche[msrn]?\s+passage)\b",

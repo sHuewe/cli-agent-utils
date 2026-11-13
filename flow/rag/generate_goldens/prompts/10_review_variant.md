@@ -3,6 +3,7 @@
 Source group: {{var:group}}
 Intended independent facet: {{var:variant}}
 Generated draft: {{var:draft}}
+Original baseline draft (used only to detect paraphrases): {{var:base_draft}}
 
 Read ONLY the exact inclusive original source ranges in group.sources
 using os__read_file. Do not read other files, retrieve from RAG, search,
@@ -17,8 +18,12 @@ Reject unless all of the following are independently verified:
    interpretations or contradictory evidence.
 4. It tests domain knowledge, NOT which document/file/section/source contains
    a fact, where it is described or how documents themselves compare.
-5. It targets a DISTINCT technical fact or reasoning aspect described by
-   variant.focus, and is not merely a paraphrase of the original question.
+5. Compare with base_draft.question and base_draft.expected_output, even if
+   the baseline was rejected. The variant must target a DISTINCT technical
+   fact or reasoning aspect and not be a mere paraphrase of the baseline
+   question or expected answer. If they request equivalent information,
+   REJECT. If the baseline was rejected for lack of a genuinely
+   cross-document dependency, scrutinize whether the variant resolves it.
 Reject uncertain cases, and do not repair failed drafts.
 
 Return JSON only:
