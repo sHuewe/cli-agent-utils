@@ -128,7 +128,11 @@ def test_design_scales_by_document_and_section():
         "batch_size": 2, "max_batch_bytes": 12000
     }
     assert final["json_inputs"]["summaries"]["iterate"] == "input.batches[]"
-    assert final["json_inputs"]["summaries"]["path"].endswith("reduce3-${each.id}.json")
+    assert final["json_inputs"]["summaries"]["path"].endswith("reduce2-${each.id}.json")
+    registry = config(BASE / "flows/batch-reduce3.toml")["steps"][0]
+    assert registry["json_inputs"]["summaries"]["path"].endswith(
+        "reduce3-${each.id}.json"
+    )
     shard = config(BASE / "flows/process-registry-batch.toml")
     assert shard["steps"][0]["workspace_access"] == "none"
     assert shard["steps"][0]["vars"]["batch"] == "${input.batch}"
