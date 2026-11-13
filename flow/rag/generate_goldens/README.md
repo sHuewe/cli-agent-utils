@@ -152,8 +152,7 @@ distinct; the independent reviewer is responsible for that judgment.
 ## Evaluate the generated goldens with native DeepEval
 
 The [benchmark notebook](benchmark.ipynb) uses
-**`EvaluationDataset.evals_iterator()` to drive target execution and
-evaluation**. While the iterator yields a Golden, the optional SDK method
+**`EvaluationDataset.evals_iterator()` to drive observed target execution**, followed by native cache-aware `evaluate()` calls for judge scoring. While the iterator yields a Golden, the optional SDK method
 `AgentBuilder.build_deepeval_target()` provides an observed
 `target.ask(question, expected_output=...)`; it annotates the native
 DeepEval trace without revealing the answer/reference to the target.
@@ -173,9 +172,10 @@ passed to the judge. Responses are checkpointed separately from DeepEval
 scoring; changing the judge replays cached answers into a native observed
 trace rather than repeating expensive target questions.
 
-DeepEval runs answer correctness/relevance inside the iterator, with optional
-follow-up contextual retrieval metrics for actual, verified selected
-Knowledge passages. Reference quotations from the golden dataset are NEVER
+DeepEval records observed target answers inside the iterator with a no-cost
+response-check metric. Its native cache-aware `evaluate()` then runs answer
+correctness/relevance and optionally contextual retrieval metrics for actual,
+verified selected Knowledge passages. Reference quotations from the golden dataset are NEVER
 used as observed retrieval context. Initial/candidate/selection source
 recall remains a deterministic, cli-agent-specific diagnostic.
 
