@@ -248,6 +248,7 @@ def test_native_iterator_wraps_ask_and_receives_expected_output(monkeypatch):
         "dataset": FakeDataset(), "by_id": {"b0001-g0001": golden()},
         "target": FakeTarget(), "judge": object(), "THRESHOLD": 0.7,
         "benchmark_metrics": lambda *a, **kw: [object()],
+        "target_trace_metric": lambda: object(),
         "OUTPUT_DIR": ROOT, "target_sha": "config-A",
         "FRESH_EVALUATION": False, "FRESH_SDK": False,
         "SDK_TIMEOUT_SECONDS": 5.0,
@@ -262,8 +263,63 @@ def test_native_iterator_wraps_ask_and_receives_expected_output(monkeypatch):
         await eval(compiled, env)
 
     asyncio.run(run())
-    assert logs[0] == ("iterator", "rag-answer-quality")
+    assert logs[0] == ("iterator", "rag-target-execution")
     assert logs[1] == ("ask", "What happens?", "Reject", None)
     assert logs[2] == ("saved",)
     assert logs[3] == ("evaluated", "What happens?")
     assert env["responses"]["b0001-g0001"]["actual_output"] == "Reject"
+
+
+
+def test_target_trace_metric_is_deterministic_and_free_of_judge_calls(monkeypatch):
+    class FakeMetric:
+        def is_successful(self):
+            return self.score >= self.threshold
+
+    mod = types.ModuleType("deepeval.metrics")
+    mod.BaseMetric = FakeMetric
+    monkeypatch.setitem(sys.modules, "deepeval.metrics", mod)
+    metric = adapter.target_trace_metric()
+    assert metric.measure(types.SimpleNamespace(actual_output="Target answer")) == 1.0
+    assert metric.is_successful() is True
+    assert metric.measure(types.SimpleNamespace(actual_output="")) == 0.0
+    assert metric.is_successful() is False
+
+
+def test_answer_judge_is_called_via_cache_aware_native_evaluate(monkeypatch):
+    notebook = json.loads((BASE / "benchmark.ipynb").read_text(encoding="utf-8"))
+    cell = next("".join(item["source"]) for item in notebook["cells"]
+                if item["cell_type"] == "code"
+                and "answer_results = evaluate(" in "".join(item["source"]))
+    calls = []
+
+    class FakeConfig:
+        def __init__(self, **kw):
+            self.kw = kw
+
+    def fake_evaluate(*, test_cases, metrics, **kwargs):
+        assert isinstance(test_cases, list)
+        calls.append((test_cases, kwargs))
+        return "evaluated"
+
+    fake_deepeval = types.ModuleType("deepeval")
+    fake_deepeval.evaluate = fake_evaluate
+    monkeypatch.setitem(sys.modules, "deepeval", fake_deepeval)
+    env = {
+        "goldens": [golden()],
+        "responses": {golden()["id"]: {"actual_output": "Agent answer"}},
+        "answer_test_cases": lambda *args: [object()],
+        "retrieval_test_cases": lambda *args: [],
+        "judge": object(),
+        "benchmark_metrics": lambda *a, **kw: [object(), object()],
+        "THRESHOLD": 0.7,
+        "JUDGE_MAX_CONCURRENT": 4,
+        "options": {"cache_config": object()},
+        "AsyncConfig": FakeConfig,
+    }
+    exec(compile(cell, "<native eval>", "exec"), env)
+    assert len(calls) == 1
+    assert calls[0][1]["identifier"] == "rag-answer-quality"
+    assert calls[0][1]["cache_config"] is env["options"]["cache_config"]
+    assert env["answer_results"] == "evaluated"
+
