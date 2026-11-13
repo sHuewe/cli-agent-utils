@@ -52,6 +52,32 @@ def load_goldens(path: Path, limit: int | None = None) -> list[dict[str, Any]]:
     return rows
 
 
+def target_fingerprint(
+    workspace: Path, config: Path | None, admin: Path | None,
+    approve_tools: tuple[str, ...], capture_content: bool,
+) -> str:
+    """Invalidate cached target answers when relevant SDK config changes."""
+    from cli_agent.settings.config import ensure_default_config_file
+    from cli_agent.settings.admin_config import default_admin_config_file
+
+    def file_hash(path: Path) -> str:
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"Invalid SDK config: {path}")
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    project_config = (config or ensure_default_config_file()).expanduser().resolve(strict=True)
+    admin_config = (admin or default_admin_config_file()).expanduser()
+    local_override = workspace / ".cli-agent" / "project.toml"
+    return digest({
+        "version": VERSION, "workspace": str(workspace.resolve(strict=True)),
+        "config": file_hash(project_config),
+        "admin": file_hash(admin_config) if admin_config.is_file() else None,
+        "project_override": file_hash(local_override) if local_override.is_file() else None,
+        "approvals": sorted(approve_tools),
+        "capture_content": capture_content, "workspace_access": "none",
+    })
+
+
 def sdk_target_factory(
     workspace: Path, config: Path | None = None, admin: Path | None = None,
     approve_tools: tuple[str, ...] = (), capture_content: bool = True,
