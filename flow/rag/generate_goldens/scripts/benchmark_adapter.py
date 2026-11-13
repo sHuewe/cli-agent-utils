@@ -185,6 +185,51 @@ def selected_context(response: dict[str, Any]) -> list[str] | None:
     return texts
 
 
+def target_trace_metric() -> Any:
+    """No-cost native metric to validate each observed target invocation.
+
+    DeepEval's evals_iterator requires at least one metric, but it does not
+    reuse individual LLM-judge scores. Use this deterministic metric during
+    the observed execution; evaluate() performs the cached judge passes later.
+    """
+    from deepeval.metrics import BaseMetric
+
+    class TargetResponseRecorded(BaseMetric):
+        threshold = 1.0
+        async_mode = False
+
+        def measure(self, test_case: Any, *args: Any, **kwargs: Any) -> float:
+            answer = test_case.actual_output
+            self.score = float(isinstance(answer, str) and bool(answer.strip()))
+            self.reason = "Target response captured" if self.score else "Missing target response"
+            self.success = self.is_successful()
+            return self.score
+
+        async def a_measure(self, test_case: Any, *args: Any, **kwargs: Any) -> float:
+            return self.measure(test_case, *args, **kwargs)
+
+        @property
+        def __name__(self) -> str:
+            return "Target Response Recorded"
+
+    return TargetResponseRecorded()
+
+
+def answer_test_cases(
+    goldens: list[dict[str, Any]], responses: dict[str, dict[str, Any]],
+) -> list[Any]:
+    """Reconstruct answer tests for the native, cache-aware DeepEval evaluate."""
+    from deepeval.test_case import LLMTestCase
+    return [
+        LLMTestCase(
+            input=row["input"],
+            expected_output=row["expected_output"],
+            actual_output=responses[row["id"]]["actual_output"],
+        )
+        for row in goldens
+    ]
+
+
 def retrieval_test_cases(
     goldens: list[dict[str, Any]], responses: dict[str, dict[str, Any]],
 ) -> list[Any]:
