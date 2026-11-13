@@ -641,3 +641,13 @@ def test_global_reductions_use_smaller_bounded_inputs_without_source_loss():
     assert global_steps["reduce2"]["foreach"] == (
         "steps.batch_reduce1.output.batches"
     )
+
+
+def test_scan_section_compacts_only_internal_checkpoints():
+    section = config(BASE / "flows/scan-section.toml")
+    assert section["checkpoint"]["retain_intermediate"] is False
+    assert section["result"] == "steps.assemble.output"
+    steps = {step["id"]: step for step in section["steps"]}
+    assert steps["discover"]["output"].endswith("discovery-${input.scan_id}.json")
+    assert steps["enrich_topics"]["output"].endswith("evidence-${input.scan_id}-${iteration.id}.json")
+    assert steps["assemble"]["output"].endswith("/${input.output_file}")

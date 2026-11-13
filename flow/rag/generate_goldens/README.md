@@ -77,10 +77,11 @@ generated data should be inspected before using it as ground truth.
 ## Output locations
 
 - `rag-goldens/state/source-inventory.json`
-- `rag-goldens/state/docs/<slug>/...`: `discovery-*.json` topic
-  inventories, `evidence-*.json` per-topic enrichment checkpoints,
-  `scan-*.json` assembled scans and final `profiles/*.json` shards,
-  plus `profile-inventory.json` containing paths only
+- `rag-goldens/state/docs/<slug>/...`: unfinished sections retain
+  `discovery-*.json` and `evidence-*.json` checkpoints for resumption.
+  Successfully assembled sections discard those intermediates, retaining
+  `scan-*.json` or `profiles/direct.json` as appropriate; final
+  `profiles/*.json` shards and `profile-inventory.json` remain intact
 - `rag-goldens/state/topics/...`: bounded cross-doctrine candidate batches,
   `registry-batches.json` and `registry-b0001.json` etc.
 - `rag-goldens/state/draft-b0001-g0001.json`,
@@ -99,6 +100,17 @@ remain terminal, and no completed JSON checkpoint is overwritten.
 
 JSON outputs provide step-level checkpoints. Interrupted runs can be
 resumed, but the flow itself is sequential (no parallel calls).
+
+`scan-section.toml` opts into `[checkpoint].retain_intermediate = false`.
+Each fully completed section gets a durable marker in
+`.cli-agent/flow-checkpoints/`; subsequent runs skip the section without
+reconstructing individual discovery/evidence steps. The runner removes only
+intermediate step outputs after recording successful completion. The assembled
+scan/profile stays on disk for the downstream JSON-input operations. While a
+section is incomplete, its intermediate checkpoints remain available. This
+feature requires a version of cli-agent supporting compact subflow checkpoints.
+Changing the source corpus, prompt or model still requires checkpoint
+invalidation as described below; the completion marker is also a checkpoint.
 
 ## Evaluate the generated goldens in Jupyter
 
