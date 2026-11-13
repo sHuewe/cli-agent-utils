@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / "flow/rag/generate_goldens"
 sys.path.insert(0, str(BASE / "scripts"))
 from export import (
-    make_golden, export, read_json, MAX_JSON_BYTES,
+    make_golden, export, read_json, question_is_about_sources, question_dedup_key, MAX_JSON_BYTES,
     MAX_REGISTRY_MANIFEST_BYTES, MAX_REGISTRY_BATCH_BYTES,
 )  # noqa: E402
 
@@ -117,7 +117,9 @@ def test_design_scales_by_document_and_section():
         "${each.path}"
     )
     assert "registry" not in global_steps
-    assert global_steps["registry_batches"]["flow"].endswith("/batch-reduce2.toml")
+    assert global_steps["batch_reduce2"]["flow"].endswith("/batch-reduce2.toml")
+    assert global_steps["reduce3"]["foreach"] == "steps.batch_reduce2.output.batches"
+    assert global_steps["registry_batches"]["flow"].endswith("/batch-reduce3.toml")
     final = config(BASE / "flows/batch-reduce2.toml")["steps"][0]
     assert final["json_operation"] == {
         "kind": "batch_arrays", "input": "summaries",
@@ -126,6 +128,11 @@ def test_design_scales_by_document_and_section():
         "batch_size": 2, "max_batch_bytes": 12000
     }
     assert final["json_inputs"]["summaries"]["iterate"] == "input.batches[]"
+    assert final["json_inputs"]["summaries"]["path"].endswith("reduce2-${each.id}.json")
+    registry = config(BASE / "flows/batch-reduce3.toml")["steps"][0]
+    assert registry["json_inputs"]["summaries"]["path"].endswith(
+        "reduce3-${each.id}.json"
+    )
     shard = config(BASE / "flows/process-registry-batch.toml")
     assert shard["steps"][0]["workspace_access"] == "none"
     assert shard["steps"][0]["vars"]["batch"] == "${input.batch}"
@@ -554,6 +561,8 @@ def test_cross_document_batching_splits_complete_arrays_at_every_stage():
          ["/groups", "/warnings"], 12000, 5000),
         ("batch-reduce2.toml", "batch", "summaries",
          ["/groups", "/warnings"], 12000, 5000),
+        ("batch-reduce3.toml", "batch", "summaries",
+         ["/groups", "/warnings"], 12000, 5000),
     ]
     for file, step_id, input_name, paths, limit, target in cases:
         steps = config(BASE / "flows" / file)["steps"]
@@ -587,8 +596,9 @@ def test_cross_document_batching_retains_existing_downstream_contracts():
     assert global_by_id["reduce2"]["foreach"] == (
         "steps.batch_reduce1.output.batches"
     )
+    assert global_by_id["reduce3"]["foreach"] == "steps.batch_reduce2.output.batches"
     for file in ("batch-candidates.toml", "batch-reduce1.toml",
-                 "batch-reduce2.toml"):
+                 "batch-reduce2.toml", "batch-reduce3.toml"):
         subflow = config(BASE / "flows" / file)
         assert subflow["result"] == "steps.batch.output"
         assert subflow["steps"][0]["json_operation"]["kind"] == "batch_arrays"
@@ -620,6 +630,7 @@ def test_global_reductions_use_smaller_bounded_inputs_without_source_loss():
     # bound the JSON serialized into reduce1/reduce2 and registry prompts.
     for filename in (
         "batch-candidates.toml", "batch-reduce1.toml", "batch-reduce2.toml",
+        "batch-reduce3.toml",
     ):
         flow = config(BASE / "flows" / filename)
         step = flow["steps"][0]
@@ -651,3 +662,126 @@ def test_scan_section_compacts_only_internal_checkpoints():
     assert steps["discover"]["output"].endswith("discovery-${input.scan_id}.json")
     assert steps["enrich_topics"]["output"].endswith("evidence-${input.scan_id}-${iteration.id}.json")
     assert steps["assemble"]["output"].endswith("/${input.output_file}")
+
+
+def test_source_location_questions_rejected_even_if_reviewer_accepts(tmp_path):
+    group, draft, review = fixture(tmp_path)
+    bad = (
+        "In welchem Dokument wird die Tokenvalidierung beschrieben?",
+        "Welche Datei beschreibt die Tokenvalidierung?",
+        "Wo wird der Umgang mit Tokens dokumentiert?",
+        "Which document describes token validation?",
+        "Where is token validation documented?",
+        "Compare the source documents about token validation.",
+    )
+    for question in bad:
+        assert question_is_about_sources(question), question
+        assert make_golden(
+            tmp_path, group, {**draft, "question": question}, review, {}
+        ) is None
+    for question in (
+        "Welche Dokumentationspflichten gelten bei der Tokenvalidierung?",
+        "Was passiert bei fehlendem Authentifizierungstoken?",
+        "Wie müssen Gateway und Policy mit fehlenden Tokens umgehen?",
+        "How does the gateway enforce authentication for requests?",
+    ):
+        assert not question_is_about_sources(question), question
+
+
+def test_additional_variant_export_preserves_base_question(tmp_path):
+    group, draft, review = fixture(tmp_path)
+    state = tmp_path / "rag-goldens/state"
+    (state / "topics").mkdir(parents=True)
+    (state / "plans").mkdir()
+    variants = state / "variants" / group["id"]
+    variants.mkdir(parents=True)
+    (state / "topics/registry-batches.json").write_text(json.dumps({
+        "batches": [{"id": "b0001", "items": [
+            {"status": "ok", "groups": [], "warnings": []}]}]
+    }), encoding="utf-8")
+    (state / "topics/registry-b0001.json").write_text(json.dumps({
+        "status": "ok", "groups": [group], "warnings": []}), encoding="utf-8")
+    (state / ("draft-" + group["id"] + ".json")).write_text(json.dumps(draft))
+    (state / ("review-" + group["id"] + ".json")).write_text(json.dumps(review))
+    plan = state / "plans" / ("plan-" + group["id"] + ".json")
+    plan.write_text(json.dumps({"group_id": group["id"],
+        "variants": [{"id": "v0001", "focus": "missing token consequences"}]}))
+    new_draft = {**draft, "variant_id": "v0001", "question":
+        "How do both gateway and policy handle missing authentication tokens?"}
+    new_review = {**review, "variant_id": "v0001"}
+    (variants / "draft-v0001.json").write_text(json.dumps(new_draft))
+    (variants / "review-v0001.json").write_text(json.dumps(new_review))
+    stats = export(tmp_path)
+    assert stats["accepted"] == 2
+    assert stats["total_question_slots"] == 2
+    output = json.loads((tmp_path / "rag-goldens/goldens.json").read_text())
+    assert {g["id"] for g in output} == {"b0001-g0001", "b0001-g0001-v0001"}
+
+    plan.write_text(json.dumps({"group_id": group["id"],
+        "variants": [{"id": "v0002", "focus": "invalid index"}]}))
+    with pytest.raises(ValueError, match="Invalid variant id/focus"):
+        export(tmp_path)
+
+
+def test_variant_flow_contract_and_bounded_global_matching():
+    group = config(BASE / "flows/process-group.toml")
+    by_id = {step["id"]: step for step in group["steps"]}
+    assert by_id["extra_variants"]["foreach"] == "steps.plan_variants.output.variants"
+    assert "plan-" in by_id["plan_variants"]["output"]
+    child = config(BASE / "flows/process-variant.toml")
+    assert child["steps"][0]["output"] != child["steps"][1]["output"]
+    assert all("variants/" in step["output"] for step in child["steps"])
+    assert child["steps"][1]["vars"]["base_draft"] == "${input.base_draft}"
+    assert "{{var:base_draft}}" in (
+        BASE / "prompts/10_review_variant.md"
+    ).read_text(encoding="utf-8")
+    global_steps = {s["id"]: s for s in config(BASE / "flows/global-topics.toml")["steps"]}
+    assert global_steps["reduce3"]["foreach"] == "steps.batch_reduce2.output.batches"
+    assert global_steps["registry_batches"]["flow"].endswith("/batch-reduce3.toml")
+
+
+
+def test_question_dedup_keeps_technical_punctuation():
+    assert question_dedup_key("How do C++ clients authenticate?") != (
+        question_dedup_key("How do C# clients authenticate?")
+    )
+    assert question_dedup_key("How does Node.js authenticate?") != (
+        question_dedup_key("How does Nodejs authenticate?")
+    )
+    assert question_dedup_key("How does .NET authenticate?") != (
+        question_dedup_key("How does NET authenticate?")
+    )
+    assert question_dedup_key("  HOW   DO C++ clients authenticate?? ") == (
+        question_dedup_key("How do C++ clients authenticate?")
+    )
+
+
+def test_export_preserves_csharp_and_cpp_cases(tmp_path):
+    group, draft, review = fixture(tmp_path)
+    state = tmp_path / "rag-goldens/state"
+    (state / "topics").mkdir(parents=True)
+    (state / "plans").mkdir()
+    variants = state / "variants" / group["id"]
+    variants.mkdir(parents=True)
+    (state / "topics/registry-batches.json").write_text(json.dumps({
+        "batches": [{"id": "b0001", "items": [
+            {"status": "ok", "groups": [], "warnings": []}]}]
+    }), encoding="utf-8")
+    (state / "topics/registry-b0001.json").write_text(json.dumps({
+        "status": "ok", "groups": [group], "warnings": []}), encoding="utf-8")
+    baseline = {**draft, "question":
+        "How do C++ clients authenticate requests through the gateway and policy?"}
+    (state / ("draft-" + group["id"] + ".json")).write_text(json.dumps(baseline))
+    (state / ("review-" + group["id"] + ".json")).write_text(json.dumps(review))
+    (state / "plans" / ("plan-" + group["id"] + ".json")).write_text(
+        json.dumps({"group_id": group["id"], "variants": [
+            {"id": "v0001", "focus": "C# authentication handling"}
+        ]}))
+    alternate = {**draft, "variant_id": "v0001", "question":
+        "How do C# clients authenticate requests through the gateway and policy?"}
+    alternate_review = {**review, "variant_id": "v0001"}
+    (variants / "draft-v0001.json").write_text(json.dumps(alternate))
+    (variants / "review-v0001.json").write_text(json.dumps(alternate_review))
+    outcome = export(tmp_path)
+    assert outcome["accepted"] == 2
+    assert outcome.get("duplicates", 0) == 0

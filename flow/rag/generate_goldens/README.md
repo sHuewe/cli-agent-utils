@@ -30,7 +30,7 @@ exporter does only deterministic validation and output formatting.
    The consolidation prompt propagates upstream `needs_attention` statuses and
    unresolved warnings at **both** layers, even when no topics remain.
 4. **Relate topics across documents** via batches of four profile fragments
-   (<=32 KB), then two further rounds of bounded grouping (two fragments / 12 KB). Large profiles are split at complete topic and
+   (<=32 KB), then three further rounds of bounded grouping (two fragments / 12 KB). Large profiles are split at complete topic and
    warning boundaries; later cross-document proposals are split at complete
    group and warning boundaries. The FINAL step also batches its fragments
    (two per batch / 12 KB) and produces separately checkpointed registries
@@ -41,11 +41,16 @@ exporter does only deterministic validation and output formatting.
    An indivisible oversized group still raises an explicit size error. Each registry shard
    selects up to 15 independently examinable document groups.
    There is deliberately no unbounded all-shard LLM aggregation.
-5. **Generate one question per group** by reading ONLY bounded original
-   line ranges, never feeding reference passages into the tested RAG.
-   The reviewer separately reads the same authorized original passages and
-   rejects ungrounded, redundant, ambiguous or single-document questions.
-   Each generated question and review has a separate JSON checkpoint.
+5. **Generate the baseline question and up to two additional independently
+   targeted questions per group**. A lightweight model call plans genuinely
+   distinct answer targets from the group metadata; each variant reads ONLY
+   authorized original source ranges and receives its own independent review.
+   An empty variant plan is valid when the evidence supports no additional
+   distinct knowledge question. All questions must assess domain knowledge,
+   NOT where or in which document a fact is stated. The exporter additionally
+   blocks common German/English document-identification and source-location
+   formulations, even if an LLM reviewer accepted them. Baseline drafts/reviews
+   remain checkpointed at their original paths; variants use separate paths.
 6. **Export**, without another LLM call. `export.py` verifies approved
    reviewers, accepted checks, exact quotations within the cited original
    line ranges, valid document paths and at least two different source files.
@@ -83,9 +88,12 @@ generated data should be inspected before using it as ground truth.
   `scan-*.json` or `profiles/direct.json` as appropriate; final
   `profiles/*.json` shards and `profile-inventory.json` remain intact
 - `rag-goldens/state/topics/...`: bounded cross-doctrine candidate batches,
-  `registry-batches.json` and `registry-b0001.json` etc.
+  `reduce3-*.json`, `registry-batches.json` and `registry-b0001.json` etc.
 - `rag-goldens/state/draft-b0001-g0001.json`,
-  `review-b0001-g0001.json`, etc.
+  `review-b0001-g0001.json`, etc. (baseline, preserved)
+- `rag-goldens/state/plans/plan-b0001-g0001.json`: optional extra targets
+- `rag-goldens/state/variants/b0001-g0001/draft-v0001.json` and
+  `review-v0001.json` (similarly for v0002)
 - `rag-goldens/goldens.json` and `deepeval-goldens.json`
 
 The root flow opts into a 600 MB startup budget for existing dynamic JSON
@@ -111,6 +119,35 @@ section is incomplete, its intermediate checkpoints remain available. This
 feature requires a version of cli-agent supporting compact subflow checkpoints.
 Changing the source corpus, prompt or model still requires checkpoint
 invalidation as described below; the completion marker is also a checkpoint.
+
+## Extending an already completed benchmark
+
+This revision adds one more global cross-document reduction and optional
+independent variants (at most two per registry group, plus the original
+question). It **does not guarantee** three accepted questions per group:
+unrelated or insufficiently grounded pairs must still be rejected.
+
+To reuse expensive document and source-topic scans, preserve
+`rag-goldens/state/docs/`, `profile-batches.json`,
+`candidates-*.json`, `candidate-batches.json`,
+`reduce1-*.json`, `reduce1-batches.json`, and `reduce2-*.json`.
+Before resuming with the new pipeline, back up the existing state and delete
+**downstream** `topics/reduce3-batches.json`, `topics/reduce3-*.json`,
+`topics/registry-batches.json`, `topics/registry-*.json`, as well as the
+old `topics/reduce3-batches.json` if present. The new registry may reassign
+batch/group IDs; old baseline drafts and reviews can only be reused when their
+group ID **and underlying sources** match. For reliable correctness,
+also invalidate `state/draft-*.json`, `state/review-*.json`,
+`state/plans/` and `state/variants/` when registry groups change. Keep
+the original `goldens.json` backed up separately before re-exporting.
+
+The exporter now reports `total_question_slots` and
+`missing_variant_plans` in addition to `accepted`, `reviewed`,
+`rejected` and `missing`. Missing plans are tolerated so older completed
+benchmarks remain exportable, but are reported as an incomplete extension.
+Export deduplicates exact normalized questions across groups and variants.
+It cannot prove that two differently worded questions are semantically
+distinct; the independent reviewer is responsible for that judgment.
 
 ## Evaluate the generated goldens in Jupyter
 

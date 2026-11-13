@@ -1,0 +1,28 @@
+version = 1
+inputs = ["group", "variant", "base_draft"]
+result = "steps.review.output"
+
+[[steps]]
+id = "draft"
+prompt_file = "flow/rag/generate_goldens/prompts/09_generate_variant.md"
+output = "rag-goldens/state/variants/${input.group.id}/draft-${input.variant.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+group = "${input.group}"
+variant = "${input.variant}"
+base_draft = "${input.base_draft}"
+
+[[steps]]
+id = "review"
+prompt_file = "flow/rag/generate_goldens/prompts/10_review_variant.md"
+output = "rag-goldens/state/variants/${input.group.id}/review-${input.variant.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+group = "${input.group}"
+variant = "${input.variant}"
+draft = "${steps.draft.output}"
+base_draft = "${input.base_draft}"

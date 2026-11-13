@@ -1,0 +1,20 @@
+version = 1
+inputs = ["batches"]
+result = "steps.batch.output"
+
+# Final bounded registry input batches; every reduce3 output is considered.
+# Never aggregate the entire corpus into one model prompt.
+[[steps]]
+id = "batch"
+output = "rag-goldens/state/topics/registry-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch_arrays"
+array_paths = ["/groups", "/warnings"]
+target_fragment_bytes = 5000
+input = "summaries"
+batch_size = 2
+max_batch_bytes = 12000
+[steps.json_inputs.summaries]
+iterate = "input.batches[]"
+path = "rag-goldens/state/topics/reduce3-${each.id}.json"
