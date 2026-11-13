@@ -1,39 +1,48 @@
-"""Contract tests for the SDK -> DeepEval RAG benchmark, with no LLM/network."""
+"""Contract tests for thin cli-agent/DeepEval adapter; no live model calls."""
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 import ast
+from dataclasses import dataclass
+import importlib.util
 import json
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+import sys
+import types
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-NOTEBOOK = ROOT / "flow/rag/generate_goldens/benchmark.ipynb"
-BENCHMARK_SCRIPT = ROOT / "flow/rag/generate_goldens/scripts/benchmark.py"
-NOTEBOOK_DATA = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
-
-# Load notebook library cells only; never execute costly SDK/Judge cells in CI.
-bm = ModuleType("rag_benchmark")
-for cell in NOTEBOOK_DATA["cells"]:
-    if cell["cell_type"] == "code" and (
-        "benchmark-library" in cell.get("metadata", {}).get("tags", [])
-    ):
-        exec(compile("".join(cell["source"]), f"notebook:{cell['id']}", "exec"), bm.__dict__)
+BASE = ROOT / "flow/rag/generate_goldens"
+sys.path.insert(0, str(BASE / "scripts"))
+import benchmark_adapter as adapter  # noqa: E402
 
 
 def golden(gid="b0001-g0001"):
     return {
-        "id": gid, "input": "What is required?", "expected_output": "Both rules.",
-        "evidence": [{"quote": "SECRET REFERENCE", "path": "a.md"}],
+        "id": gid, "input": "What happens with a missing token?",
+        "expected_output": "The gateway and policy reject the request.",
+        "sources": [{"path": "doctrines/a.md"}, {"path": "doctrines/b.md"}],
     }
 
 
+def test_goldens_loading_checks_identity_and_reference(tmp_path):
+    path = tmp_path / "goldens.json"
+    path.write_text(json.dumps([golden()]))
+    assert adapter.load_goldens(path)[0]["id"] == "b0001-g0001"
+    with pytest.raises(ValueError, match="positive"):
+        adapter.load_goldens(path, 0)
+    path.write_text(json.dumps([golden(), golden()]))
+    with pytest.raises(ValueError, match="duplicate"):
+        adapter.load_goldens(path)
+    path.write_text(json.dumps([{"id": "x", "input": "Q"}]))
+    with pytest.raises(ValueError, match="expected_output"):
+        adapter.load_goldens(path)
+
+
 class FakeAgent:
-    def __init__(self, seen):
-        self.seen = seen
+    def __init__(self, questions, trace=None):
+        self.questions, self.trace = questions, trace
 
     async def __aenter__(self):
         return self
@@ -41,428 +50,243 @@ class FakeAgent:
     async def __aexit__(self, *args):
         return None
 
-    async def ask(self, prompt):
-        self.seen.append(prompt)
-        return SimpleNamespace(
-            answer="Both rules.", tool_calls=[
-                SimpleNamespace(name="okf__search", status="success", duration_ms=25.0),
-            ],
-            usage=SimpleNamespace(input_tokens=100, output_tokens=20,
-                                  total_tokens=120, model_calls=1,
-                                  reported_calls=1, unreported_calls=0),
+    async def ask(self, question):
+        self.questions.append(question)
+        return types.SimpleNamespace(
+            answer="The request is rejected.", knowledge_trace=self.trace
         )
 
 
-def test_load_goldens_rejects_duplicates_and_missing_reference(tmp_path):
-    path = tmp_path / "goldens.json"
-    path.write_text(json.dumps([golden(), golden()]), encoding="utf-8")
-    with pytest.raises(ValueError, match="Duplicate"):
-        bm.load_goldens(path)
-    path.write_text(json.dumps([{"id": "x", "input": "Question"}]), encoding="utf-8")
-    with pytest.raises(ValueError, match="expected_output"):
-        bm.load_goldens(path)
-
-
-def test_sdk_sees_question_only_and_resumes(tmp_path):
-    seen = []
-    goldens = [golden()]
-    agent_factory = lambda: FakeAgent(seen)
-    runner = "config-fingerprint"
-    summary = asyncio.run(bm.run_cases(
-        goldens, output=tmp_path, runner_sha=runner,
-        agent_factory=agent_factory, timeout=5.0, fresh=False,
+def test_target_only_asks_question_and_reuses_answers(tmp_path):
+    questions = []
+    target_factory = lambda: adapter.CliAgentTarget(FakeAgent(questions))
+    result = asyncio.run(adapter.collect_responses(
+        [golden()], target_factory=target_factory,
+        output=tmp_path, target_fingerprint="config-1",
     ))
-    assert summary == {"completed": 1, "reused": 0, "failed": 0}
-    assert seen == ["What is required?"]
-    assert "SECRET REFERENCE" not in repr(seen)
-    record = bm.read_json(bm.case_path(tmp_path, goldens[0]["id"]),
-                          max_bytes=bm.MAX_CASE_BYTES)
-    assert record["actual_output"] == "Both rules."
-    assert record["usage"]["total_tokens"] == 120
-    assert record["tool_calls"][0]["name"] == "okf__search"
-    again = asyncio.run(bm.run_cases(
-        goldens, output=tmp_path, runner_sha=runner,
-        agent_factory=agent_factory, timeout=5.0, fresh=False,
+    assert questions == [golden()["input"]]
+    assert result[golden()["id"]]["actual_output"] == "The request is rejected."
+    assert "expected_output" not in result[golden()["id"]]
+    asyncio.run(adapter.collect_responses(
+        [golden()], target_factory=target_factory,
+        output=tmp_path, target_fingerprint="config-1",
     ))
-    assert again["reused"] == 1
-    assert len(seen) == 1
-    invalidated = asyncio.run(bm.run_cases(
-        goldens, output=tmp_path, runner_sha="different-config",
-        agent_factory=agent_factory, timeout=5.0, fresh=False,
+    assert len(questions) == 1
+    asyncio.run(adapter.collect_responses(
+        [golden()], target_factory=target_factory,
+        output=tmp_path, target_fingerprint="config-2",
     ))
-    assert invalidated["completed"] == 1
-    assert len(seen) == 2
+    assert len(questions) == 2
 
 
-def test_each_question_has_a_fresh_session(tmp_path):
-    seen = []
-    created = []
-
-    def factory():
-        obj = FakeAgent(seen)
-        created.append(obj)
-        return obj
-
-    asyncio.run(bm.run_cases(
-        [golden("q1"), golden("q2")], output=tmp_path,
-        runner_sha="run", agent_factory=factory, timeout=5, fresh=False,
+def test_fresh_session_for_each_question(tmp_path):
+    created, questions = [], []
+    def target_factory():
+        agent = FakeAgent(questions)
+        created.append(agent)
+        return adapter.CliAgentTarget(agent)
+    asyncio.run(adapter.collect_responses(
+        [golden("b0001-g0001"), golden("b0001-g0002")],
+        target_factory=target_factory, output=tmp_path,
+        target_fingerprint="cfg",
     ))
-    assert len(created) == 2
-    assert created[0] is not created[1]
-    assert seen == ["What is required?", "What is required?"]
+    assert len(created) == 2 and created[0] is not created[1]
 
 
-class FakeMetric:
-    def __init__(self, name="Correctness", score=0.85):
-        self.name = name
-        self.score = score
-        self.reason = "Correct"
-
-    def measure(self, case):
-        assert case.input == "What is required?"
-        assert case.expected_output == "Both rules."
-        assert case.actual_output == "Both rules."
-
-    def is_successful(self):
-        return self.score >= 0.7
+@dataclass
+class Trace:
+    content_included: bool
+    truncated: bool
+    selected: list
+    searches: list
 
 
-def test_evaluate_without_observed_context_does_not_fabricate_retrieval(tmp_path):
-    goldens = [golden()]
-    asyncio.run(bm.run_cases(
-        goldens, output=tmp_path, runner_sha="run",
-        agent_factory=lambda: FakeAgent([]), timeout=5, fresh=False,
-    ))
-    observed = []
-    def case_factory(**kwargs):
-        observed.append(kwargs)
-        return SimpleNamespace(**kwargs)
-
-    def metrics_factory(**kwargs):
-        assert kwargs["has_retrieval"] is False
-        return [FakeMetric()]
-    result = bm.evaluate_cases(
-        goldens, output=tmp_path, runner_sha="run", threshold=0.7,
-        judge_model="fake", fresh=False, testcase_factory=case_factory,
-        metrics_factory=metrics_factory,
+def test_verified_context_only_and_source_recalls(tmp_path):
+    trace = Trace(
+        content_included=True, truncated=False,
+        selected=[{"source": "doctrines/b.md", "content": "Observed passage"}],
+        searches=[{"stage": "initial", "hits": [
+            {"source": "doctrines/a.md"}]},
+                 {"stage": "additional", "hits": [
+                     {"source": "doctrines/b.md"}]}],
     )
-    assert result["complete"] is True
-    assert result["passed"] == 1
-    assert result["scores"]["Correctness"]["mean"] == 0.85
-    assert "retrieval_context" not in observed[0]
-    assert "SECRET REFERENCE" not in repr(observed[0])
-    summary = bm.evaluate_cases(
-        goldens, output=tmp_path, runner_sha="run", threshold=0.7,
-        judge_model="fake", fresh=False, testcase_factory=case_factory,
-        metrics_factory=metrics_factory,
-    )
-    assert summary["reused"] == 1
-    assert len(observed) == 1
-
-
-def test_evaluate_true_retrieval_context_and_stale_context_rejected(tmp_path):
-    goldens = [golden()]
-    asyncio.run(bm.run_cases(
-        goldens, output=tmp_path, runner_sha="run",
-        agent_factory=lambda: FakeAgent([]), timeout=5, fresh=False,
-    ))
-    cases = []
-    response = bm.read_json(
-        bm.case_path(tmp_path, goldens[0]["id"]), max_bytes=bm.MAX_CASE_BYTES
-    )
-    contexts = {"b0001-g0001": {
-        "runner_sha256": "run", "response_sha256": bm.digest(response),
-        "chunks": ["Actual RAG result"]
-    }}
-    result = bm.evaluate_cases(
-        goldens, output=tmp_path, runner_sha="run", threshold=0.7,
-        judge_model="fake", fresh=False, retrieval_contexts=contexts,
-        testcase_factory=lambda **kw: cases.append(kw) or SimpleNamespace(**kw),
-        metrics_factory=lambda **kw: [FakeMetric("Grounding")],
-    )
-    assert result["complete"] is True
-    assert cases[0]["retrieval_context"] == ["Actual RAG result"]
-    contexts["b0001-g0001"]["runner_sha256"] = "not-this-run"
-    with pytest.raises(ValueError, match="Stale retrieval"):
-        bm.evaluate_cases(
-            goldens, output=tmp_path, runner_sha="run", threshold=0.7,
-            judge_model="fake", fresh=False, retrieval_contexts=contexts,
-            testcase_factory=lambda **kw: SimpleNamespace(**kw),
-            metrics_factory=lambda **kw: [FakeMetric()],
-        )
-
-
-def test_error_does_not_reuse_or_claim_complete(tmp_path):
-    class BrokenAgent(FakeAgent):
-        async def ask(self, prompt):
-            raise RuntimeError("Secret-bearing error")
-
-    goldens = [golden()]
-    stats = asyncio.run(bm.run_cases(
-        goldens, output=tmp_path, runner_sha="run",
-        agent_factory=lambda: BrokenAgent([]), timeout=5.0, fresh=False,
-    ))
-    assert stats["failed"] == 1
-    state = bm.read_json(bm.case_path(tmp_path, goldens[0]["id"]),
-                         max_bytes=bm.MAX_CASE_BYTES)
-    assert state["status"] == "error"
-    assert state["error_type"] == "RuntimeError"
-    assert "Secret-bearing" not in repr(state)
-    summary = bm.evaluate_cases(
-        goldens, output=tmp_path, runner_sha="run",
-        judge_model=None, threshold=0.7, fresh=False,
-        testcase_factory=lambda **kw: SimpleNamespace(**kw),
-        metrics_factory=lambda **kw: [FakeMetric()],
-    )
-    assert summary["complete"] is False
-    assert summary["skipped"] == 1
-
-
-def test_notebook_replaces_script_and_has_separate_phases():
-    assert not BENCHMARK_SCRIPT.exists()
-    assert NOTEBOOK_DATA["nbformat"] == 4
-    ids = [cell["id"] for cell in NOTEBOOK_DATA["cells"]]
-    assert "config" in ids
-    assert "sdk-run" in ids
-    assert "evaluate" in ids
-    assert ids.index("sdk-run") < ids.index("evaluate")
-    for cell in NOTEBOOK_DATA["cells"]:
-        if cell["cell_type"] == "code":
-            compile(
-                "".join(cell["source"]), f"notebook:{cell['id']}", "exec",
-                flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
-            )
-    assert any("await run_cases" in "".join(c["source"])
-               for c in NOTEBOOK_DATA["cells"] if c["id"] == "sdk-run")
-    assert any("evaluate_cases(" in "".join(c["source"])
-               for c in NOTEBOOK_DATA["cells"] if c["id"] == "evaluate")
-
-
-def test_observed_contexts_validated(tmp_path):
-    path = tmp_path / "observed.json"
-    path.write_text(json.dumps({"b0001-g0001": {
-        "runner_sha256": "run", "response_sha256": "0" * 64,
-        "chunks": ["real first chunk"]
-    }}), encoding="utf-8")
-    assert bm.validate_actual_contexts(path)["b0001-g0001"]["chunks"] == [
-        "real first chunk"
-    ]
-    path.write_text(json.dumps({"b0001-g0001": {
-        "runner_sha256": "run", "response_sha256": "0" * 64,
-        "chunks": [123]
-    }}), encoding="utf-8")
-    with pytest.raises(ValueError):
-        bm.validate_actual_contexts(path)
-
-
-
-def test_observed_contexts_bound_to_exact_execution_even_after_fresh(tmp_path):
-    goldens = [golden()]
-    agent_factory = lambda: FakeAgent([])
-    asyncio.run(bm.run_cases(
-        goldens, output=tmp_path, runner_sha="run",
-        agent_factory=agent_factory, timeout=5, fresh=False,
-    ))
-    answer_file = bm.case_path(tmp_path, goldens[0]["id"])
-    first = bm.read_json(answer_file, max_bytes=bm.MAX_CASE_BYTES)
-    old_contexts = {"b0001-g0001": {
-        "runner_sha256": "run",
-        "response_sha256": bm.digest(first),
-        "chunks": ["Captured before rerun"],
-    }}
-    assert first["execution_id"]
-    asyncio.run(bm.run_cases(
-        goldens, output=tmp_path, runner_sha="run",
-        agent_factory=agent_factory, timeout=5, fresh=True,
-    ))
-    second = bm.read_json(answer_file, max_bytes=bm.MAX_CASE_BYTES)
-    assert second["execution_id"] != first["execution_id"]
-    assert bm.digest(second) != old_contexts["b0001-g0001"]["response_sha256"]
-    with pytest.raises(ValueError, match="Stale retrieval"):
-        bm.evaluate_cases(
-            goldens, output=tmp_path, runner_sha="run",
-            judge_model="fake", threshold=0.7, fresh=False,
-            retrieval_contexts=old_contexts,
-            testcase_factory=lambda **kw: SimpleNamespace(**kw),
-            metrics_factory=lambda **kw: [FakeMetric()],
-        )
-
-
-@dataclass(frozen=True)
-class FakeKnowledgeTrace:
-    searches: list[dict]
-    selected: list[dict]
-    calls: list[dict]
-    truncated: bool = False
-    content_included: bool = True
-
-
-class FakeTracedAgent(FakeAgent):
-    async def ask(self, prompt):
-        result = await super().ask(prompt)
-        result.knowledge_trace = FakeKnowledgeTrace(
-            searches=[
-                {"backend": "chroma", "stage": "initial", "query": prompt,
-                 "hits": [
-                     {"id": "chunk-a", "source": "doctrines/a.md",
-                      "rank": 1, "content": "a rule"},
-                     {"id": "chunk-b", "source": "doctrines/b.md",
-                      "rank": 2, "content": "b rule"},
-                 ]},
-            ],
-            selected=[
-                {"id": "chunk-a", "source": "doctrines/a.md",
-                 "rank": 1, "content": "a rule"}
-            ],
-            calls=[{"origin": "initial", "status": "selected", "duration_ms": 50.0}],
-        )
-        return result
-
-
-def test_sdk_trace_auto_enables_context_metrics_and_source_recall(tmp_path):
-    goldens = [dict(golden(), sources=[
-        {"path": "doctrines/a.md"}, {"path": "doctrines/b.md"}
-    ])]
-    asyncio.run(bm.run_cases(
-        goldens, output=tmp_path, runner_sha="run",
-        agent_factory=lambda: FakeTracedAgent([]), timeout=5, fresh=False,
-    ))
-    record = bm.read_json(
-        bm.case_path(tmp_path, goldens[0]["id"]), max_bytes=bm.MAX_CASE_BYTES
-    )
-    assert record["knowledge_trace"]["selected"][0]["content"] == "a rule"
-    assert record["knowledge_trace"]["searches"][0]["hits"][1]["rank"] == 2
-    assert bm.sdk_selected_context(record) == ["a rule"]
-    assert bm.document_recall(goldens[0], record) == {
-        "required_count": 2, "initial_recall": 1.0,
-        "candidate_recall": 1.0, "selection_recall": 0.5,
-        "missing_candidates": [], "missing_selected": ["doctrines/b.md"],
-        "path_match_exact": True,
+    questions = []
+    out = asyncio.run(adapter.CliAgentTarget(FakeAgent(questions, trace)).ask("Q"))
+    assert adapter.selected_context(out) == ["Observed passage"]
+    assert adapter.source_recall(golden(), out) == {
+        "initial_recall": 0.5,
+        "candidate_recall": 1.0,
+        "selection_recall": 0.5,
     }
+    out["knowledge_trace"]["truncated"] = True
+    assert adapter.selected_context(out) is None
+    assert adapter.source_recall(golden(), out) is None
+    out["knowledge_trace"]["truncated"] = False
+    out["knowledge_trace"]["selected"] = [{"source": "doctrines/b.md"}]
+    assert adapter.selected_context(out) is None
 
-    received = []
-    def metric_builder(**kwargs):
-        received.append(kwargs)
-        return [FakeMetric("Faithfulness")]
 
-    cases = []
-    summary = bm.evaluate_cases(
-        goldens, output=tmp_path, runner_sha="run", threshold=0.7,
-        judge_model="mock-judge", fresh=False,
-        testcase_factory=lambda **kw: cases.append(kw) or SimpleNamespace(**kw),
-        metrics_factory=metric_builder,
+def test_native_dataset_uses_only_actual_selected_chunks(monkeypatch):
+    class FakeLLMTestCase:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class FakeDataset:
+        # Mirror the public DeepEval 4.x contract: no test_cases constructor arg.
+        def __init__(self, goldens=None, confident_api_key=None):
+            self.test_cases = []
+
+        def add_test_case(self, test_case):
+            self.test_cases.append(test_case)
+
+    fake_deepeval = types.ModuleType("deepeval")
+    dataset_module = types.ModuleType("deepeval.dataset")
+    dataset_module.EvaluationDataset = FakeDataset
+    testcase_module = types.ModuleType("deepeval.test_case")
+    testcase_module.LLMTestCase = FakeLLMTestCase
+    monkeypatch.setitem(sys.modules, "deepeval", fake_deepeval)
+    monkeypatch.setitem(sys.modules, "deepeval.dataset", dataset_module)
+    monkeypatch.setitem(sys.modules, "deepeval.test_case", testcase_module)
+    data = adapter.deep_eval_cases(
+        [golden()], {golden()["id"]: {
+            "actual_output": "Answer",
+            "knowledge_trace": {
+                "content_included": True, "truncated": False,
+                "selected": [{"content": "Only actual retrieved text"}],
+            },
+        }}
     )
-    assert summary["complete"] is True
-    assert cases[0]["retrieval_context"] == ["a rule"]
-    assert received[0]["has_retrieval"] is True
-    assert summary["source_recalls"]["initial_recall"]["mean"] == 1.0
-    assert summary["source_recalls"]["selection_recall"]["mean"] == 0.5
-    score = bm.read_json(
-        bm.score_path(tmp_path, goldens[0]["id"]), max_bytes=bm.MAX_CASE_BYTES
-    )
-    assert score["knowledge_calls"][0]["duration_ms"] == 50.0
+    case = data.test_cases[0]
+    assert case.input == golden()["input"]
+    assert case.expected_output == golden()["expected_output"]
+    assert case.retrieval_context == ["Only actual retrieved text"]
+    assert not hasattr(case, "context")
 
 
-def test_incomplete_trace_is_not_used_as_grounding_context():
-    response = {"knowledge_trace": {
-        "content_included": True, "truncated": True,
-        "selected": [{"source": "a.md", "content": "A partial chunk"}],
-        "searches": [],
-    }}
-    assert bm.sdk_selected_context(response) is None
-    assert bm.document_recall({"sources": [{"path": "a.md"}]}, response) is None
-    response["knowledge_trace"]["truncated"] = False
-    assert bm.sdk_selected_context(response) == ["A partial chunk"]
-    response["knowledge_trace"]["selected"][0]["content"] = None
-    assert bm.sdk_selected_context(response) is None
-
-
-def test_source_path_mismatch_not_guessed_from_basename():
-    g = {"sources": [{"path": "doctrines/a.md"}, {"path": "doctrines/b.md"}]}
-    response = {"knowledge_trace": {
-        "truncated": False, "content_included": True,
-        "searches": [{"stage": "initial", "hits": [
-            {"source": "a.md"}, {"source": "b.md"}
-        ]}],
-        "selected": [{"source": "a.md"}, {"source": "b.md"}],
-    }}
-    assert bm.document_recall(g, response)["candidate_recall"] == 0.0
-
-def test_capture_setting_changes_fingerprint_and_invalidates_checkpoints(tmp_path):
-    # Enabling trace content must re-run the SDK and DeepEval, rather than
-    # silently reusing an earlier answer with metadata-only Knowledge data.
-    config = tmp_path / "config.toml"
-    admin = tmp_path / "admin.toml"
-    config.write_text("", encoding="utf-8")
-    admin.write_text("", encoding="utf-8")
-    base = dict(
-        config=config, admin=admin, workspace=tmp_path, approve_tools=(),
-    )
-    metadata_sha = bm.run_fingerprint(**base, capture_content=False)
-    content_sha = bm.run_fingerprint(**base, capture_content=True)
-    assert metadata_sha != content_sha
-    assert metadata_sha == bm.run_fingerprint(**base, capture_content=False)
-    assert content_sha == bm.run_fingerprint(**base, capture_content=True)
-
-    goldens = [golden()]
+def test_independent_judge_provider_model(monkeypatch):
     seen = []
-    metadata_stats = asyncio.run(bm.run_cases(
-        goldens, output=tmp_path, runner_sha=metadata_sha,
-        agent_factory=lambda: FakeAgent(seen),
-        timeout=5, fresh=False,
-    ))
-    assert metadata_stats["completed"] == 1
+    class FakeJudge:
+        def __init__(self, **kwargs):
+            seen.append(kwargs)
+    models = types.ModuleType("deepeval.models")
+    models.OpenAIModel = FakeJudge
+    models.OpenRouterModel = FakeJudge
+    models.OllamaModel = FakeJudge
+    monkeypatch.setitem(sys.modules, "deepeval.models", models)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    adapter.judge_model("openrouter", "openai/gpt-4.1")
+    assert seen[-1]["model"] == "openai/gpt-4.1"
+    assert seen[-1]["api_key"] == "test-key"
+    adapter.judge_model("ollama", "qwen3:8b", "http://localhost:11434")
+    assert seen[-1]["base_url"] == "http://localhost:11434"
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        adapter.judge_model("openai", "gpt-4.1")
+    with pytest.raises(ValueError, match="JUDGE_PROVIDER"):
+        adapter.judge_model("other", "model")
 
-    def make_case(**kwargs):
-        return SimpleNamespace(**kwargs)
 
-    first_evaluation = bm.evaluate_cases(
-        goldens, output=tmp_path, runner_sha=metadata_sha,
-        judge_model="mock", threshold=0.7, fresh=False,
-        testcase_factory=make_case,
-        metrics_factory=lambda **kwargs: [FakeMetric()],
+def test_notebook_uses_native_deepeval_not_custom_evaluation():
+    notebook = json.loads((BASE / "benchmark.ipynb").read_text(encoding="utf-8"))
+    code = "\n".join(
+        "".join(cell["source"])
+        for cell in notebook["cells"] if cell["cell_type"] == "code"
     )
-    assert first_evaluation["evaluated"] == 1
+    assert "EvaluationDataset" not in code or "deep_eval_cases" in code
+    assert "from deepeval import evaluate" in code
+    assert "judge_model(JUDGE_PROVIDER, JUDGE_MODEL" in code
+    assert "CacheConfig(" in code
+    assert "metric.measure(" not in code
+    assert "evaluate_cases(" not in code
+    assert "answer_results = evaluate(" in code
+    assert "test_cases=dataset.test_cases" in code
+    assert "test_cases=dataset," not in code
+    assert "retrieval_results = evaluate(" in code
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code":
+            compile("".join(cell["source"]), "<notebook-cell>", "exec",
+                    flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
 
-    # The same question and model config with newly enabled capture must
-    # invalidate the previous answer checkpoint without --fresh.
-    content_stats = asyncio.run(bm.run_cases(
-        goldens, output=tmp_path, runner_sha=content_sha,
-        agent_factory=lambda: FakeTracedAgent(seen),
-        timeout=5, fresh=False,
-    ))
-    assert content_stats["completed"] == 1
-    assert content_stats["reused"] == 0
-    assert len(seen) == 2
 
-    record = bm.read_json(
-        bm.case_path(tmp_path, goldens[0]["id"]),
-        max_bytes=bm.MAX_CASE_BYTES,
+def test_metric_judge_is_forwarded_to_every_metric(monkeypatch):
+    class Metric:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+    metrics_mod = types.ModuleType("deepeval.metrics")
+    for name in ("GEval", "AnswerRelevancyMetric", "FaithfulnessMetric",
+                 "ContextualRecallMetric", "ContextualPrecisionMetric"):
+        setattr(metrics_mod, name, Metric)
+    test_mod = types.ModuleType("deepeval.test_case")
+    test_mod.SingleTurnParams = types.SimpleNamespace(
+        INPUT="input", ACTUAL_OUTPUT="actual_output",
+        EXPECTED_OUTPUT="expected_output",
     )
-    assert record["runner_sha256"] == content_sha
-    assert record["knowledge_trace"]["content_included"] is True
+    monkeypatch.setitem(sys.modules, "deepeval.metrics", metrics_mod)
+    monkeypatch.setitem(sys.modules, "deepeval.test_case", test_mod)
+    judge = object()
+    result = adapter.benchmark_metrics(judge, 0.6, retrieval=True)
+    assert len(result) == 5
+    assert all(metric.kwargs["model"] is judge for metric in result)
+    assert all(metric.kwargs["threshold"] == 0.6 for metric in result)
 
-    second_evaluation = bm.evaluate_cases(
-        goldens, output=tmp_path, runner_sha=content_sha,
-        judge_model="mock", threshold=0.7, fresh=False,
-        testcase_factory=make_case,
-        metrics_factory=lambda **kwargs: [FakeMetric()],
+
+
+def test_evaluate_cell_passes_list_not_dataset():
+    """Replay notebook's native evaluation with DeepEval's list-only contract."""
+    notebook = json.loads((BASE / "benchmark.ipynb").read_text(encoding="utf-8"))
+    cell = next(
+        "".join(item["source"])
+        for item in notebook["cells"]
+        if item["cell_type"] == "code"
+        and "answer_results = evaluate(" in "".join(item["source"])
     )
-    assert second_evaluation["evaluated"] == 1
-    assert second_evaluation["reused"] == 0
+    seen = []
 
-    assert bm.evaluate_cases(
-        goldens, output=tmp_path, runner_sha=content_sha,
-        judge_model="mock", threshold=0.7, fresh=False,
-        testcase_factory=make_case,
-        metrics_factory=lambda **kwargs: [FakeMetric()],
-    )["reused"] == 1
+    class FakeCases:
+        test_cases = [types.SimpleNamespace(retrieval_context=None),
+                      types.SimpleNamespace(retrieval_context=None)]
 
+    class FakeConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
 
-def test_notebook_fingerprint_uses_capture_config():
-    fingerprint_cell = next(c for c in NOTEBOOK_DATA["cells"] if c["id"] == "helpers")
-    load_cell = next(c for c in NOTEBOOK_DATA["cells"] if c["id"] == "load-cases")
-    fingerprint_source = "".join(fingerprint_cell["source"])
-    load_source = "".join(load_cell["source"])
-    assert '"capture_knowledge_content": capture_content' in fingerprint_source
-    assert "capture_content=CAPTURE_KNOWLEDGE_CONTENT" in load_source
+    def fake_evaluate(*, test_cases, metrics, **kwargs):
+        assert isinstance(test_cases, list), "DeepEval expects a list of cases"
+        seen.append(test_cases)
+        return {"ok": True}
+
+    deepeval_mod = types.ModuleType("deepeval")
+    deepeval_mod.evaluate = fake_evaluate
+    eval_mod = types.ModuleType("deepeval.evaluate")
+    eval_mod.AsyncConfig = FakeConfig
+    eval_mod.CacheConfig = FakeConfig
+    eval_mod.DisplayConfig = FakeConfig
+    old_deepeval = sys.modules.get("deepeval")
+    old_eval = sys.modules.get("deepeval.evaluate")
+    try:
+        sys.modules["deepeval"] = deepeval_mod
+        sys.modules["deepeval.evaluate"] = eval_mod
+        env = {
+            "dataset": FakeCases(),
+            "judge": object(),
+            "benchmark_metrics": lambda *args, **kwargs: [object(), object(), object()],
+            "THRESHOLD": 0.7,
+            "FRESH_EVALUATION": False,
+            "JUDGE_MAX_CONCURRENT": 2,
+            "OUTPUT_DIR": ROOT,
+            "target_sha": "target",
+            "JUDGE_PROVIDER": "openrouter",
+            "JUDGE_MODEL": "test-model",
+        }
+        exec(compile(cell, "<benchmark evaluate cell>", "exec"), env)
+    finally:
+        if old_deepeval is None:
+            sys.modules.pop("deepeval", None)
+        else:
+            sys.modules["deepeval"] = old_deepeval
+        if old_eval is None:
+            sys.modules.pop("deepeval.evaluate", None)
+        else:
+            sys.modules["deepeval.evaluate"] = old_eval
+    assert len(seen) == 1
+    assert seen[0] == env["dataset"].test_cases

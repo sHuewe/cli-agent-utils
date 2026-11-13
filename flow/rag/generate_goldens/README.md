@@ -158,22 +158,24 @@ threshold in the notebook's configuration cell. SDK calls and DeepEval scores
 run in **separate cells**, making reruns and exploratory analysis convenient.
 
 ```bash
-python -m pip install cli-agent deepeval jupyterlab ipykernel
+python -m pip install cli-agent "deepeval>=4,<5" jupyterlab ipykernel pandas
 jupyter lab flow/rag/generate_goldens/benchmark.ipynb
 ```
 
-The notebook runs each question in a **fresh cli-agent SDK session**, saves
-checkpointed answers and scores per golden, and provides tables for per-case
-status and per-metric averages. It sends **only the golden question** to the
-agent; source evidence and reference answers remain private to the judge.
+The Notebook now delegates evaluation, concurrency, scoring cache and report
+generation to **native DeepEval** (an `EvaluationDataset` passed to
+`evaluate()`). Only the small `scripts/benchmark_adapter.py` bridge creates
+fresh cli-agent SDK instances, asks the golden questions and caches responses.
+The target never receives the reference answer or the original evidence.
+The judge has a **separate, mandatory model/provider configuration**, which can
+use OpenAI, OpenRouter or Ollama independently of the cli-agent model.
 
-DeepEval scores answer correctness and relevance by default. With the
-optional Knowledge trace from **cli-agent PR #303**, the notebook
-automatically receives verified selected chunks and enables faithfulness and
-contextual retrieval metrics without manual instrumentation. It also
-calculates deterministic initial/candidate/selection document recall against
-the required sources in each golden. Reference quotations are never
-substituted for actual retrieved chunks.
+DeepEval scores answer correctness and relevance for all questions. When the
+optional Knowledge trace contains verified selected chunks, a second native
+DeepEval evaluation measures faithfulness and contextual retrieval quality
+only on those test cases. The additional deterministic
+initial/candidate/selection source recall remains available as an auxiliary
+diagnostic. Never replace actual retrieved chunks with golden quotations.
 
 See [the notebook instructions](scripts/README-benchmark.md) for
 configuration, checkpoint handling, retrieval-context instrumentation
