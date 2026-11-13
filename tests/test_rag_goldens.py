@@ -122,8 +122,8 @@ def test_design_scales_by_document_and_section():
     assert final["json_operation"] == {
         "kind": "batch_arrays", "input": "summaries",
         "array_paths": ["/groups", "/warnings"],
-        "target_fragment_bytes": 9000,
-        "batch_size": 3, "max_batch_bytes": 24000
+        "target_fragment_bytes": 5000,
+        "batch_size": 2, "max_batch_bytes": 12000
     }
     assert final["json_inputs"]["summaries"]["iterate"] == "input.batches[]"
     shard = config(BASE / "flows/process-registry-batch.toml")
@@ -549,11 +549,11 @@ def test_cross_document_batching_splits_complete_arrays_at_every_stage():
         ("global-topics.toml", "profile_batches", "profiles",
          ["/topics", "/warnings"], 32000, 12000),
         ("batch-candidates.toml", "batch", "candidates",
-         ["/groups", "/warnings"], 30000, 12000),
+         ["/groups", "/warnings"], 12000, 5000),
         ("batch-reduce1.toml", "batch", "themes",
-         ["/groups", "/warnings"], 30000, 12000),
+         ["/groups", "/warnings"], 12000, 5000),
         ("batch-reduce2.toml", "batch", "summaries",
-         ["/groups", "/warnings"], 24000, 9000),
+         ["/groups", "/warnings"], 12000, 5000),
     ]
     for file, step_id, input_name, paths, limit, target in cases:
         steps = config(BASE / "flows" / file)["steps"]
@@ -563,9 +563,7 @@ def test_cross_document_batching_splits_complete_arrays_at_every_stage():
             "array_paths": paths,
             "target_fragment_bytes": target,
             "input": input_name,
-            "batch_size": 4 if file == "global-topics.toml" else (
-                3 if file == "batch-reduce2.toml" else 5
-            ),
+            "batch_size": 4 if file == "global-topics.toml" else 2,
             "max_batch_bytes": limit,
         }
         assert target < limit
@@ -614,3 +612,32 @@ def test_scan_assemble_checkpoint_template_is_scoped_to_doc_state():
     assert regex.fullmatch("rag-goldens/state/docs/test/profiles/direct.json")
     assert not regex.fullmatch("rag-goldens/state/topics/profile-batches.json")
     assert not regex.fullmatch("rag-goldens/state/topics/registry-batches.json")
+
+
+
+def test_global_reductions_use_smaller_bounded_inputs_without_source_loss():
+    # Model prompts receive already packed batches; these limits directly
+    # bound the JSON serialized into reduce1/reduce2 and registry prompts.
+    for filename in (
+        "batch-candidates.toml", "batch-reduce1.toml", "batch-reduce2.toml",
+    ):
+        flow = config(BASE / "flows" / filename)
+        step = flow["steps"][0]
+        operation = step["json_operation"]
+        assert operation["kind"] == "batch_arrays"
+        assert operation["array_paths"] == ["/groups", "/warnings"]
+        assert operation["max_batch_bytes"] == 12000
+        assert operation["batch_size"] == 2
+        assert operation["target_fragment_bytes"] == 5000
+        assert not step["overwrite_output"]
+    global_steps = {step["id"]: step for step in
+                    config(BASE / "flows/global-topics.toml")["steps"]}
+    assert global_steps["candidates"]["output"].endswith(
+        "candidates-${iteration.id}.json"
+    )
+    assert global_steps["reduce1"]["foreach"] == (
+        "steps.batch_candidates.output.batches"
+    )
+    assert global_steps["reduce2"]["foreach"] == (
+        "steps.batch_reduce1.output.batches"
+    )
