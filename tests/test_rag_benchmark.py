@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 from dataclasses import dataclass
 import importlib.util
 import json
@@ -197,7 +198,8 @@ def test_notebook_uses_native_deepeval_not_custom_evaluation():
     assert "retrieval_results = evaluate(" in code
     for cell in notebook["cells"]:
         if cell["cell_type"] == "code":
-            compile("".join(cell["source"]), "<notebook-cell>", "exec")
+            compile("".join(cell["source"]), "<notebook-cell>", "exec",
+                    flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
 
 
 def test_metric_judge_is_forwarded_to_every_metric(monkeypatch):
