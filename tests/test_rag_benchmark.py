@@ -113,6 +113,29 @@ def test_retrieval_context_is_only_observed_selected_text():
     assert adapter.selected_context(response) is None
 
 
+def test_live_sdk_tuple_trace_preserves_retrieval_coverage():
+    """asdict(KnowledgeTrace) preserves tuples on the first, uncached run."""
+    response = {
+        "actual_output": "Answer",
+        "knowledge_trace": {
+            "selected": ({"source": "doctrines/b.md",
+                          "content": "Verified selected content"},),
+            "content_included": True,
+            "truncated": False,
+            "searches": (
+                {"stage": "initial", "hits": ({"source": "doctrines/a.md"},)},
+                {"stage": "additional", "hits": ({"source": "doctrines/b.md"},)},
+            ),
+        },
+    }
+    assert adapter.selected_context(response) == ["Verified selected content"]
+    assert adapter.source_recall(golden(), response) == {
+        "initial_recall": 0.5,
+        "candidate_recall": 1.0,
+        "selection_recall": 0.5,
+    }
+
+
 def test_retrieval_test_cases_never_use_golden_quotes(monkeypatch):
     class FakeCase:
         def __init__(self, **kwargs):

@@ -177,7 +177,7 @@ def selected_context(response: dict[str, Any]) -> list[str] | None:
     if trace.get("content_included") is not True:
         return None
     selected = trace.get("selected")
-    if not isinstance(selected, list) or not selected:
+    if not isinstance(selected, (list, tuple)) or not selected:
         return None
     texts = [hit.get("content") if isinstance(hit, dict) else None for hit in selected]
     if any(not isinstance(text, str) or not text.strip() for text in texts):
@@ -282,11 +282,11 @@ def source_recall(golden: dict[str, Any], response: dict[str, Any]) -> dict[str,
         return None
     searches = trace.get("searches")
     selected = trace.get("selected")
-    if not isinstance(searches, list) or not isinstance(selected, list):
+    if not isinstance(searches, (list, tuple)) or not isinstance(selected, (list, tuple)):
         return None
     initial, candidates = set(), set()
     for search in searches:
-        if not isinstance(search, dict) or not isinstance(search.get("hits"), list):
+        if not isinstance(search, dict) or not isinstance(search.get("hits"), (list, tuple)):
             return None
         for hit in search["hits"]:
             if not isinstance(hit, dict):
