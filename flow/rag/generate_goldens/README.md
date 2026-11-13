@@ -149,37 +149,38 @@ Export deduplicates exact normalized questions across groups and variants.
 It cannot prove that two differently worded questions are semantically
 distinct; the independent reviewer is responsible for that judgment.
 
-## Evaluate the generated goldens in Jupyter
+## Evaluate the generated goldens with native DeepEval
 
-After generating and exporting goldens with `export.py`, open the
-**[SDK + DeepEval benchmark notebook](benchmark.ipynb)** from the workspace
-root. Configure the model, paths, number of questions, judge and evaluation
-threshold in the notebook's configuration cell. SDK calls and DeepEval scores
-run in **separate cells**, making reruns and exploratory analysis convenient.
+The [benchmark notebook](benchmark.ipynb) uses
+**`EvaluationDataset.evals_iterator()` to drive target execution and
+evaluation**. While the iterator yields a Golden, the optional SDK method
+`AgentBuilder.build_deepeval_target()` provides an observed
+`target.ask(question, expected_output=...)`; it annotates the native
+DeepEval trace without revealing the answer/reference to the target.
 
 ```bash
-python -m pip install cli-agent "deepeval>=4,<5" jupyterlab ipykernel pandas
+python -m pip install --upgrade cli-agent "deepeval>=4,<5" pandas jupyterlab ipykernel
 jupyter lab flow/rag/generate_goldens/benchmark.ipynb
 ```
 
-The Notebook now delegates evaluation, concurrency, scoring cache and report
-generation to **native DeepEval** (an `EvaluationDataset` passed to
-`evaluate()`). Only the small `scripts/benchmark_adapter.py` bridge creates
-fresh cli-agent SDK instances, asks the golden questions and caches responses.
-The target never receives the reference answer or the original evidence.
-The judge has a **separate, mandatory model/provider configuration**, which can
-use OpenAI, OpenRouter or Ollama independently of the cli-agent model.
+**Requires the companion [cli-agent SDK PR #312](https://github.com/sHuewe/cli-agent/pull/312).**
+Upgrade cli-agent after merging that PR (or install its branch) before opening
+the notebook. The SDK import itself does not depend on DeepEval.
 
-DeepEval scores answer correctness and relevance for all questions. When the
-optional Knowledge trace contains verified selected chunks, a second native
-DeepEval evaluation measures faithfulness and contextual retrieval quality
-only on those test cases. The additional deterministic
-initial/candidate/selection source recall remains available as an auxiliary
-diagnostic. Never replace actual retrieved chunks with golden quotations.
+The notebook configures its judge via independent `JUDGE_PROVIDER`,
+`JUDGE_MODEL` and optional `JUDGE_BASE_URL`. Target model settings are not
+passed to the judge. Responses are checkpointed separately from DeepEval
+scoring; changing the judge replays cached answers into a native observed
+trace rather than repeating expensive target questions.
 
-See [the notebook instructions](scripts/README-benchmark.md) for
-configuration, checkpoint handling, retrieval-context instrumentation
-and privacy caveats.
+DeepEval runs answer correctness/relevance inside the iterator, with optional
+follow-up contextual retrieval metrics for actual, verified selected
+Knowledge passages. Reference quotations from the golden dataset are NEVER
+used as observed retrieval context. Initial/candidate/selection source
+recall remains a deterministic, cli-agent-specific diagnostic.
+
+See [benchmark instructions](scripts/README-benchmark.md) for architecture,
+provider setup, data handling, checkpoint freshness, and limitations.
 
 ## Limitations and safety considerations
 
