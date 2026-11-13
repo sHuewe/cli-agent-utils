@@ -30,11 +30,10 @@ exporter does only deterministic validation and output formatting.
    The consolidation prompt propagates upstream `needs_attention` statuses and
    unresolved warnings at **both** layers, even when no topics remain.
 4. **Relate topics across documents** via batches of four profile fragments
-   (<=32 KB), then two further rounds of bounded grouping (five candidate
-   fragments / 30 KB). Large profiles are split at complete topic and
+   (<=32 KB), then two further rounds of bounded grouping (two fragments / 12 KB). Large profiles are split at complete topic and
    warning boundaries; later cross-document proposals are split at complete
    group and warning boundaries. The FINAL step also batches its fragments
-   (three per batch / 24 KB) and produces separately checkpointed registries
+   (two per batch / 12 KB) and produces separately checkpointed registries
    per shard.
    Preserve singleton topics between batches to allow matching a
    concept against other documents at a later stage. Fragments retain
@@ -133,6 +132,18 @@ and privacy caveats.
 
 ## Limitations and safety considerations
 
+- **When switching to smaller global-reduction batches:** Existing
+  `rag-goldens/state/topics/candidates-*.json` files remain usable. The
+  previous `candidate-batches.json` and all downstream global reduction,
+  registry, draft and review checkpoints must be invalidated because the
+  batch IDs are reused with different contents. Do NOT delete
+  `profile-batches.json`, `candidates-*.json`, or document profiles.
+  For a safe fresh reduction, first back up `rag-goldens/state/topics/`,
+  then remove `candidate-batches.json`, `reduce1-*.json`,
+  `reduce1-batches.json`, `reduce2-*.json`,
+  `registry-batches.json`, and `registry-*.json`, plus dependent
+  `rag-goldens/state/draft-*.json` and `review-*.json` if present.
+  These are **only downstream caches**, not the completed document scans.
 - **Generic splitting operation.** The Flow JSON `batch_arrays` operation
   accepts configurable JSON Pointer array paths, here `/topics` and
   `/warnings`. All other fields are copied without interpretation.

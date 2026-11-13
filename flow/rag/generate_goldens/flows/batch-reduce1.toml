@@ -6,15 +6,17 @@ result = "steps.batch.output"
 id = "batch"
 output = "rag-goldens/state/topics/reduce1-batches.json"
 overwrite_output = false
-# Each generated cross-document group is indivisible; split whole groups
-# (and warnings) before bounded repacking, without dropping provenance.
+# Small batches keep the generation/context work below provider timeout
+# thresholds. Groups and their evidence remain indivisible; no truncation.
+# Changes to packing require invalidating this stage and its downstream
+# checkpoints, but never the already generated candidates-*.json files.
 [steps.json_operation]
 kind = "batch_arrays"
 array_paths = ["/groups", "/warnings"]
-target_fragment_bytes = 12000
+target_fragment_bytes = 5000
 input = "themes"
-batch_size = 5
-max_batch_bytes = 30000
+batch_size = 2
+max_batch_bytes = 12000
 [steps.json_inputs.themes]
 iterate = "input.batches[]"
 path = "rag-goldens/state/topics/reduce1-${each.id}.json"
