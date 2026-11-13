@@ -23,6 +23,31 @@ MAX_REGISTRY_BATCH_BYTES = 24_000
 MAX_DOCUMENT_BYTES = 8_000_000
 GROUP_ID = re.compile(r"b[0-9]{4}-g[0-9]{4}\Z")
 BATCH_ID = re.compile(r"b[0-9]{4}\Z")
+VARIANT_ID = re.compile(r"v000[12]\Z")
+
+# Backup validation for LLM reviewers: reject questions about source location.
+_SOURCE_QUESTION_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"\b(?:welche[msrn]?|in\s+welche[msrn]?|aus\s+welche[msrn]?)\s+"
+    r"(?:dokument\w*|datei\w*|quelle\w*|abschnitt\w*|kapitel\w*)\b",
+    r"\b(?:in|aus|laut|gemäß|nach)\s+(?:dem|den|der|einem|einer|diesem|dieser)\s+"
+    r"(?:dokument\w*|datei\w*|quelle\w*|abschnitt\w*|kapitel\w*)\b",
+    r"\b(?:wo|an\s+welcher\s+stelle)\b.{0,120}\b"
+    r"(?:beschrieben|dokumentiert|erwähnt|genannt|nachzulesen|zu\s+finden)\b",
+    r"\b(?:auf\s+welche[msrn]?\s+seite|welche[msrn]?\s+passage)\b",
+    r"\b(?:which|what)\s+(?:of\s+the\s+)?"
+    r"(?:documents?|files?|sources?|sections?|chapters?)\b",
+    r"\b(?:according\s+to|in|from|described\s+in)\s+"
+    r"(?:the|a|which)\s+(?:documents?|files?|sources?|sections?|chapters?)\b",
+    r"\bwhere\b.{0,120}\b(?:documented|described|mentioned|stated|written|found)\b",
+    r"\b(?:vergleiche|vergleich|compare)\b.{0,100}\b"
+    r"(?:dokument\w*|datei\w*|quelle\w*|documents?|files?|sources?)\b",
+))
+
+
+def question_is_about_sources(question: str) -> bool:
+    """Reject source-location and document-identification questions."""
+    return any(pattern.search(question) for pattern in _SOURCE_QUESTION_PATTERNS)
+
 
 
 def confined(root: Path, path: str, *, must_exist: bool = True) -> Path:
@@ -64,11 +89,20 @@ def source(root: Path, path: str, cache: dict) -> tuple[list[str], str]:
     return cache[path]
 
 
-def make_golden(root: Path, group: dict, draft: dict, review: dict, cache: dict) -> dict | None:
+def make_golden(
+    root: Path, group: dict, draft: dict, review: dict, cache: dict,
+    *, variant_id: str | None = None,
+) -> dict | None:
     gid = group.get("id")
     if (not isinstance(gid, str) or not GROUP_ID.fullmatch(gid)
             or draft.get("group_id") != gid or review.get("group_id") != gid):
         raise ValueError(f"Group identity mismatch: {gid!r}")
+    if variant_id is not None and (
+        not VARIANT_ID.fullmatch(variant_id)
+        or draft.get("variant_id") != variant_id
+        or review.get("variant_id") != variant_id
+    ):
+        return None
     if draft.get("status") != "ok" or review.get("status") != "accepted":
         return None
     checks = review.get("checks")
@@ -81,7 +115,8 @@ def make_golden(root: Path, group: dict, draft: dict, review: dict, cache: dict)
     answer = draft.get("expected_output")
     if (not isinstance(text, str) or not 10 <= len(text.strip()) <= 500
             or not isinstance(answer, str) or not 10 <= len(answer.strip()) <= 1800
-            or draft.get("category") != "multi_document"):
+            or draft.get("category") != "multi_document"
+            or question_is_about_sources(text)):
         return None
     declared = group.get("sources")
     if not isinstance(declared, list) or not 2 <= len(declared) <= 3:
@@ -130,7 +165,8 @@ def make_golden(root: Path, group: dict, draft: dict, review: dict, cache: dict)
                        for k in ("without_first", "without_second"))):
         return None
     return {
-        "id": gid, "input": text.strip(), "expected_output": answer.strip(),
+        "id": gid if variant_id is None else f"{gid}-{variant_id}",
+        "input": text.strip(), "expected_output": answer.strip(),
         "category": "multi_document", "difficulty": draft.get("difficulty", "hard"),
         "topic": group.get("topic", ""), "relationship": group.get("relation", ""),
         "sources": [{"path": p, "sha256": source(root, p, cache)[1],
@@ -232,24 +268,54 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
     dedup: set[str] = set()
     for group in groups:
         gid = group["id"]
-        draft_path = f"{directory}/state/draft-{gid}.json"
-        review_path = f"{directory}/state/review-{gid}.json"
-        if not confined(root, draft_path, must_exist=False).is_file() or not confined(
-                root, review_path, must_exist=False).is_file():
-            stats["missing"] += 1
-            continue
-        draft, review = read_json(root, draft_path), read_json(root, review_path)
-        stats["reviewed"] += 1
-        golden = make_golden(root, group, draft, review, cache)
-        if golden is None:
-            stats["rejected"] += 1
-            continue
-        normalized = " ".join(golden["input"].casefold().split())
-        if normalized in dedup:
-            stats["duplicates"] += 1
-            continue
-        dedup.add(normalized)
-        result.append(golden)
+        # Missing plans are permitted for historical runs but explicitly
+        # reported: a new flow run must produce a plan for every group.
+        variants: list[str] = []
+        plan_path = f"{directory}/state/plans/plan-{gid}.json"
+        if confined(root, plan_path, must_exist=False).is_file():
+            plan = read_json(root, plan_path)
+            proposed = plan.get("variants")
+            if plan.get("group_id") != gid or not isinstance(proposed, list) or len(proposed) > 2:
+                raise ValueError(f"Invalid variant plan for {gid}")
+            for position, item in enumerate(proposed, start=1):
+                if not isinstance(item, dict):
+                    raise ValueError(f"Malformed variant for {gid}")
+                vid, focus = item.get("id"), item.get("focus")
+                if (vid != f"v{position:04d}" or not isinstance(focus, str)
+                        or not 1 <= len(focus.strip()) <= 240):
+                    raise ValueError(f"Invalid variant id/focus for {gid}")
+                variants.append(vid)
+        else:
+            stats["missing_variant_plans"] += 1
+
+        for variant_id in [None, *variants]:
+            stats["total_question_slots"] += 1
+            if variant_id is None:
+                draft_path = f"{directory}/state/draft-{gid}.json"
+                review_path = f"{directory}/state/review-{gid}.json"
+            else:
+                prefix = f"{directory}/state/variants/{gid}"
+                draft_path = f"{prefix}/draft-{variant_id}.json"
+                review_path = f"{prefix}/review-{variant_id}.json"
+            if (not confined(root, draft_path, must_exist=False).is_file()
+                    or not confined(root, review_path, must_exist=False).is_file()):
+                stats["missing"] += 1
+                continue
+            draft, review = read_json(root, draft_path), read_json(root, review_path)
+            stats["reviewed"] += 1
+            golden = make_golden(
+                root, group, draft, review, cache, variant_id=variant_id
+            )
+            if golden is None:
+                stats["rejected"] += 1
+                continue
+            # Punctuation-only changes do not turn a paraphrase into a new case.
+            normalized = " ".join(re.findall(r"\w+", golden["input"].casefold()))
+            if normalized in dedup:
+                stats["duplicates"] += 1
+                continue
+            dedup.add(normalized)
+            result.append(golden)
     output.mkdir(parents=True, exist_ok=True)
     result.sort(key=lambda x: x["id"])
     for name, payload in (
