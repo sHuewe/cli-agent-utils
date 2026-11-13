@@ -210,7 +210,7 @@ def deep_eval_cases(
     from deepeval.dataset import EvaluationDataset
     from deepeval.test_case import LLMTestCase
 
-    cases = []
+    dataset = EvaluationDataset()
     for golden in goldens:
         response = responses[golden["id"]]
         context = selected_context(response)
@@ -220,8 +220,8 @@ def deep_eval_cases(
         }
         if context:
             params["retrieval_context"] = context
-        cases.append(LLMTestCase(**params))
-    return EvaluationDataset(test_cases=cases)
+        dataset.add_test_case(LLMTestCase(**params))
+    return dataset
 
 
 def judge_model(provider: str, name: str, base_url: str | None = None) -> Any:

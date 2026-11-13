@@ -132,8 +132,12 @@ def test_native_dataset_uses_only_actual_selected_chunks(monkeypatch):
             self.__dict__.update(kwargs)
 
     class FakeDataset:
-        def __init__(self, test_cases):
-            self.test_cases = test_cases
+        # Mirror the public DeepEval 4.x contract: no test_cases constructor arg.
+        def __init__(self, goldens=None, confident_api_key=None):
+            self.test_cases = []
+
+        def add_test_case(self, test_case):
+            self.test_cases.append(test_case)
 
     fake_deepeval = types.ModuleType("deepeval")
     dataset_module = types.ModuleType("deepeval.dataset")
@@ -195,6 +199,8 @@ def test_notebook_uses_native_deepeval_not_custom_evaluation():
     assert "metric.measure(" not in code
     assert "evaluate_cases(" not in code
     assert "answer_results = evaluate(" in code
+    assert "test_cases=dataset.test_cases" in code
+    assert "test_cases=dataset," not in code
     assert "retrieval_results = evaluate(" in code
     for cell in notebook["cells"]:
         if cell["cell_type"] == "code":
@@ -222,3 +228,64 @@ def test_metric_judge_is_forwarded_to_every_metric(monkeypatch):
     assert len(result) == 5
     assert all(metric.kwargs["model"] is judge for metric in result)
     assert all(metric.kwargs["threshold"] == 0.6 for metric in result)
+
+
+
+def test_evaluate_cell_passes_list_not_dataset():
+    """Replay notebook's native evaluation with DeepEval's list-only contract."""
+    notebook = json.loads((BASE / "benchmark.ipynb").read_text(encoding="utf-8"))
+    cell = next(
+        "".join(item["source"])
+        for item in notebook["cells"]
+        if item["cell_type"] == "code"
+        and "answer_results = evaluate(" in "".join(item["source"])
+    )
+    seen = []
+
+    class FakeCases:
+        test_cases = [object(), object()]
+
+    class FakeConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    def fake_evaluate(*, test_cases, metrics, **kwargs):
+        assert isinstance(test_cases, list), "DeepEval expects a list of cases"
+        seen.append(test_cases)
+        return {"ok": True}
+
+    deepeval_mod = types.ModuleType("deepeval")
+    deepeval_mod.evaluate = fake_evaluate
+    eval_mod = types.ModuleType("deepeval.evaluate")
+    eval_mod.AsyncConfig = FakeConfig
+    eval_mod.CacheConfig = FakeConfig
+    eval_mod.DisplayConfig = FakeConfig
+    old_deepeval = sys.modules.get("deepeval")
+    old_eval = sys.modules.get("deepeval.evaluate")
+    try:
+        sys.modules["deepeval"] = deepeval_mod
+        sys.modules["deepeval.evaluate"] = eval_mod
+        env = {
+            "dataset": FakeCases(),
+            "judge": object(),
+            "benchmark_metrics": lambda *args, **kwargs: [object(), object(), object()],
+            "THRESHOLD": 0.7,
+            "FRESH_EVALUATION": False,
+            "JUDGE_MAX_CONCURRENT": 2,
+            "OUTPUT_DIR": ROOT,
+            "target_sha": "target",
+            "JUDGE_PROVIDER": "openrouter",
+            "JUDGE_MODEL": "test-model",
+        }
+        exec(compile(cell, "<benchmark evaluate cell>", "exec"), env)
+    finally:
+        if old_deepeval is None:
+            sys.modules.pop("deepeval", None)
+        else:
+            sys.modules["deepeval"] = old_deepeval
+        if old_eval is None:
+            sys.modules.pop("deepeval.evaluate", None)
+        else:
+            sys.modules["deepeval.evaluate"] = old_eval
+    assert len(seen) == 1
+    assert seen[0] == env["dataset"].test_cases
