@@ -14,7 +14,10 @@ from the goldens is not evidence they were unrelated in the original corpus.
 
 Output at most 15 independent, meaningful pairs or triples PER BATCH. Choose diverse
 topics and relationships; favor questions that actually require BOTH original
-documents to provide an answer. No speculative extrapolation.
+documents to provide an answer. The topic must permit a natural, self-contained
+KNOWLEDGE question; "which document describes X", "where is X documented" and
+questions about source locations are NOT valid relationships. Do not select
+groups supported only by shared vocabulary. No speculative extrapolation.
 For each group return an ID consisting of the EXACT batch.id, a hyphen,
 and a group suffix g0001, g0002, ...; e.g. b0001-g0001 for batch b0001.
 IDs must be unique in this batch, match ^b[0-9]{4}-g[0-9]{4}$, and use

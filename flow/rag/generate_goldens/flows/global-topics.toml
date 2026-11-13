@@ -73,11 +73,31 @@ response_format = "json"
 batch = "${item}"
 stage = "reduce2"
 
-# The LAST stage is also bounded. The result is a deterministic batch
-# manifest, not a giant JSON array inserted into a model prompt. Each final
-# batch becomes an independent registry shard in the parent flow.
+# A further bounded reduction allows unpaired topics from more distant
+# document batches to meet. Earlier candidates/reductions remain reusable.
 [[steps]]
-id = "registry_batches"
+id = "batch_reduce2"
 flow = "flow/rag/generate_goldens/flows/batch-reduce2.toml"
 [steps.input]
 batches = "${steps.batch_reduce1.output.batches}"
+
+[[steps]]
+id = "reduce3"
+prompt_file = "flow/rag/generate_goldens/prompts/04_global_topics.md"
+foreach = "steps.batch_reduce2.output.batches"
+iteration_id = "${item.id}"
+output = "rag-goldens/state/topics/reduce3-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${item}"
+stage = "reduce3"
+
+# Keep the final registry bounded, without collecting the whole corpus into
+# a single LLM request.
+[[steps]]
+id = "registry_batches"
+flow = "flow/rag/generate_goldens/flows/batch-reduce3.toml"
+[steps.input]
+batches = "${steps.batch_reduce2.output.batches}"

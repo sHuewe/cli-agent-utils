@@ -11,6 +11,13 @@ constraints, failures, definitions, or mutually qualifying statements.
 Different terminology may refer to the same concept: use synonyms/meaning,
 not lexical equality. Never claim a relationship not implied by the input.
 
+Across ALL items of this batch, actively compare unpaired topics from different
+document paths, including synonymous titles and complementary claims. At
+reduce1, reduce2 and reduce3, reconsider previously unpaired themes against
+every other incoming proposal; do not merely restate earlier groups. A pair
+must have a genuine combined knowledge question that cannot be answered from
+either document alone. Do not pair unrelated topics just to increase count.
+
 Critically, DO NOT delete singleton topics: a topic with no partner in this
 particular batch might find its partner in a later batch. Preserve these as
 compact, explicitly unpaired proposals where useful. Each candidate includes

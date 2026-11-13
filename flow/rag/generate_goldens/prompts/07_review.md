@@ -14,7 +14,11 @@ Check:
 3. Are at least TWO DISTINCT original documents truly NECESSARY to answer
    the question completely? Removing either must make the full answer
    impossible, not merely remove redundant supporting detail.
-4. Is the question natural, precise and free of explicit source locations?
+4. Does the question ask ONLY for domain knowledge, not which document/file/
+   section/source contains the information, where it is described, or which
+   sources agree? Reject source-location and document-comparison questions
+   even if they omit literal filenames. A documentation *rule* may be a
+   valid domain question; locating its description is not.
 5. Are there unresolved contradictions or alternative reasonable answers?
 Reject uncertain cases. Be deliberately conservative: high-quality test
 cases matter more than yield.

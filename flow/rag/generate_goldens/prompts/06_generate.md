@@ -15,8 +15,13 @@ Generate ONE natural user question whose complete answer necessarily requires
 facts from AT LEAST TWO DIFFERENT original documents. Use only read source
 material, not general knowledge. Rejection is correct when excerpts merely
 share keywords, lack sufficient detail, or cannot jointly support one precise
-answer. The question must NOT mention filenames, document numbers, line
-numbers, "according to both documents", or other source hints. Contradictions
+answer. Ask for the TECHNICAL FACT, RULE, CONSEQUENCE, COMPARISON or DECISION,
+not where the fact was written. NEVER ask "which/in which document", "which
+file/section/source", "where is ... documented/described", "in welchem Dokument",
+"welche Datei/Quelle", or "laut dem Dokument". Do not mention or hint at
+filenames, documents, passages, source locations, or the fact that multiple
+sources are involved, even indirectly. A question about a documentation
+*requirement* can be legitimate; a question about locating documentation is not. Contradictions
 require an unambiguous version/scope resolution, otherwise reject.
 
 Provide a short, factual reference answer, exact verbatim evidence quotes for

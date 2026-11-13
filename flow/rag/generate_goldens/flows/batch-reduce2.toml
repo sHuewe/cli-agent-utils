@@ -7,7 +7,7 @@ result = "steps.batch.output"
 # into one prompt, regardless of how many source doctrines are indexed.
 [[steps]]
 id = "batch"
-output = "rag-goldens/state/topics/registry-batches.json"
+output = "rag-goldens/state/topics/reduce3-batches.json"
 overwrite_output = false
 # Small batches keep the generation/context work below provider timeout
 # thresholds. Groups and their evidence remain indivisible; no truncation.

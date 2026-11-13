@@ -23,3 +23,29 @@ response_format = "json"
 [steps.vars]
 group = "${input.group}"
 draft = "${steps.draft.output}"
+
+# Keep the original draft/review checkpoints. Propose at most two genuinely
+# different knowledge questions, not rephrasings of the first question.
+[[steps]]
+id = "plan_variants"
+prompt_file = "flow/rag/generate_goldens/prompts/08_plan_variants.md"
+output = "rag-goldens/state/plans/plan-${input.group.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+group = "${input.group}"
+draft = "${steps.draft.output}"
+review = "${steps.review.output}"
+
+# Each extra question is independently generated, source-read and reviewed.
+# Separate paths cannot collide with the legacy draft/review checkpoints.
+[[steps]]
+id = "extra_variants"
+flow = "flow/rag/generate_goldens/flows/process-variant.toml"
+foreach = "steps.plan_variants.output.variants"
+iteration_id = "${item.id}"
+[steps.input]
+group = "${input.group}"
+variant = "${item}"
+base_draft = "${steps.draft.output}"
