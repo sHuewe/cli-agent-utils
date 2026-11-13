@@ -243,7 +243,8 @@ def test_evaluate_cell_passes_list_not_dataset():
     seen = []
 
     class FakeCases:
-        test_cases = [object(), object()]
+        test_cases = [types.SimpleNamespace(retrieval_context=None),
+                      types.SimpleNamespace(retrieval_context=None)]
 
     class FakeConfig:
         def __init__(self, **kwargs):
