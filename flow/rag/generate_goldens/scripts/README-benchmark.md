@@ -2,8 +2,9 @@
 
 The [notebook](../benchmark.ipynb) now uses DeepEval 4.x's native
 `EvaluationDataset.evals_iterator()` to **drive** the target agent, annotate
-an observed trace and score each golden. DeepEval also owns judge metric
-caching and report generation. The cli-agent-specific observed callback lives
+an observed trace and capture each golden's target trace. DeepEval's native, cache-aware
+`evaluate()` then scores the recorded answers and owns judge metric caching
+and report generation. The cli-agent-specific observed callback lives
 in the **cli-agent SDK**, not in this repository:
 
 ```python
@@ -68,27 +69,30 @@ reference quotations from `goldens.json`.
    in `additional_metadata`. No agent calls yet.
 2. Use `for golden in dataset.evals_iterator(metrics=..., ...):`.
    **Within this iterator body**, call `await target.ask(...)`. The SDK
-   records the answer and reference on the DeepEval trace, and the
-   iterator performs the native answer-correctness/relevance judgments.
+   records answer, reference and retrieval context on the DeepEval trace.
+   The iterator uses a deterministic, no-LLM response-recorded metric.
    `AsyncConfig(run_async=False)` preserves the notebook coroutine's
-   active observation context; the per-call timeout uses
-   `asyncio.timeout()`, which does not spawn a separate task.
+   active observation context; `asyncio.timeout()` stays in the same task.
+   This avoids repeating paid judge calls: the synchronous DeepEval iterator
+   does not reuse cached individual judge metrics.
 3. The small `benchmark_adapter.py` still handles input validation,
    target response checkpoints, judge selection and optional source recall.
    Cached successful target responses are **replayed through the observed
    callback** inside the iterator. Therefore a different judge never
    triggers new target model calls unless `FRESH_SDK=True`.
-4. If the SDK recorded complete selected passages, a second native
-   DeepEval `evaluate()` runs faithfulness/contextual recall/precision
-   on **only these retrieval cases**, with judge concurrency supported.
+4. Native cache-aware `evaluate()` runs answer correctness and relevance
+   on all recorded target responses. A separate native `evaluate()` runs
+   faithfulness/contextual recall/precision on **only** cases with actual,
+   complete selected Knowledge text. Both support concurrent judging and
+   DeepEval metric-cache reuse.
 5. DeepEval saves native test-run reports under
    `rag-goldens/evaluation/deepeval/`. Additional initial/candidate/
    selection document recall is computed deterministically from the SDK
    Knowledge trace, not by an LLM judge.
 
-The first answer-quality pass is sequential by design, since
-`evals_iterator()` establishes one active trace per Golden. The
-retrieval-only pass can parallelize its judge calls.
+The initial observed *target-execution* pass is sequential by design, as
+`evals_iterator()` establishes one active trace per Golden. The later
+quality and retrieval passes can parallelize their judge calls.
 
 DeepEval controls the **metric** cache; the helper controls only
 **target response** reuse. Changing `JUDGE_MODEL` changes the evaluator,
