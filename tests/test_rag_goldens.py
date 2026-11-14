@@ -219,7 +219,13 @@ def test_export_two_source_goldens(tmp_path):
     assert all(len(source["sha256"]) == 64 for source in exported[0]["sources"])
     simple = json.loads((tmp_path / "rag-goldens/deepeval-goldens.json").read_text())
     assert simple[0]["input"] == draft["question"]
-    assert len(simple[0]["context"]) == 2
+    assert simple[0]["expected_output"] == draft["expected_output"]
+    assert simple[0]["additional_metadata"] == {
+        "golden_id": "b0001-g0001",
+        "required_sources": ["doctrines/a.md", "doctrines/b.md"],
+    }
+    assert "context" not in simple[0]
+    assert "retrieval_context" not in simple[0]
     with pytest.raises(ValueError, match="Refusing symlink"):
         link = tmp_path / "doctrines/link.md"
         link.symlink_to(tmp_path / "doctrines/a.md")
