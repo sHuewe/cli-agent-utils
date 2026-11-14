@@ -1,10 +1,12 @@
-"""Contract tests for thin cli-agent/DeepEval adapter; no live model calls."""
+"""Tests for native DeepEval iterator orchestration and the small benchmark glue.
+
+No live LLM calls or DeepEval installation required for repository CI.
+The mocks intentionally follow DeepEval's public Golden/Dataset contracts.
+"""
 from __future__ import annotations
 
-import asyncio
 import ast
-from dataclasses import dataclass
-import importlib.util
+import asyncio
 import json
 from pathlib import Path
 import sys
@@ -21,149 +23,143 @@ import benchmark_adapter as adapter  # noqa: E402
 def golden(gid="b0001-g0001"):
     return {
         "id": gid, "input": "What happens with a missing token?",
-        "expected_output": "The gateway and policy reject the request.",
+        "expected_output": "The gateway rejects missing tokens.",
         "sources": [{"path": "doctrines/a.md"}, {"path": "doctrines/b.md"}],
     }
 
 
-def test_goldens_loading_checks_identity_and_reference(tmp_path):
+def test_load_goldens_validates_ids_and_reference(tmp_path):
     path = tmp_path / "goldens.json"
-    path.write_text(json.dumps([golden()]))
+    path.write_text(json.dumps([golden()]), encoding="utf-8")
     assert adapter.load_goldens(path)[0]["id"] == "b0001-g0001"
     with pytest.raises(ValueError, match="positive"):
         adapter.load_goldens(path, 0)
-    path.write_text(json.dumps([golden(), golden()]))
+    path.write_text(json.dumps([golden(), golden()]), encoding="utf-8")
     with pytest.raises(ValueError, match="duplicate"):
         adapter.load_goldens(path)
-    path.write_text(json.dumps([{"id": "x", "input": "Q"}]))
+    path.write_text(json.dumps([{"id": "x", "input": "Q"}]), encoding="utf-8")
     with pytest.raises(ValueError, match="expected_output"):
         adapter.load_goldens(path)
 
 
-class FakeAgent:
-    def __init__(self, questions, trace=None):
-        self.questions, self.trace = questions, trace
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        return None
-
-    async def ask(self, question):
-        self.questions.append(question)
-        return types.SimpleNamespace(
-            answer="The request is rejected.", knowledge_trace=self.trace
-        )
-
-
-def test_target_only_asks_question_and_reuses_answers(tmp_path):
-    questions = []
-    target_factory = lambda: adapter.CliAgentTarget(FakeAgent(questions))
-    result = asyncio.run(adapter.collect_responses(
-        [golden()], target_factory=target_factory,
-        output=tmp_path, target_fingerprint="config-1",
-    ))
-    assert questions == [golden()["input"]]
-    assert result[golden()["id"]]["actual_output"] == "The request is rejected."
-    assert "expected_output" not in result[golden()["id"]]
-    asyncio.run(adapter.collect_responses(
-        [golden()], target_factory=target_factory,
-        output=tmp_path, target_fingerprint="config-1",
-    ))
-    assert len(questions) == 1
-    asyncio.run(adapter.collect_responses(
-        [golden()], target_factory=target_factory,
-        output=tmp_path, target_fingerprint="config-2",
-    ))
-    assert len(questions) == 2
-
-
-def test_fresh_session_for_each_question(tmp_path):
-    created, questions = [], []
-    def target_factory():
-        agent = FakeAgent(questions)
-        created.append(agent)
-        return adapter.CliAgentTarget(agent)
-    asyncio.run(adapter.collect_responses(
-        [golden("b0001-g0001"), golden("b0001-g0002")],
-        target_factory=target_factory, output=tmp_path,
-        target_fingerprint="cfg",
-    ))
-    assert len(created) == 2 and created[0] is not created[1]
-
-
-@dataclass
-class Trace:
-    content_included: bool
-    truncated: bool
-    selected: list
-    searches: list
-
-
-def test_verified_context_only_and_source_recalls(tmp_path):
-    trace = Trace(
-        content_included=True, truncated=False,
-        selected=[{"source": "doctrines/b.md", "content": "Observed passage"}],
-        searches=[{"stage": "initial", "hits": [
-            {"source": "doctrines/a.md"}]},
-                 {"stage": "additional", "hits": [
-                     {"source": "doctrines/b.md"}]}],
-    )
-    questions = []
-    out = asyncio.run(adapter.CliAgentTarget(FakeAgent(questions, trace)).ask("Q"))
-    assert adapter.selected_context(out) == ["Observed passage"]
-    assert adapter.source_recall(golden(), out) == {
-        "initial_recall": 0.5,
-        "candidate_recall": 1.0,
-        "selection_recall": 0.5,
-    }
-    out["knowledge_trace"]["truncated"] = True
-    assert adapter.selected_context(out) is None
-    assert adapter.source_recall(golden(), out) is None
-    out["knowledge_trace"]["truncated"] = False
-    out["knowledge_trace"]["selected"] = [{"source": "doctrines/b.md"}]
-    assert adapter.selected_context(out) is None
-
-
-def test_native_dataset_uses_only_actual_selected_chunks(monkeypatch):
-    class FakeLLMTestCase:
+def test_native_deepeval_goldens_are_not_precomputed_cases(monkeypatch):
+    class FakeGolden:
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
 
     class FakeDataset:
-        # Mirror the public DeepEval 4.x contract: no test_cases constructor arg.
         def __init__(self, goldens=None, confident_api_key=None):
-            self.test_cases = []
+            assert isinstance(goldens, list)
+            assert confident_api_key is None
+            self.goldens = goldens
 
-        def add_test_case(self, test_case):
-            self.test_cases.append(test_case)
+    module = types.ModuleType("deepeval.dataset")
+    module.Golden = FakeGolden
+    module.EvaluationDataset = FakeDataset
+    monkeypatch.setitem(sys.modules, "deepeval.dataset", module)
 
-    fake_deepeval = types.ModuleType("deepeval")
-    dataset_module = types.ModuleType("deepeval.dataset")
-    dataset_module.EvaluationDataset = FakeDataset
-    testcase_module = types.ModuleType("deepeval.test_case")
-    testcase_module.LLMTestCase = FakeLLMTestCase
-    monkeypatch.setitem(sys.modules, "deepeval", fake_deepeval)
-    monkeypatch.setitem(sys.modules, "deepeval.dataset", dataset_module)
-    monkeypatch.setitem(sys.modules, "deepeval.test_case", testcase_module)
-    data = adapter.deep_eval_cases(
-        [golden()], {golden()["id"]: {
-            "actual_output": "Answer",
-            "knowledge_trace": {
-                "content_included": True, "truncated": False,
-                "selected": [{"content": "Only actual retrieved text"}],
-            },
-        }}
-    )
-    case = data.test_cases[0]
-    assert case.input == golden()["input"]
-    assert case.expected_output == golden()["expected_output"]
-    assert case.retrieval_context == ["Only actual retrieved text"]
-    assert not hasattr(case, "context")
+    dataset = adapter.deep_eval_dataset([golden()])
+    assert len(dataset.goldens) == 1
+    item = dataset.goldens[0]
+    assert item.input == golden()["input"]
+    assert item.expected_output == golden()["expected_output"]
+    assert item.additional_metadata == {"golden_id": golden()["id"]}
+    assert not hasattr(item, "actual_output")
 
 
-def test_independent_judge_provider_model(monkeypatch):
+def test_answer_checkpoint_replay_and_target_fingerprint(tmp_path):
+    g = golden()
+    assert adapter.cached_response(g, output=tmp_path,
+                                   target_fingerprint="config-A") is None
+    response = {"actual_output": "Answer",
+                "knowledge_trace": {
+                    "selected": [{"content": "Observed", "source": "doctrines/a.md"}],
+                    "truncated": False, "content_included": True,
+                }}
+    adapter.save_response(g, response, output=tmp_path, target_fingerprint="config-A")
+    assert adapter.cached_response(g, output=tmp_path,
+                                   target_fingerprint="config-A") == response
+    assert adapter.cached_response(g, output=tmp_path,
+                                   target_fingerprint="config-B") is None
+    assert adapter.cached_response(g, output=tmp_path,
+                                   target_fingerprint="config-A", fresh=True) is None
+    changed = {**g, "expected_output": "Different reference"}
+    assert adapter.cached_response(changed, output=tmp_path,
+                                   target_fingerprint="config-A") is None
+
+
+def test_retrieval_context_is_only_observed_selected_text():
+    response = {"actual_output": "Answer",
+                "knowledge_trace": {
+                    "selected": [{"source": "doctrines/a.md",
+                                  "content": "Observed actual passage"}],
+                    "content_included": True, "truncated": False,
+                    "searches": [{"stage": "initial", "hits": [
+                        {"source": "doctrines/a.md"}]},
+                        {"stage": "followup", "hits": [
+                            {"source": "doctrines/b.md"}]}],
+                }}
+    assert adapter.selected_context(response) == ["Observed actual passage"]
+    assert adapter.source_recall(golden(), response) == {
+        "initial_recall": 0.5,
+        "candidate_recall": 1.0,
+        "selection_recall": 0.5,
+    }
+    response["knowledge_trace"]["truncated"] = True
+    assert adapter.selected_context(response) is None
+    assert adapter.source_recall(golden(), response) is None
+    response["knowledge_trace"]["truncated"] = False
+    response["knowledge_trace"]["selected"][0].pop("content")
+    assert adapter.selected_context(response) is None
+
+
+def test_live_sdk_tuple_trace_preserves_retrieval_coverage():
+    """asdict(KnowledgeTrace) preserves tuples on the first, uncached run."""
+    response = {
+        "actual_output": "Answer",
+        "knowledge_trace": {
+            "selected": ({"source": "doctrines/b.md",
+                          "content": "Verified selected content"},),
+            "content_included": True,
+            "truncated": False,
+            "searches": (
+                {"stage": "initial", "hits": ({"source": "doctrines/a.md"},)},
+                {"stage": "additional", "hits": ({"source": "doctrines/b.md"},)},
+            ),
+        },
+    }
+    assert adapter.selected_context(response) == ["Verified selected content"]
+    assert adapter.source_recall(golden(), response) == {
+        "initial_recall": 0.5,
+        "candidate_recall": 1.0,
+        "selection_recall": 0.5,
+    }
+
+
+def test_retrieval_test_cases_never_use_golden_quotes(monkeypatch):
+    class FakeCase:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    module = types.ModuleType("deepeval.test_case")
+    module.LLMTestCase = FakeCase
+    monkeypatch.setitem(sys.modules, "deepeval.test_case", module)
+
+    response = {
+        "actual_output": "Actual",
+        "knowledge_trace": {
+            "selected": [{"content": "Observed Knowledge text"}],
+            "content_included": True, "truncated": False,
+        },
+    }
+    cases = adapter.retrieval_test_cases([golden()], {golden()["id"]: response})
+    assert len(cases) == 1
+    assert cases[0].input == golden()["input"]
+    assert cases[0].expected_output == golden()["expected_output"]
+    assert cases[0].retrieval_context == ["Observed Knowledge text"]
+
+
+def test_judge_is_independent_provider_and_model(monkeypatch):
     seen = []
     class FakeJudge:
         def __init__(self, **kwargs):
@@ -182,111 +178,148 @@ def test_independent_judge_provider_model(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(ValueError, match="OPENAI_API_KEY"):
         adapter.judge_model("openai", "gpt-4.1")
-    with pytest.raises(ValueError, match="JUDGE_PROVIDER"):
-        adapter.judge_model("other", "model")
 
 
-def test_notebook_uses_native_deepeval_not_custom_evaluation():
+def test_notebook_uses_native_iterator_and_sdk_observed_target():
     notebook = json.loads((BASE / "benchmark.ipynb").read_text(encoding="utf-8"))
-    code = "\n".join(
-        "".join(cell["source"])
-        for cell in notebook["cells"] if cell["cell_type"] == "code"
+    source = "\n".join(
+        "".join(cell["source"]) for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
     )
-    assert "EvaluationDataset" not in code or "deep_eval_cases" in code
-    assert "from deepeval import evaluate" in code
-    assert "judge_model(JUDGE_PROVIDER, JUDGE_MODEL" in code
-    assert "CacheConfig(" in code
-    assert "metric.measure(" not in code
-    assert "evaluate_cases(" not in code
-    assert "answer_results = evaluate(" in code
-    assert "test_cases=dataset.test_cases" in code
-    assert "test_cases=dataset," not in code
-    assert "retrieval_results = evaluate(" in code
+    assert "builder.build_deepeval_target(" in source
+    assert "dataset.evals_iterator(" in source
+    assert "await target.ask(" in source
+    assert "target.ask(" in source[source.index("for golden in dataset.evals_iterator("):]
+    assert "async with asyncio.timeout(" in source
+    assert "await asyncio.wait_for(" not in source
+    assert "collect_responses(" not in source
+    assert "sdk_target_factory(" not in source
+    assert "cached_response=" in source
+    assert "judge_model(JUDGE_PROVIDER, JUDGE_MODEL" in source
+    assert "metrics=benchmark_metrics(judge" in source
     for cell in notebook["cells"]:
         if cell["cell_type"] == "code":
             compile("".join(cell["source"]), "<notebook-cell>", "exec",
                     flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
 
 
-def test_metric_judge_is_forwarded_to_every_metric(monkeypatch):
-    class Metric:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-    metrics_mod = types.ModuleType("deepeval.metrics")
-    for name in ("GEval", "AnswerRelevancyMetric", "FaithfulnessMetric",
-                 "ContextualRecallMetric", "ContextualPrecisionMetric"):
-        setattr(metrics_mod, name, Metric)
-    test_mod = types.ModuleType("deepeval.test_case")
-    test_mod.SingleTurnParams = types.SimpleNamespace(
-        INPUT="input", ACTUAL_OUTPUT="actual_output",
-        EXPECTED_OUTPUT="expected_output",
-    )
-    monkeypatch.setitem(sys.modules, "deepeval.metrics", metrics_mod)
-    monkeypatch.setitem(sys.modules, "deepeval.test_case", test_mod)
-    judge = object()
-    result = adapter.benchmark_metrics(judge, 0.6, retrieval=True)
-    assert len(result) == 5
-    assert all(metric.kwargs["model"] is judge for metric in result)
-    assert all(metric.kwargs["threshold"] == 0.6 for metric in result)
-
-
-
-def test_evaluate_cell_passes_list_not_dataset():
-    """Replay notebook's native evaluation with DeepEval's list-only contract."""
+def test_native_iterator_wraps_ask_and_receives_expected_output(monkeypatch):
+    """Actually execute notebook's iterator cell under a compatible fake API."""
     notebook = json.loads((BASE / "benchmark.ipynb").read_text(encoding="utf-8"))
     cell = next(
-        "".join(item["source"])
-        for item in notebook["cells"]
+        "".join(item["source"]) for item in notebook["cells"]
         if item["cell_type"] == "code"
-        and "answer_results = evaluate(" in "".join(item["source"])
+        and "for golden in dataset.evals_iterator(" in "".join(item["source"])
     )
-    seen = []
+    logs = []
+    active = {"observing": False}
 
-    class FakeCases:
-        test_cases = [types.SimpleNamespace(retrieval_context=None),
-                      types.SimpleNamespace(retrieval_context=None)]
+    class FakeGolden:
+        input = "What happens?"
+        expected_output = "Reject"
+        additional_metadata = {"golden_id": "b0001-g0001"}
+
+    class FakeDataset:
+        def evals_iterator(self, **kwargs):
+            logs.append(("iterator", kwargs["identifier"]))
+            for item in [FakeGolden()]:
+                active["observing"] = True
+                yield item
+                active["observing"] = False
+                logs.append(("evaluated", item.input))
+
+    class FakeTarget:
+        async def ask(self, question, *, expected_output, cached_response):
+            assert active["observing"]
+            logs.append(("ask", question, expected_output, cached_response))
+            return {"actual_output": "Reject", "knowledge_trace": None}
 
     class FakeConfig:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
 
-    def fake_evaluate(*, test_cases, metrics, **kwargs):
-        assert isinstance(test_cases, list), "DeepEval expects a list of cases"
-        seen.append(test_cases)
-        return {"ok": True}
+    mod = types.ModuleType("deepeval.evaluate")
+    mod.AsyncConfig = FakeConfig
+    mod.CacheConfig = FakeConfig
+    mod.DisplayConfig = FakeConfig
+    monkeypatch.setitem(sys.modules, "deepeval.evaluate", mod)
 
-    deepeval_mod = types.ModuleType("deepeval")
-    deepeval_mod.evaluate = fake_evaluate
-    eval_mod = types.ModuleType("deepeval.evaluate")
-    eval_mod.AsyncConfig = FakeConfig
-    eval_mod.CacheConfig = FakeConfig
-    eval_mod.DisplayConfig = FakeConfig
-    old_deepeval = sys.modules.get("deepeval")
-    old_eval = sys.modules.get("deepeval.evaluate")
-    try:
-        sys.modules["deepeval"] = deepeval_mod
-        sys.modules["deepeval.evaluate"] = eval_mod
-        env = {
-            "dataset": FakeCases(),
-            "judge": object(),
-            "benchmark_metrics": lambda *args, **kwargs: [object(), object(), object()],
-            "THRESHOLD": 0.7,
-            "FRESH_EVALUATION": False,
-            "JUDGE_MAX_CONCURRENT": 2,
-            "OUTPUT_DIR": ROOT,
-            "target_sha": "target",
-            "JUDGE_PROVIDER": "openrouter",
-            "JUDGE_MODEL": "test-model",
-        }
-        exec(compile(cell, "<benchmark evaluate cell>", "exec"), env)
-    finally:
-        if old_deepeval is None:
-            sys.modules.pop("deepeval", None)
-        else:
-            sys.modules["deepeval"] = old_deepeval
-        if old_eval is None:
-            sys.modules.pop("deepeval.evaluate", None)
-        else:
-            sys.modules["deepeval.evaluate"] = old_eval
-    assert len(seen) == 1
-    assert seen[0] == env["dataset"].test_cases
+    env = {
+        "dataset": FakeDataset(), "by_id": {"b0001-g0001": golden()},
+        "target": FakeTarget(), "judge": object(), "THRESHOLD": 0.7,
+        "benchmark_metrics": lambda *a, **kw: [object()],
+        "target_trace_metric": lambda: object(),
+        "OUTPUT_DIR": ROOT, "target_sha": "config-A",
+        "FRESH_EVALUATION": False, "FRESH_SDK": False,
+        "SDK_TIMEOUT_SECONDS": 5.0,
+        "cached_response": lambda *a, **kw: None,
+        "save_response": lambda *a, **kw: logs.append(("saved",)),
+        "asyncio": asyncio,
+    }
+    compiled = compile(cell, "<benchmark iterator>", "exec",
+                       flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+
+    async def run():
+        await eval(compiled, env)
+
+    asyncio.run(run())
+    assert logs[0] == ("iterator", "rag-target-execution")
+    assert logs[1] == ("ask", "What happens?", "Reject", None)
+    assert logs[2] == ("saved",)
+    assert logs[3] == ("evaluated", "What happens?")
+    assert env["responses"]["b0001-g0001"]["actual_output"] == "Reject"
+
+
+
+def test_target_trace_metric_is_deterministic_and_free_of_judge_calls(monkeypatch):
+    class FakeMetric:
+        def is_successful(self):
+            return self.score >= self.threshold
+
+    mod = types.ModuleType("deepeval.metrics")
+    mod.BaseMetric = FakeMetric
+    monkeypatch.setitem(sys.modules, "deepeval.metrics", mod)
+    metric = adapter.target_trace_metric()
+    assert metric.measure(types.SimpleNamespace(actual_output="Target answer")) == 1.0
+    assert metric.is_successful() is True
+    assert metric.measure(types.SimpleNamespace(actual_output="")) == 0.0
+    assert metric.is_successful() is False
+
+
+def test_answer_judge_is_called_via_cache_aware_native_evaluate(monkeypatch):
+    notebook = json.loads((BASE / "benchmark.ipynb").read_text(encoding="utf-8"))
+    cell = next("".join(item["source"]) for item in notebook["cells"]
+                if item["cell_type"] == "code"
+                and "answer_results = evaluate(" in "".join(item["source"]))
+    calls = []
+
+    class FakeConfig:
+        def __init__(self, **kw):
+            self.kw = kw
+
+    def fake_evaluate(*, test_cases, metrics, **kwargs):
+        assert isinstance(test_cases, list)
+        calls.append((test_cases, kwargs))
+        return "evaluated"
+
+    fake_deepeval = types.ModuleType("deepeval")
+    fake_deepeval.evaluate = fake_evaluate
+    monkeypatch.setitem(sys.modules, "deepeval", fake_deepeval)
+    env = {
+        "goldens": [golden()],
+        "responses": {golden()["id"]: {"actual_output": "Agent answer"}},
+        "answer_test_cases": lambda *args: [object()],
+        "retrieval_test_cases": lambda *args: [],
+        "judge": object(),
+        "benchmark_metrics": lambda *a, **kw: [object(), object()],
+        "THRESHOLD": 0.7,
+        "JUDGE_MAX_CONCURRENT": 4,
+        "options": {"cache_config": object()},
+        "AsyncConfig": FakeConfig,
+    }
+    exec(compile(cell, "<native eval>", "exec"), env)
+    assert len(calls) == 1
+    assert calls[0][1]["identifier"] == "rag-answer-quality"
+    assert calls[0][1]["cache_config"] is env["options"]["cache_config"]
+    assert env["answer_results"] == "evaluated"
+

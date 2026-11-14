@@ -6,15 +6,13 @@ expensive target responses and maps the optional verified Knowledge trace.
 """
 from __future__ import annotations
 
-import asyncio
-from dataclasses import asdict, is_dataclass
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import tempfile
-from typing import Any, Callable
+from typing import Any
 
 CASE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\Z")
 VERSION = 3
@@ -78,73 +76,25 @@ def target_fingerprint(
     })
 
 
-def sdk_target_factory(
-    workspace: Path, config: Path | None = None, admin: Path | None = None,
-    approve_tools: tuple[str, ...] = (), capture_content: bool = True,
-) -> Callable[[], "CliAgentTarget"]:
-    """Resolve SDK policy once, but construct a fresh agent for EVERY golden."""
-    from cli_agent.sdk import AgentBuilder
-    from cli_agent.settings.config import ensure_default_config_file
+def deep_eval_dataset(goldens: list[dict[str, Any]]) -> Any:
+    """A genuine DeepEval Golden dataset, not precomputed LLM test cases.
 
-    config_path = (config or ensure_default_config_file()).expanduser().resolve(strict=True)
-    admin_path = admin.expanduser().resolve(strict=True) if admin else None
-    workspace = workspace.resolve(strict=True)
-    allowed = frozenset(approve_tools)
+    evals_iterator yields these Goldens to the target *inside* a DeepEval
+    evaluation run. Only the question is sent to the target's SDK Agent.
+    """
+    from deepeval.dataset import EvaluationDataset, Golden
 
-    def new_target() -> CliAgentTarget:
-        builder = AgentBuilder()
-        if admin_path is None:
-            builder.with_admin_config()
-        else:
-            builder.with_admin_config(path=admin_path)
-        builder.with_project_config(
-            path=config_path, workspace=workspace,
-            workspace_access="none", response_format="text",
+    return EvaluationDataset(goldens=[
+        Golden(
+            input=row["input"], expected_output=row["expected_output"],
+            additional_metadata={"golden_id": row["id"]},
         )
-        builder.with_knowledge_trace(include_content=capture_content)
-        if allowed:
-            async def approve(name: str, arguments: dict) -> bool:
-                return name in allowed
-            builder.with_approval_callback(approve)
-        return CliAgentTarget(builder.build())
-
-    return new_target
-
-
-class CliAgentTarget:
-    """The entire agent-specific adapter: an SDK agent, plus one async ask."""
-
-    def __init__(self, agent: Any):
-        self.agent = agent
-
-    async def ask(self, question: str) -> dict[str, Any]:
-        async with self.agent:
-            result = await self.agent.ask(question)
-        answer = getattr(result, "answer", None)
-        if not isinstance(answer, str) or not answer.strip():
-            raise ValueError("cli-agent returned an empty answer")
-        trace = getattr(result, "knowledge_trace", None)
-        trace = asdict(trace) if is_dataclass(trace) else None
-        return {"actual_output": answer, "knowledge_trace": trace}
-
-
-def selected_context(response: dict[str, Any]) -> list[str] | None:
-    """Only verified and complete Knowledge-selected passages, never golden quotes."""
-    trace = response.get("knowledge_trace")
-    if not isinstance(trace, dict) or trace.get("truncated") is True:
-        return None
-    if trace.get("content_included") is not True:
-        return None
-    selected = trace.get("selected")
-    if not isinstance(selected, list) or not selected:
-        return None
-    texts = [hit.get("content") if isinstance(hit, dict) else None for hit in selected]
-    if any(not isinstance(text, str) or not text.strip() for text in texts):
-        return None
-    return texts
+        for row in goldens
+    ])
 
 
 def _save_json(path: Path, value: dict[str, Any]) -> None:
+    """Persist only successful target results, with atomic, private writes."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
@@ -163,65 +113,142 @@ def _save_json(path: Path, value: dict[str, Any]) -> None:
             temporary.unlink(missing_ok=True)
 
 
-async def collect_responses(
-    goldens: list[dict[str, Any]], *,
-    target_factory: Callable[[], CliAgentTarget],
+def _response_key(golden: dict[str, Any], target_fingerprint: str) -> str:
+    # Preserves compatibility with checkpoints written by the previous
+    # benchmark notebook when the same target configuration is in use.
+    return digest({
+        "version": VERSION, "golden": golden, "target": target_fingerprint,
+    })
+
+
+def cached_response(
+    golden: dict[str, Any], *, output: Path,
+    target_fingerprint: str, fresh: bool = False,
+) -> dict[str, Any] | None:
+    """Optional cached target result, never a cached DeepEval score.
+
+    Never reuse when the target fingerprint or golden has changed.
+    """
+    if fresh:
+        return None
+    path = output / "responses" / f"{golden['id']}.json"
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 16_000_000:
+        return None
+    record = json.loads(path.read_text(encoding="utf-8"))
+    if (not isinstance(record, dict)
+            or record.get("status") != "ok"
+            or record.get("sha256") != _response_key(golden, target_fingerprint)
+            or not isinstance(record.get("actual_output"), str)
+            or not record["actual_output"].strip()):
+        return None
+    trace = record.get("knowledge_trace")
+    if trace is not None and (
+        not isinstance(trace, dict) or not isinstance(trace.get("selected"), list)
+    ):
+        return None
+    return {
+        "actual_output": record["actual_output"], "knowledge_trace": trace,
+    }
+
+
+def save_response(
+    golden: dict[str, Any], response: dict[str, Any], *,
     output: Path, target_fingerprint: str,
-    timeout: float = 600.0, fresh: bool = False,
-) -> dict[str, dict[str, Any]]:
-    """Resume target runs per golden; DeepEval manages ALL evaluation caching."""
-    responses = {}
-    if timeout <= 0:
-        raise ValueError("timeout must be positive")
-    for row in goldens:
-        gid = row["id"]
-        path = output / "responses" / f"{gid}.json"
-        key = digest({"version": VERSION, "golden": row, "target": target_fingerprint})
-        data = None
-        if path.is_file() and not path.is_symlink() and not fresh:
-            if path.stat().st_size <= 16_000_000:
-                previous = json.loads(path.read_text(encoding="utf-8"))
-                if (isinstance(previous, dict) and previous.get("sha256") == key
-                        and previous.get("status") == "ok"
-                        and isinstance(previous.get("actual_output"), str)
-                        and previous["actual_output"].strip()):
-                    data = previous
-        if data is None:
-            print(f"SDK {gid}")
-            try:
-                answer = await asyncio.wait_for(
-                    target_factory().ask(row["input"]), timeout=timeout
-                )
-                data = {"status": "ok", "sha256": key, **answer}
-            except Exception as exc:
-                # Store only exception type: provider errors may contain secrets.
-                _save_json(path, {"status": "error", "sha256": key,
-                                  "error_type": type(exc).__name__})
-                raise RuntimeError(f"cli-agent failed for golden {gid}") from None
-            _save_json(path, data)
-        responses[gid] = data
-    return responses
+) -> None:
+    if (not isinstance(response, dict)
+            or not isinstance(response.get("actual_output"), str)
+            or not response["actual_output"].strip()):
+        raise ValueError("Cannot checkpoint an empty target response")
+    _save_json(
+        output / "responses" / f"{golden['id']}.json",
+        {
+            "status": "ok", "sha256": _response_key(golden, target_fingerprint),
+            "actual_output": response["actual_output"],
+            "knowledge_trace": response.get("knowledge_trace"),
+        },
+    )
 
 
-def deep_eval_cases(
+def selected_context(response: dict[str, Any]) -> list[str] | None:
+    """Only host-verified selected Knowledge content; never source goldens."""
+    trace = response.get("knowledge_trace")
+    if not isinstance(trace, dict) or trace.get("truncated") is True:
+        return None
+    if trace.get("content_included") is not True:
+        return None
+    selected = trace.get("selected")
+    if not isinstance(selected, (list, tuple)) or not selected:
+        return None
+    texts = [hit.get("content") if isinstance(hit, dict) else None for hit in selected]
+    if any(not isinstance(text, str) or not text.strip() for text in texts):
+        return None
+    return texts
+
+
+def target_trace_metric() -> Any:
+    """No-cost native metric to validate each observed target invocation.
+
+    DeepEval's evals_iterator requires at least one metric, but it does not
+    reuse individual LLM-judge scores. Use this deterministic metric during
+    the observed execution; evaluate() performs the cached judge passes later.
+    """
+    from deepeval.metrics import BaseMetric
+
+    class TargetResponseRecorded(BaseMetric):
+        threshold = 1.0
+        async_mode = False
+
+        def measure(self, test_case: Any, *args: Any, **kwargs: Any) -> float:
+            answer = test_case.actual_output
+            self.score = float(isinstance(answer, str) and bool(answer.strip()))
+            self.reason = "Target response captured" if self.score else "Missing target response"
+            self.success = self.is_successful()
+            return self.score
+
+        async def a_measure(self, test_case: Any, *args: Any, **kwargs: Any) -> float:
+            return self.measure(test_case, *args, **kwargs)
+
+        @property
+        def __name__(self) -> str:
+            return "Target Response Recorded"
+
+    return TargetResponseRecorded()
+
+
+def answer_test_cases(
     goldens: list[dict[str, Any]], responses: dict[str, dict[str, Any]],
-) -> Any:
-    """Build a real DeepEval dataset; never use reference quotes as retrieval."""
-    from deepeval.dataset import EvaluationDataset
+) -> list[Any]:
+    """Reconstruct answer tests for the native, cache-aware DeepEval evaluate."""
+    from deepeval.test_case import LLMTestCase
+    return [
+        LLMTestCase(
+            input=row["input"],
+            expected_output=row["expected_output"],
+            actual_output=responses[row["id"]]["actual_output"],
+        )
+        for row in goldens
+    ]
+
+
+def retrieval_test_cases(
+    goldens: list[dict[str, Any]], responses: dict[str, dict[str, Any]],
+) -> list[Any]:
+    """Optional second native DeepEval pass for cases with observed retrieval."""
     from deepeval.test_case import LLMTestCase
 
-    dataset = EvaluationDataset()
+    cases = []
     for golden in goldens:
         response = responses[golden["id"]]
         context = selected_context(response)
-        params = {
-            "input": golden["input"], "actual_output": response["actual_output"],
-            "expected_output": golden["expected_output"],
-        }
-        if context:
-            params["retrieval_context"] = context
-        dataset.add_test_case(LLMTestCase(**params))
-    return dataset
+        if not context:
+            continue
+        cases.append(LLMTestCase(
+            input=golden["input"],
+            expected_output=golden["expected_output"],
+            actual_output=response["actual_output"],
+            retrieval_context=context,
+        ))
+    return cases
 
 
 def judge_model(provider: str, name: str, base_url: str | None = None) -> Any:
@@ -300,11 +327,11 @@ def source_recall(golden: dict[str, Any], response: dict[str, Any]) -> dict[str,
         return None
     searches = trace.get("searches")
     selected = trace.get("selected")
-    if not isinstance(searches, list) or not isinstance(selected, list):
+    if not isinstance(searches, (list, tuple)) or not isinstance(selected, (list, tuple)):
         return None
     initial, candidates = set(), set()
     for search in searches:
-        if not isinstance(search, dict) or not isinstance(search.get("hits"), list):
+        if not isinstance(search, dict) or not isinstance(search.get("hits"), (list, tuple)):
             return None
         for hit in search["hits"]:
             if not isinstance(hit, dict):
