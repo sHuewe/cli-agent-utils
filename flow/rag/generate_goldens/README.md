@@ -88,7 +88,7 @@ generated data should be inspected before using it as ground truth.
   `scan-*.json` or `profiles/direct.json` as appropriate; final
   `profiles/*.json` shards and `profile-inventory.json` remain intact
 - `rag-goldens/state/topics/...`: bounded cross-doctrine candidate batches,
-  `reduce3-*.json`, `registry-batches.json` and `registry-b0001.json` etc.
+  `reduce3-*.json`, `batch-registry.json` and `registry-b0001.json` etc.
 - `rag-goldens/state/draft-b0001-g0001.json`,
   `review-b0001-g0001.json`, etc. (baseline, preserved)
 - `rag-goldens/state/plans/plan-b0001-g0001.json`: optional extra targets
@@ -120,6 +120,45 @@ feature requires a version of cli-agent supporting compact subflow checkpoints.
 Changing the source corpus, prompt or model still requires checkpoint
 invalidation as described below; the completion marker is also a checkpoint.
 
+## Resuming older runs after the batch-checkpoint naming fix
+
+The deterministic batch manifest filenames were renamed because the old
+`reduce1-batches.json`, `reduce3-batches.json`, and
+`registry-batches.json` accidentally matched the dynamic checkpoint
+templates `reduce1-${iteration.id}.json`,
+`reduce3-${iteration.id}.json`, and
+`registry-${input.batch.id}.json`. This could prevent the flow runner
+from recognizing existing **static** checkpoints. The new names
+(`batch-reduce1.json`, `batch-reduce3.json`, `batch-registry.json`)
+are distinct from dynamic output templates. Expensive model-generated
+`reduce1-bXXXX.json`, `reduce3-bXXXX.json`, and
+`registry-bXXXX.json` outputs are unchanged.
+
+To resume a run started before this rename, **stop the flow first**,
+back up `rag-goldens/state/`, then run this PowerShell script from the
+workspace root. Existing new targets are never overwritten:
+
+```powershell
+$dir = ".\rag-goldens\state\topics"
+@{
+    "reduce1-batches.json" = "batch-reduce1.json"
+    "reduce3-batches.json" = "batch-reduce3.json"
+    "registry-batches.json" = "batch-registry.json"
+}.GetEnumerator() | ForEach-Object {
+    $old = Join-Path $dir $_.Key
+    $new = Join-Path $dir $_.Value
+    if ((Test-Path -LiteralPath $old) -and
+        -not (Test-Path -LiteralPath $new)) {
+        Move-Item -LiteralPath $old -Destination $new
+    }
+}
+```
+
+No document, prompt, or model checkpoints must be deleted for this rename.
+Restart the usual `cli-agent-flow run` command. If the manifests no longer
+exist, the runner can regenerate the deterministic batch arrays from the
+saved upstream LLM outputs.
+
 ## Extending an already completed benchmark
 
 This revision adds one more global cross-document reduction and optional
@@ -130,11 +169,10 @@ unrelated or insufficiently grounded pairs must still be rejected.
 To reuse expensive document and source-topic scans, preserve
 `rag-goldens/state/docs/`, `profile-batches.json`,
 `candidates-*.json`, `candidate-batches.json`,
-`reduce1-*.json`, `reduce1-batches.json`, and `reduce2-*.json`.
+`reduce1-*.json`, `batch-reduce1.json`, and `reduce2-*.json`.
 Before resuming with the new pipeline, back up the existing state and delete
-**downstream** `topics/reduce3-batches.json`, `topics/reduce3-*.json`,
-`topics/registry-batches.json`, `topics/registry-*.json`, as well as the
-old `topics/reduce3-batches.json` if present. The new registry may reassign
+**downstream** `topics/batch-reduce3.json`, `topics/reduce3-*.json`,
+`topics/batch-registry.json` and `topics/registry-*.json`. The new registry may reassign
 batch/group IDs; old baseline drafts and reviews can only be reused when their
 group ID **and underlying sources** match. For reliable correctness,
 also invalidate `state/draft-*.json`, `state/review-*.json`,
@@ -192,8 +230,8 @@ provider setup, data handling, checkpoint freshness, and limitations.
   `profile-batches.json`, `candidates-*.json`, or document profiles.
   For a safe fresh reduction, first back up `rag-goldens/state/topics/`,
   then remove `candidate-batches.json`, `reduce1-*.json`,
-  `reduce1-batches.json`, `reduce2-*.json`,
-  `registry-batches.json`, and `registry-*.json`, plus dependent
+  `batch-reduce1.json`, `reduce2-*.json`,
+  `batch-registry.json`, and `registry-*.json`, plus dependent
   `rag-goldens/state/draft-*.json` and `review-*.json` if present.
   These are **only downstream caches**, not the completed document scans.
 - **Generic splitting operation.** The Flow JSON `batch_arrays` operation
@@ -237,14 +275,14 @@ provider setup, data handling, checkpoint freshness, and limitations.
 - **Review isolation.** Generated answers are evaluated with ORIGINAL source
   ranges, not retrieval results. Source passages are untrusted and should
   never be interpreted as executable instructions. Prompts limit tool access.
-- **Aggregate manifest size.** `registry-batches.json` contains the
+- **Aggregate manifest size.** `batch-registry.json` contains the
   complete bounded batch inventory and may legitimately exceed the 4 MB
   limit used for individual JSON results. Its dedicated export limit is
   32 MB (up to 1,000 batches), while each individual registry input batch
   remains limited to 24 KB. An oversized aggregate still fails explicitly.
 - **Export status.** `needs_attention` and warnings from the final
   reduction inputs are carried through by prompt and checked deterministically
-  against the `registry-batches.json` artifact at export. The export summary
+  against the `batch-registry.json` artifact at export. The export summary
   records `registry_status`, the number of incomplete upstream batches and a
   bounded sample of warnings. A valid registry with zero eligible groups
   produces empty JSON benchmark arrays **but retains the incomplete status**

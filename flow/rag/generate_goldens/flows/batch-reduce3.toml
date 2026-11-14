@@ -6,7 +6,7 @@ result = "steps.batch.output"
 # Never aggregate the entire corpus into one model prompt.
 [[steps]]
 id = "batch"
-output = "rag-goldens/state/topics/registry-batches.json"
+output = "rag-goldens/state/topics/batch-registry.json"
 overwrite_output = false
 [steps.json_operation]
 kind = "batch_arrays"
