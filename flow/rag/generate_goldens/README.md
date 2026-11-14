@@ -198,37 +198,29 @@ Export deduplicates exact normalized questions across groups and variants.
 It cannot prove that two differently worded questions are semantically
 distinct; the independent reviewer is responsible for that judgment.
 
-## Evaluate the generated goldens with DeepEval
+## Compare RAG system prompts with DeepEval
 
-The exporter creates `rag-goldens/deepeval-goldens.json` in a format
-that **DeepEval reads directly** with
-`EvaluationDataset.add_goldens_from_json_file()`. The file includes
-`input`, `expected_output`, and stable IDs in `additional_metadata`;
-it intentionally does not treat golden evidence quotations as retrieved
-context.
+The exporter writes `rag-goldens/deepeval-goldens.json` with stable
+identifiers and fixed reference answers. The
+[benchmark notebook](benchmark.ipynb) imports this directly through the
+native DeepEval dataset API, without importing generator scripts.
 
-The [benchmark notebook](benchmark.ipynb) imports DeepEval and the
-`cli-agent` SDK directly, **without importing helper modules from
-`scripts/` or modifying Python's module search path**. The SDK's
-`AgentBuilder.build_deepeval_target()` (introduced in
-[cli-agent PR #312](https://github.com/sHuewe/cli-agent/pull/312))
-answers questions inside the native `evals_iterator()` trace.
-Native `evaluate()` then scores answers with a separately configured
-DeepEval judge, optionally measuring actual selected Knowledge passages.
+The notebook compares multiple `PROMPT_VARIANTS`, applied through the
+`cli-agent` SDK's new `AgentBuilder.with_system_prompt(text)`.
+The Judge is independent of the target. Scores are grouped into shared
+factual quality, retrieval grounding/uncertainty where verified selected
+passages exist, and variant-specific style compliance. **Golden reference
+answers remain unchanged** regardless of the target response style.
 
 ```bash
-python -m pip install --upgrade cli-agent "deepeval>=4,<5" jupyterlab ipykernel
+python -m pip install --upgrade cli-agent "deepeval>=4,<5" pandas jupyterlab ipykernel
 python flow/rag/generate_goldens/scripts/export.py --workspace .
 jupyter lab flow/rag/generate_goldens/benchmark.ipynb
 ```
 
-**Rerun only export** after updating this version: the additional metadata
-was not present in the earlier `deepeval-goldens.json` export.
-Reference answers are never passed to the target agent. Judge caching
-remains native DeepEval; target response caching is independent.
-
-See the [benchmark guide](scripts/README-benchmark.md) for settings,
-privacy and resume behavior.
+See [benchmark instructions](scripts/README-benchmark.md) for
+fair comparisons, limitations of the uncertainty metric, cache
+invalidation, and the companion SDK requirement.
 
 ## Limitations and safety considerations
 

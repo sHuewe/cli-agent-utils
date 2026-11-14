@@ -1,75 +1,90 @@
-# Native DeepEval benchmark
+# Native DeepEval benchmark – prompt comparisons
 
-The [notebook](../benchmark.ipynb) loads the generated
-`rag-goldens/deepeval-goldens.json` **directly** using DeepEval:
+The [benchmark notebook](../benchmark.ipynb) reads the exported
+`rag-goldens/deepeval-goldens.json` **directly** through DeepEval's native
+`EvaluationDataset.add_goldens_from_json_file()`. No generator scripts are
+imported. The detailed `goldens.json` remains for auditing.
 
-```python
-from deepeval.dataset import EvaluationDataset
+## Setup
 
-dataset = EvaluationDataset()
-dataset.add_goldens_from_json_file(
-    str(WORKSPACE / "rag-goldens" / "deepeval-goldens.json")
-)
-```
-
-No `scripts/` import, custom loader, JSON converter or `sys.path` hack
-is needed. The original detailed `goldens.json` remains available for
-audits, document provenance and source-hash verification.
-
-## Installation
-
-Use a cli-agent SDK version with
-`AgentBuilder.build_deepeval_target()` (introduced in
-[cli-agent PR #312](https://github.com/sHuewe/cli-agent/pull/312)):
+Install a cli-agent SDK release containing the companion
+`AgentBuilder.with_system_prompt(text)` API, then run Jupyter from the
+workspace root:
 
 ```bash
-python -m pip install --upgrade cli-agent "deepeval>=4,<5" jupyterlab ipykernel
+python -m pip install --upgrade cli-agent "deepeval>=4,<5" pandas jupyterlab ipykernel
+python flow/rag/generate_goldens/scripts/export.py --workspace .
 jupyter lab flow/rag/generate_goldens/benchmark.ipynb
 ```
 
-Run Jupyter from your **RAG workspace root** (containing
-`rag-goldens/deepeval-goldens.json`). After updating the exporter,
-**rerun the export command**, not the entire Golden-generation Flow:
+## Prompt experiments
 
-```bash
-python flow/rag/generate_goldens/scripts/export.py --workspace .
-```
+Configure `PROMPT_VARIANTS` in the first notebook code cell.
+Each variant contains:
 
-This regenerates the native JSON with `additional_metadata.golden_id`,
-which gives every Golden a stable response checkpoint identifier.
-The export includes `input`, `expected_output`, and
-`additional_metadata.required_sources`. It deliberately does **not**
-include `context` or `retrieval_context` sourced from the answer's
-reference quotations, because they are not what the target actually
-retrieved.
+- `system_prompt`: direct system prompt text; `None` uses the configured
+  file-based system prompt, if any
+- `style_criteria`: a short, **separate** set of intended response-style
+  requirements, evaluated only by the style judge
 
-## Target and judge are independent
+The notebook creates a **new** SDK Builder for each variant. It calls
+`with_project_config(...)` and then, if configured,
+`with_system_prompt(text)`. The latter overrides the base system prompt
+without altering mandatory tool or security instructions.
 
-- **Target:** normal `AgentBuilder.with_project_config()`, including
-  `workspace/.cli-agent/project.toml` and its `system_prompt`.
-  `build_deepeval_target()` provides the optional observed SDK adapter.
-  DeepEval's `evals_iterator()` drives each observed agent ask and retains
-  a trace. Expected answers never enter target prompts.
-- **Judge:** a **separate** `OpenRouterModel`, `OpenAIModel`, or
-  `OllamaModel`, specified in notebook configuration. API credentials
-  come from environment variables. The judge sees actual/reference answers
-  and, for contextual evaluations, selected source passages.
-- **Evaluation:** native DeepEval `evaluate()` scores answer correctness
-  and relevancy; optional faithfulness, contextual recall and precision
-  run only when verified selected Knowledge passages are present.
-- **Caching:** the notebook stores successful target answers under
-  `rag-goldens/evaluation/responses/` while DeepEval owns metric caching
-  and its reports. Changing a judge does not rerun the target. The local
-  target fingerprint includes project config and the content of the
-  configured system-prompt file. For changes to external Knowledge indexes,
-  use `FRESH_SDK=True` or update `CACHE_EPOCH`.
+All variants use **the same Goldens and unchanged expected answers**.
+For a fair comparison, fix the target model, corpus/index, judge model
+and run parameters across variants, and test all Goldens (`MAX_CASES=None`)
+once the smoke test succeeds.
 
-The observed target pass is sequential for safe DeepEval trace scoping;
-native judge calls can run concurrently.
+## Separate evaluation dimensions
 
-## Privacy
+**Factual quality**: fixed-reference G-Eval answer correctness and DeepEval
+answer relevancy are directly comparable across prompt variants because
+they use one shared rubric and identical Goldens.
 
-Stored answers/Knowledge traces and judge requests may contain confidential
-data. Keep `rag-goldens/evaluation/` private and use an approved judge
-provider. There is no automatic substitution of golden reference evidence
-for actually retrieved Knowledge text.
+**Grounding and uncertainty**: DeepEval faithfulness/contextual recall/
+precision and a separate uncertainty-calibration G-Eval are run **only**
+when the SDK returned verified, complete selected Knowledge passages.
+This judge checks for unsupported confident assertions and unwarranted
+refusals based on the passages available to the agent; this is a proxy,
+not a proof that every document relevant to the question was available.
+Cases without verified context are marked as *not assessed*; do not
+interpret missing scores as zero or success. Compare case counts too.
+
+**Style compliance**: a variant-specific G-Eval assesses whether the response
+matches its style criteria. Different style rubrics have different targets,
+so those scores cannot be ranked as a single apples-to-apples quality metric.
+They should be interpreted alongside the common factual scores.
+
+DeepEval handles judge caching, concurrency and detailed reports. The last
+cell displays a summary table with metric means, counted evaluations/errors,
+and retrieval-case coverage. Inspect individual judge reasons before
+drawing conclusions about small differences.
+
+## SDK target and judge
+
+The target uses the normal CLI-agent SDK project/admin settings.
+`with_system_prompt(text)` passes a direct override to the SDK worker,
+not a file name. In the SDK Builder, the last explicit system prompt wins:
+a subsequent file-backed `with_project_config` may replace an earlier
+inline prompt. `build_deepeval_target()` snapshots the Builder.
+
+The **judge** uses an independent OpenAI, OpenRouter or Ollama model.
+The reference answer is supplied only to DeepEval, never to cli-agent.
+The judge can receive actual selected passages; use only approved models/
+providers for your content.
+
+## Caching and privacy
+
+Successful target responses are stored in `rag-goldens/evaluation/responses/`
+with atomic owner-only files (mode 0600 where supported).
+Their cache key includes variant ID, inline prompt, effective project/admin
+files, configured file-based prompt, Golden input/reference, workspace and
+`CACHE_EPOCH`. The workspace `.cli-agent/project.toml` is **not**
+automatically used by SDK runs. If the live RAG index, files, model weights
+or external tools change, set `FRESH_SDK=True` or update `CACHE_EPOCH`.
+
+DeepEval metric caching is separate and can be disabled using
+`FRESH_EVALUATION=True`. Response files and DeepEval reports may contain
+sensitive information and must not be committed or shared without review.
