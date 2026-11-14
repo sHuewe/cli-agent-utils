@@ -365,8 +365,17 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
     for name, payload in (
         ("goldens.json", result),
         ("deepeval-goldens.json", [
-            {"input": g["input"], "expected_output": g["expected_output"],
-             "context": [item["quote"] for item in g["evidence"]]}
+            {
+                "input": g["input"],
+                "expected_output": g["expected_output"],
+                # DeepEval's native JSON importer preserves this metadata.
+                # Required source paths are for optional recall diagnostics,
+                # not reference chunks to substitute for observed retrieval.
+                "additional_metadata": {
+                    "golden_id": g["id"],
+                    "required_sources": [source["path"] for source in g["sources"]],
+                },
+            }
             for g in result
         ]),
     ):
