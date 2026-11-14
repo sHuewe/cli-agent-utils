@@ -91,8 +91,8 @@ def test_separate_judge_and_cache_fingerprint_includes_prompt_file():
     assert 'CACHE_EPOCH' in code
     assert 'cached_response=cached' in code
     assert 'default_admin_config_file()' in code
-    assert 'os.chmod(temp_name, 0o600)' in code
-    assert 'os.replace(temp_name, checkpoint)' in code
+    assert 'os.chmod(tmp, 0o600)' in code
+    assert 'os.replace(tmp, checkpoint)' in code
     assert 'tempfile.NamedTemporaryFile(' in code
     assert 'CacheConfig(use_cache=not FRESH_EVALUATION' in code
 
