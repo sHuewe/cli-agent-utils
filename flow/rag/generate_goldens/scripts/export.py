@@ -84,6 +84,48 @@ def read_json(root: Path, path: str, *, max_bytes: int = MAX_JSON_BYTES) -> dict
     return payload
 
 
+def planned_variant_ids(
+    plan: dict, gid: str,
+) -> tuple[list[str], list[str], int]:
+    """Select safe variant IDs without letting optional LLM metadata abort export.
+
+    Identity mismatches remain fatal: a plan from another group cannot be
+    trusted. The draft and independent review still gate every exported golden.
+    """
+    proposed = plan.get("variants")
+    if plan.get("group_id") != gid or not isinstance(proposed, list):
+        raise ValueError(f"Invalid variant plan for {gid}")
+
+    ids: list[str] = []
+    warnings: list[str] = []
+    invalid = 0
+    for position, item in enumerate(proposed, start=1):
+        if not isinstance(item, dict):
+            reason = "entry is not an object"
+        else:
+            vid, focus = item.get("id"), item.get("focus")
+            if not isinstance(vid, str) or not VARIANT_ID.fullmatch(vid):
+                reason = "variant ID is not v0001 or v0002"
+            elif vid in ids:
+                reason = f"duplicate variant ID {vid}"
+            elif not isinstance(focus, str) or not focus.strip():
+                reason = f"empty or non-text focus for {vid}"
+            else:
+                ids.append(vid)
+                # Focus is planning metadata. Its prompt-level length target
+                # is not a reason to discard independently reviewed answers.
+                if len(focus.strip()) > 240 and len(warnings) < 32:
+                    warnings.append(
+                        f"item {position} ({vid}): focus exceeds 240 characters; "
+                        "using independently reviewed draft"
+                    )
+                continue
+        invalid += 1
+        if len(warnings) < 32:
+            warnings.append(f"item {position}: {reason}; skipped")
+    return ids, warnings, invalid
+
+
 def source(root: Path, path: str, cache: dict) -> tuple[list[str], str]:
     if path not in cache:
         file = confined(root, path)
@@ -273,6 +315,7 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
     cache: dict = {}
     result: list[dict] = []
     dedup: set[str] = set()
+    variant_plan_warnings: list[str] = []
     for group in groups:
         gid = group["id"]
         # Missing plans are permitted for historical runs but explicitly
@@ -281,17 +324,11 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
         plan_path = f"{directory}/state/plans/plan-{gid}.json"
         if confined(root, plan_path, must_exist=False).is_file():
             plan = read_json(root, plan_path)
-            proposed = plan.get("variants")
-            if plan.get("group_id") != gid or not isinstance(proposed, list) or len(proposed) > 2:
-                raise ValueError(f"Invalid variant plan for {gid}")
-            for position, item in enumerate(proposed, start=1):
-                if not isinstance(item, dict):
-                    raise ValueError(f"Malformed variant for {gid}")
-                vid, focus = item.get("id"), item.get("focus")
-                if (vid != f"v{position:04d}" or not isinstance(focus, str)
-                        or not 1 <= len(focus.strip()) <= 240):
-                    raise ValueError(f"Invalid variant id/focus for {gid}")
-                variants.append(vid)
+            variants, warnings, invalid = planned_variant_ids(plan, gid)
+            stats["invalid_variant_entries"] += invalid
+            for warning in warnings:
+                if len(variant_plan_warnings) < 32:
+                    variant_plan_warnings.append(f"{gid}: {warning}")
         else:
             stats["missing_variant_plans"] += 1
 
@@ -345,7 +382,9 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
             ),
             "upstream_incomplete_batches": len(upstream_incomplete),
             "upstream_warnings": upstream_warnings,
-            **dict(stats)}
+            **dict(stats),
+            **({"variant_plan_warnings": variant_plan_warnings}
+               if variant_plan_warnings else {})}
 
 
 def main() -> None:

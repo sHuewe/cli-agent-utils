@@ -179,6 +179,17 @@ also invalidate `state/draft-*.json`, `state/review-*.json`,
 `state/plans/` and `state/variants/` when registry groups change. Keep
 the original `goldens.json` backed up separately before re-exporting.
 
+Optional question-variant plans are LLM-generated metadata, not the source
+of truth for a validated answer. The exporter uses the *actual* `v0001` or
+`v0002` ID to locate its independently reviewed draft, regardless of order
+in the plan. It does not reject a reviewed draft solely because the planning
+`focus` exceeded its 240-character prompt target. Malformed optional entries
+are skipped and reported as `invalid_variant_entries` and
+`variant_plan_warnings` instead of blocking all base goldens. A mismatched
+group identity still aborts export. To inspect plan problems locally, read
+`rag-goldens/state/plans/plan-<group-id>.json`; no flow rerun is needed
+merely to export the unaffected entries.
+
 The exporter now reports `total_question_slots` and
 `missing_variant_plans` in addition to `accepted`, `reviewed`,
 `rejected` and `missing`. Missing plans are tolerated so older completed
