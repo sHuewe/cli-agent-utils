@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / "flow/rag/generate_goldens"
 sys.path.insert(0, str(BASE / "scripts"))
 from export import (
-    make_golden, export, read_json, question_is_about_sources, question_dedup_key, MAX_JSON_BYTES,
+    make_golden, export, read_json, planned_variant_ids, question_is_about_sources, question_dedup_key, MAX_JSON_BYTES,
     MAX_REGISTRY_MANIFEST_BYTES, MAX_REGISTRY_BATCH_BYTES,
 )  # noqa: E402
 
@@ -717,10 +717,14 @@ def test_additional_variant_export_preserves_base_question(tmp_path):
     output = json.loads((tmp_path / "rag-goldens/goldens.json").read_text())
     assert {g["id"] for g in output} == {"b0001-g0001", "b0001-g0001-v0001"}
 
+    # A single v0002 variant is valid: plan IDs name actual checkpoints,
+    # and no ordering constraint is needed for export.
     plan.write_text(json.dumps({"group_id": group["id"],
-        "variants": [{"id": "v0002", "focus": "invalid index"}]}))
-    with pytest.raises(ValueError, match="Invalid variant id/focus"):
-        export(tmp_path)
+        "variants": [{"id": "v0002", "focus": "valid variant without v0001"}]}))
+    stats = export(tmp_path)
+    assert stats["accepted"] == 1
+    assert stats["missing"] == 1
+    assert stats.get("invalid_variant_entries", 0) == 0
 
 
 def test_variant_flow_contract_and_bounded_global_matching():
@@ -844,3 +848,69 @@ def test_export_registry_manifest_matches_final_batch_writer():
     assert batch["output"] == "rag-goldens/state/topics/batch-registry.json"
     assert "state/topics/batch-registry.json" in inspect.getsource(export)
     assert "registry-batches.json" not in inspect.getsource(export)
+
+
+
+def test_optional_plan_validation_preserves_reviewed_variants():
+    # The LLM may return variants out of order or verbose focus metadata.
+    # The filename ID, not array position or focus length, identifies a draft.
+    plan = {
+        "group_id": "b0001-g0001", "variants": [
+            {"id": "v0002", "focus": "topic b" * 60},
+            {"id": "v0001", "focus": "topic a"},
+        ],
+    }
+    ids, warnings, invalid = planned_variant_ids(plan, "b0001-g0001")
+    assert ids == ["v0002", "v0001"]
+    assert invalid == 0
+    assert len(warnings) == 1
+    assert "exceeds 240" in warnings[0]
+
+
+def test_optional_plan_invalid_entries_are_reported_and_skipped():
+    plan = {"group_id": "b0001-g0001", "variants": [
+        {"id": "v0003", "focus": "not a valid variant ID"},
+        {"id": "v0001", "focus": "first"},
+        {"id": "v0001", "focus": "duplicate"},
+        {"id": "v0002", "focus": ""},
+        {"id": "v0002", "focus": "second"},
+        {"id": "v0002", "focus": "duplicate"},
+        "not an object",
+    ]}
+    ids, warnings, invalid = planned_variant_ids(plan, "b0001-g0001")
+    assert ids == ["v0001", "v0002"]
+    assert invalid == 5
+    assert len(warnings) == 5
+    assert all("skipped" in message for message in warnings)
+    # Group identity mismatch is not optional metadata: never mix artifacts.
+    with pytest.raises(ValueError, match="Invalid variant plan"):
+        planned_variant_ids(plan, "b0002-g0001")
+    with pytest.raises(ValueError, match="Invalid variant plan"):
+        planned_variant_ids({"group_id": "b0001-g0001", "variants": {}},
+                            "b0001-g0001")
+
+
+def test_export_skips_unusable_optional_plan_without_losing_base(tmp_path):
+    group, draft, review = fixture(tmp_path)
+    state = tmp_path / "rag-goldens/state"
+    (state / "topics").mkdir(parents=True)
+    (state / "plans").mkdir()
+    (state / "topics/batch-registry.json").write_text(json.dumps({
+        "batches": [{"id": "b0001", "items": [
+            {"status": "ok", "groups": [], "warnings": []}]}]
+    }), encoding="utf-8")
+    (state / "topics/registry-b0001.json").write_text(json.dumps({
+        "status": "ok", "groups": [group], "warnings": []}), encoding="utf-8")
+    (state / ("draft-" + group["id"] + ".json")).write_text(json.dumps(draft))
+    (state / ("review-" + group["id"] + ".json")).write_text(json.dumps(review))
+    (state / "plans" / ("plan-" + group["id"] + ".json")).write_text(
+        json.dumps({"group_id": group["id"], "variants": [
+            {"id": "v0003", "focus": "invalid ID"},
+            {"id": "v0002", "focus": ""},
+        ]}))
+    summary = export(tmp_path)
+    assert summary["accepted"] == 1
+    assert summary["invalid_variant_entries"] == 2
+    assert len(summary["variant_plan_warnings"]) == 2
+    output = json.loads((tmp_path / "rag-goldens/goldens.json").read_text())
+    assert [g["id"] for g in output] == [group["id"]]
