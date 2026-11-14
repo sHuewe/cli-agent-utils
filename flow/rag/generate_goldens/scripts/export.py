@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 
 MAX_JSON_BYTES = 4_000_000
-# The registry-batches.json file holds up to 1000 independently bounded
+# The batch-registry.json file holds up to 1000 independently bounded
 # 24 KB batches. Its *aggregate* size can therefore legitimately exceed
 # the ordinary single-result JSON cap. 32 MB accommodates the entire
 # bounded manifest while still rejecting unexpectedly large inputs.
@@ -193,7 +193,7 @@ def export(root: Path, output_dir: str = "rag-goldens") -> dict:
     if directory == ".":
         raise ValueError("Refusing to write benchmark files to workspace root")
     manifest = read_json(
-        root, f"{directory}/state/topics/registry-batches.json",
+        root, f"{directory}/state/topics/batch-registry.json",
         max_bytes=MAX_REGISTRY_MANIFEST_BYTES,
     )
     batches = manifest.get("batches")

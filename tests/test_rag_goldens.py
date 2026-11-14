@@ -200,7 +200,7 @@ def test_export_two_source_goldens(tmp_path):
     group, draft, review = fixture(tmp_path)
     state = tmp_path / "rag-goldens/state"
     (state / "topics").mkdir(parents=True)
-    (state / "topics/registry-batches.json").write_text(
+    (state / "topics/batch-registry.json").write_text(
         json.dumps({"batches": [{"id": "b0001", "items": [
             {"status": "ok", "groups": [], "warnings": []}
         ]}]}),
@@ -232,7 +232,7 @@ def test_empty_registry_exports_empty_benchmark(tmp_path):
     root = tmp_path / "rag-goldens"
     state = root / "state/topics"
     state.mkdir(parents=True)
-    (state / "registry-batches.json").write_text(
+    (state / "batch-registry.json").write_text(
         json.dumps({"batches": [{"id": "b0001", "items": []}]}),
         encoding="utf-8"
     )
@@ -253,7 +253,7 @@ def test_registry_shards_required_and_no_cross_shard_id_collision(tmp_path):
     root = tmp_path / "rag-goldens"
     state = root / "state/topics"
     state.mkdir(parents=True)
-    (state / "registry-batches.json").write_text(
+    (state / "batch-registry.json").write_text(
         json.dumps({"batches": [{"id": "b0001", "items": []},
                                  {"id": "b0002", "items": []}]}),
         encoding="utf-8"
@@ -298,7 +298,7 @@ def test_empty_registry_preserves_upstream_needs_attention(tmp_path):
     root = tmp_path / "rag-goldens"
     state = root / "state/topics"
     state.mkdir(parents=True)
-    (state / "registry-batches.json").write_text(
+    (state / "batch-registry.json").write_text(
         json.dumps({"batches": [{"id": "b0001", "items": [
             {"status": "needs_attention", "groups": [],
              "warnings": ["Input reduced with incomplete coverage"]}
@@ -324,7 +324,7 @@ def test_upstream_status_remains_incomplete_with_valid_groups(tmp_path):
     root = tmp_path / "rag-goldens"
     state = root / "state/topics"
     state.mkdir(parents=True)
-    (state / "registry-batches.json").write_text(
+    (state / "batch-registry.json").write_text(
         json.dumps({"batches": [{"id": "b0001", "items": [
             {"status": "needs_attention", "groups": [], "warnings": []}
         ]}]}),
@@ -350,7 +350,7 @@ def test_invalid_upstream_status_fails_without_export(tmp_path):
     root = tmp_path / "rag-goldens"
     state = root / "state/topics"
     state.mkdir(parents=True)
-    (state / "registry-batches.json").write_text(
+    (state / "batch-registry.json").write_text(
         json.dumps({"batches": [{"id": "b0001", "items": [
             {"groups": [], "warnings": []}
         ]}]}),
@@ -417,7 +417,7 @@ def test_large_registry_manifest_keeps_per_batch_limits(tmp_path):
             json.dumps({"status": "ok", "groups": [], "warnings": []}),
             encoding="utf-8",
         )
-    file = state / "registry-batches.json"
+    file = state / "batch-registry.json"
     file.write_text(json.dumps({"batches": batches}), encoding="utf-8")
     assert file.stat().st_size > MAX_JSON_BYTES
     assert file.stat().st_size < MAX_REGISTRY_MANIFEST_BYTES
@@ -430,14 +430,14 @@ def test_large_registry_manifest_keeps_per_batch_limits(tmp_path):
     assert json.loads((root / "deepeval-goldens.json").read_text()) == []
     # Ordinary individual JSON outputs retain their smaller size limit.
     with pytest.raises(ValueError, match="Missing/oversized JSON"):
-        read_json(tmp_path, "rag-goldens/state/topics/registry-batches.json")
+        read_json(tmp_path, "rag-goldens/state/topics/batch-registry.json")
 
 
 def test_manifest_and_individual_batch_still_bounded(tmp_path):
     root = tmp_path / "rag-goldens"
     state = root / "state/topics"
     state.mkdir(parents=True)
-    manifest = state / "registry-batches.json"
+    manifest = state / "batch-registry.json"
     with manifest.open("wb") as stream:
         stream.truncate(MAX_REGISTRY_MANIFEST_BYTES + 1)
     with pytest.raises(ValueError, match="Missing/oversized JSON"):
@@ -621,7 +621,7 @@ def test_scan_assemble_checkpoint_template_is_scoped_to_doc_state():
     assert regex.fullmatch("rag-goldens/state/docs/test/scan-s027.json")
     assert regex.fullmatch("rag-goldens/state/docs/test/profiles/direct.json")
     assert not regex.fullmatch("rag-goldens/state/topics/profile-batches.json")
-    assert not regex.fullmatch("rag-goldens/state/topics/registry-batches.json")
+    assert not regex.fullmatch("rag-goldens/state/topics/batch-registry.json")
 
 
 
@@ -695,7 +695,7 @@ def test_additional_variant_export_preserves_base_question(tmp_path):
     (state / "plans").mkdir()
     variants = state / "variants" / group["id"]
     variants.mkdir(parents=True)
-    (state / "topics/registry-batches.json").write_text(json.dumps({
+    (state / "topics/batch-registry.json").write_text(json.dumps({
         "batches": [{"id": "b0001", "items": [
             {"status": "ok", "groups": [], "warnings": []}]}]
     }), encoding="utf-8")
@@ -763,7 +763,7 @@ def test_export_preserves_csharp_and_cpp_cases(tmp_path):
     (state / "plans").mkdir()
     variants = state / "variants" / group["id"]
     variants.mkdir(parents=True)
-    (state / "topics/registry-batches.json").write_text(json.dumps({
+    (state / "topics/batch-registry.json").write_text(json.dumps({
         "batches": [{"id": "b0001", "items": [
             {"status": "ok", "groups": [], "warnings": []}]}]
     }), encoding="utf-8")
@@ -785,3 +785,62 @@ def test_export_preserves_csharp_and_cpp_cases(tmp_path):
     outcome = export(tmp_path)
     assert outcome["accepted"] == 2
     assert outcome.get("duplicates", 0) == 0
+
+
+
+def test_batch_manifest_names_are_disjoint_from_dynamic_json_outputs():
+    """Regression for ambiguous static/dynamic checkpoint ownership.
+
+    The flow runner snapshots dynamic outputs using full-path regex matching,
+    with placeholders treated as unconstrained .*? text (Windows insensitive).
+    Batch manifest paths must NOT match those templates.
+    """
+    manifest_paths = {}
+    dynamic_templates = {}
+    flows = [BASE / "flow.toml", *sorted((BASE / "flows").glob("*.toml"))]
+    for file in flows:
+        for step in config(file)["steps"]:
+            output = step.get("output")
+            if not output:
+                continue
+            placeholders = re.findall(r"\$\{[^}]+\}", output)
+            if placeholders:
+                matcher = re.escape(output)
+                for placeholder in placeholders:
+                    matcher = matcher.replace(re.escape(placeholder), ".*?")
+                dynamic_templates[(file.name, step["id"])] = re.compile(
+                    r"\A" + matcher + r"\Z", re.IGNORECASE | re.DOTALL
+                )
+            else:
+                manifest_paths.setdefault(output, []).append((file.name, step["id"]))
+    expected = {
+        "rag-goldens/state/topics/batch-reduce1.json": ("batch-reduce1.toml", "batch"),
+        "rag-goldens/state/topics/batch-reduce3.json": ("batch-reduce2.toml", "batch"),
+        "rag-goldens/state/topics/batch-registry.json": ("batch-reduce3.toml", "batch"),
+    }
+    for output, owner in expected.items():
+        assert manifest_paths[output] == [owner]
+        assert not [step for step, matcher in dynamic_templates.items()
+                    if matcher.fullmatch(output)], output
+
+    # Reproduce why the old naming was incompatible with strict resume.
+    overlaps = {
+        "rag-goldens/state/topics/reduce1-batches.json":
+            ("global-topics.toml", "reduce1"),
+        "rag-goldens/state/topics/reduce3-batches.json":
+            ("global-topics.toml", "reduce3"),
+        "rag-goldens/state/topics/registry-batches.json":
+            ("process-registry-batch.toml", "registry"),
+    }
+    for old_path, owner in overlaps.items():
+        assert dynamic_templates[owner].fullmatch(old_path)
+
+
+def test_export_registry_manifest_matches_final_batch_writer():
+    """The exporter and final deterministic batch step use the same name."""
+    import inspect
+
+    batch = config(BASE / "flows/batch-reduce3.toml")["steps"][0]
+    assert batch["output"] == "rag-goldens/state/topics/batch-registry.json"
+    assert "state/topics/batch-registry.json" in inspect.getsource(export)
+    assert "registry-batches.json" not in inspect.getsource(export)
