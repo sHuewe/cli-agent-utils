@@ -74,8 +74,9 @@ def test_separate_judge_and_cache_fingerprint_includes_prompt_file():
     assert 'JUDGE_PROVIDER = "openrouter"' in code
     assert 'JUDGE_MODEL = "openai/gpt-4.1"' in code
     assert 'OpenRouterModel(model=JUDGE_MODEL' in code
-    assert 'OpenAIModel(model=JUDGE_MODEL' in code
-    assert 'OllamaModel(model=JUDGE_MODEL' in code
+    assert 'judge = OpenAIModel(' in code
+    assert 'judge = OllamaModel(' in code
+    assert 'model=JUDGE_MODEL' in code
     assert 'effective_config_hash(prompt_text)' in code
     assert 'files.append(WORKSPACE / ".cli-agent" / filename)' in code
     assert 'builder.with_system_prompt(prompt_text)' in code
