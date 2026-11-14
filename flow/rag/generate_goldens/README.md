@@ -198,38 +198,37 @@ Export deduplicates exact normalized questions across groups and variants.
 It cannot prove that two differently worded questions are semantically
 distinct; the independent reviewer is responsible for that judgment.
 
-## Evaluate the generated goldens with native DeepEval
+## Evaluate the generated goldens with DeepEval
 
-The [benchmark notebook](benchmark.ipynb) uses
-**`EvaluationDataset.evals_iterator()` to drive observed target execution**, followed by native cache-aware `evaluate()` calls for judge scoring. While the iterator yields a Golden, the optional SDK method
-`AgentBuilder.build_deepeval_target()` provides an observed
-`target.ask(question, expected_output=...)`; it annotates the native
-DeepEval trace without revealing the answer/reference to the target.
+The exporter creates `rag-goldens/deepeval-goldens.json` in a format
+that **DeepEval reads directly** with
+`EvaluationDataset.add_goldens_from_json_file()`. The file includes
+`input`, `expected_output`, and stable IDs in `additional_metadata`;
+it intentionally does not treat golden evidence quotations as retrieved
+context.
+
+The [benchmark notebook](benchmark.ipynb) imports DeepEval and the
+`cli-agent` SDK directly, **without importing helper modules from
+`scripts/` or modifying Python's module search path**. The SDK's
+`AgentBuilder.build_deepeval_target()` (introduced in
+[cli-agent PR #312](https://github.com/sHuewe/cli-agent/pull/312))
+answers questions inside the native `evals_iterator()` trace.
+Native `evaluate()` then scores answers with a separately configured
+DeepEval judge, optionally measuring actual selected Knowledge passages.
 
 ```bash
-python -m pip install --upgrade cli-agent "deepeval>=4,<5" pandas jupyterlab ipykernel
+python -m pip install --upgrade cli-agent "deepeval>=4,<5" jupyterlab ipykernel
+python flow/rag/generate_goldens/scripts/export.py --workspace .
 jupyter lab flow/rag/generate_goldens/benchmark.ipynb
 ```
 
-**Requires the companion [cli-agent SDK PR #312](https://github.com/sHuewe/cli-agent/pull/312).**
-Upgrade cli-agent after merging that PR (or install its branch) before opening
-the notebook. The SDK import itself does not depend on DeepEval.
+**Rerun only export** after updating this version: the additional metadata
+was not present in the earlier `deepeval-goldens.json` export.
+Reference answers are never passed to the target agent. Judge caching
+remains native DeepEval; target response caching is independent.
 
-The notebook configures its judge via independent `JUDGE_PROVIDER`,
-`JUDGE_MODEL` and optional `JUDGE_BASE_URL`. Target model settings are not
-passed to the judge. Responses are checkpointed separately from DeepEval
-scoring; changing the judge replays cached answers into a native observed
-trace rather than repeating expensive target questions.
-
-DeepEval records observed target answers inside the iterator with a no-cost
-response-check metric. Its native cache-aware `evaluate()` then runs answer
-correctness/relevance and optionally contextual retrieval metrics for actual,
-verified selected Knowledge passages. Reference quotations from the golden dataset are NEVER
-used as observed retrieval context. Initial/candidate/selection source
-recall remains a deterministic, cli-agent-specific diagnostic.
-
-See [benchmark instructions](scripts/README-benchmark.md) for architecture,
-provider setup, data handling, checkpoint freshness, and limitations.
+See the [benchmark guide](scripts/README-benchmark.md) for settings,
+privacy and resume behavior.
 
 ## Limitations and safety considerations
 
