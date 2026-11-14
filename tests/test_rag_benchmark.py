@@ -134,6 +134,7 @@ def test_prompt_comparison_uses_same_reference_and_independent_score_dimensions(
     assert 'trace.get("content_included") is True' in code
     assert 'trace.get("truncated") is not True' in code
     assert "metric.error or metric.score is None" in code
+    assert 'metric.name.removesuffix(" [GEval]")' in code
     assert '"retrieval_cases": outputs["retrieval_case_count"]' in code
 
 
