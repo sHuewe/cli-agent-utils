@@ -42,18 +42,21 @@ def test_golden_checkpoint_contract_is_exactly_unchanged():
 def test_all_document_scans_complete_before_document_consolidation():
     doc = _steps(NEW / "flows" / "build-document.toml")
     assert doc["sections"]["filesystem_operation"]["target_chars"] == 5000
-    assert doc["scan_tasks"]["json_operation"]["kind"] == "prepare_okf_scan_tasks"
-    assert doc["scan"]["foreach"] == "steps.scan_tasks.output.tasks"
-    assert doc["finish"]["input"]["scan_tasks"] == "${steps.scan_tasks.output}"
+    assert doc["sections"]["filesystem_operation"]["always_sections"] is True
+    assert doc["scan"]["foreach"] == "steps.sections.output.sections"
+    assert doc["outline_tasks"]["json_operation"]["kind"] == "prepare_outline_tasks"
+    assert doc["outline"]["json_operation"]["kind"] == "assemble_section_outlines"
+    assert doc["finish"]["input"]["scans"] == "${steps.scan.output}"
     assert doc["finish"]["flow"].endswith("flows/finish-document.toml")
     plan = _steps(NEW / "flows" / "finish-document.toml")
-    assert plan["outline"]["json_operation"]["kind"] == "assemble_okf_outline"
-    assert plan["outline"]["json_inputs"]["scans"]["iterate"] == "input.scan_tasks.tasks[]"
     assert plan["consolidation_batches"]["json_operation"]["kind"] == "prepare_doctrine_consolidation"
     assert plan["consolidation_batches"]["json_operation"]["batch_size"] == 6
     assert plan["consolidate"]["foreach"] == "steps.consolidation_batches.output.batches"
     assert plan["consolidated"]["json_operation"]["kind"] == "assemble_doctrine_consolidation"
-    assert plan["group"]["json_operation"]["kind"] == "group_consolidated_items"
+    assert plan["assign"]["json_operation"]["kind"] == "json_join_aliases"
+    assert plan["assign"]["json_operation"]["require_all_aliases"] is True
+    assert plan["topics"]["json_operation"]["kind"] == "json_project"
+    assert plan["group"]["json_operation"]["kind"] == "group_items"
     assert plan["group"]["json_operation"]["max_concept_bytes"] == 12000
     assert plan["build_concepts"]["foreach"] == "steps.group.output.concepts"
     assert _steps(NEW / "flows" / "verify-document.toml")["coverage"]["json_operation"]["kind"] == "verify_coverage"
@@ -76,7 +79,7 @@ def test_sharded_global_registry_count_and_coverage_are_explicit():
     assert packing["max_fragment_items"] == 5
     assert packing["max_batch_bytes"] <= 8000
     registry = _steps(NEW / "flows" / "registry-shard.toml")
-    assert registry["validate"]["json_operation"]["kind"] == "validate_theme_registry"
+    assert registry["validate"]["json_operation"]["kind"] == "json_validate_partition"
     assert _load(NEW / "flows" / "registry-shard.toml")["result"] == "steps.validate.output"
     prompt = (NEW / "prompts" / "08_registry.md").read_text(encoding="utf-8")
     assert "group_refs" in prompt
