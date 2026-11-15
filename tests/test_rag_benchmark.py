@@ -1,218 +1,169 @@
-"""Native DeepEval benchmark contract tests.
+"""Shared-Golden multi-agent benchmark integration contracts.
 
-The benchmark imports no generator script. Source evidence is intentionally
-not embedded as retrieval context; only the live SDK trace may supply it.
+Agent adapters only accept question text. DeepEval is used exclusively to
+judge saved responses; other teams do not need to depend on cli-agent.
 """
 from __future__ import annotations
 
 import ast
+import asyncio
 import json
+import sys
+import types
 from pathlib import Path
+
+import pytest
 
 BASE = Path(__file__).resolve().parents[1] / "flow/rag/generate_goldens"
 
 
-def notebook():
-    return json.loads((BASE / "benchmark.ipynb").read_text(encoding="utf-8"))
+def cells():
+    return json.loads((BASE / "benchmark.ipynb").read_text(encoding="utf-8"))["cells"]
 
 
-def notebook_sources():
-    return [
-        "".join(cell["source"])
-        for cell in notebook()["cells"]
-        if cell["cell_type"] == "code"
-    ]
+def code_cells():
+    return ["".join(c["source"]) for c in cells() if c["cell_type"] == "code"]
 
 
-def test_notebook_uses_native_json_loader_and_sdk_not_scripts():
-    sources = notebook_sources()
-    code = "\n".join(sources)
-    assert 'dataset.add_goldens_from_json_file(str(GOLDENS_FILE))' in code
-    assert 'deepeval-goldens.json' in code
-    assert 'builder.build_deepeval_target(' in code
-    assert 'dataset.evals_iterator(' in code
-    assert 'await target.ask(' in code
-    assert 'from deepeval import evaluate' in code
-    assert 'answer_results = evaluate(' in code
-    assert 'retrieval_results = evaluate(' in code
-    assert 'benchmark_adapter' not in code
-    assert 'sys.path' not in code
-    assert 'from scripts' not in code
-    assert 'import scripts' not in code
-    assert 'collect_responses(' not in code
-    assert 'deep_eval_dataset(' not in code
-    for cell in sources:
-        compile(cell, "<benchmark cell>", "exec",
+def code():
+    return "\n".join(code_cells())
+
+
+def adapter_namespace():
+    """Execute notebook's safe configuration and adapter definitions only."""
+    ns = {}
+    exec(compile(code_cells()[0], "<config>", "exec"), ns)
+    definitions = next(s for s in code_cells() if "def create_agent(spec):" in s)
+    exec(compile(definitions, "<adapter>", "exec"), ns)
+    return ns
+
+
+def test_notebook_is_native_deepeval_but_agents_are_independent():
+    full = code()
+    assert 'dataset.add_goldens_from_json_file(str(GOLDENS_FILE))' in full
+    assert 'from deepeval import evaluate' in full
+    assert "dataset.evals_iterator(" not in full
+    assert "DeepEvalTarget" not in full
+    assert "builder.build_deepeval_target(" not in full
+    assert "from scripts" not in full
+    assert "sys.path" not in full
+    assert "from cli_agent" not in code_cells()[0]
+    assert "def create_agent(spec):" in full
+    assert "answer_fn = create_agent(spec)" in full
+    assert "await invoke_agent(answer_fn, golden.input)" in full
+    assert 'expected_output=golden.expected_output' not in full
+    assert '"expected_output": golden.expected_output' in full
+    for source in code_cells():
+        compile(source, "<notebook-cell>", "exec",
                 flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
 
 
-def test_exported_deepeval_dataset_is_directly_importable():
-    """Check supported DeepEval fields independently of the SDK adapter."""
+def test_exported_goldens_use_deepeval_native_input_and_expected_output():
     export = (BASE / "scripts/export.py").read_text(encoding="utf-8")
     assert '"deepeval-goldens.json"' in export
-    assert '"additional_metadata": {' in export
     assert '"golden_id": g["id"]' in export
-    assert '"required_sources":' in export
     assert '"input": g["input"]' in export
     assert '"expected_output": g["expected_output"]' in export
     assert '"context": [item["quote"]' not in export
     assert '"retrieval_context": [item["quote"]' not in export
 
 
-def test_dataset_notebook_does_not_use_reference_context_as_retrieval():
-    code = "\n".join(notebook_sources())
-    assert 'response.get("knowledge_trace") or {}' in code
-    assert 'trace.get("content_included") is True' in code
-    assert 'trace.get("truncated") is not True' in code
-    assert 'retrieval_context=[hit["content"] for hit in selected]' in code
-    assert 'golden.context' not in code
-    assert 'golden.retrieval_context' not in code
+def test_adapter_accepts_external_sync_and_async_modules(monkeypatch):
+    namespace = adapter_namespace()
+    seen = []
+    package = types.ModuleType("example_team")
+    package.__path__ = []
+    mod = types.ModuleType("example_team.adapter")
+
+    def sync_answer(question):
+        seen.append(("sync", question))
+        return "Synchronous answer"
+
+    async def async_answer(question):
+        seen.append(("async", question))
+        return {"answer": "Asynchronous answer", "retrieval_context": ["actual passage"]}
+
+    mod.sync_answer = sync_answer
+    mod.async_answer = async_answer
+    monkeypatch.setitem(sys.modules, "example_team", package)
+    monkeypatch.setitem(sys.modules, "example_team.adapter", mod)
+
+    sync_fn = namespace["create_agent"]({"entrypoint": "example_team.adapter:sync_answer"})
+    async_fn = namespace["create_agent"]({"entrypoint": "example_team.adapter:async_answer"})
+    sync_response = asyncio.run(namespace["invoke_agent"](sync_fn, "Q1"))
+    async_response = asyncio.run(namespace["invoke_agent"](async_fn, "Q2"))
+    assert sync_response == {"actual_output": "Synchronous answer", "retrieval_context": None}
+    assert async_response == {"actual_output": "Asynchronous answer",
+                              "retrieval_context": ["actual passage"]}
+    assert seen == [("sync", "Q1"), ("async", "Q2")]
+    # No expected_output is passed to either answering function.
 
 
-def test_separate_judge_and_cache_fingerprint_includes_prompt_file():
-    code = "\n".join(notebook_sources())
-    assert 'JUDGE_PROVIDER = "openrouter"' in code
-    assert 'JUDGE_MODEL = "openai/gpt-4.1"' in code
-    assert 'OpenRouterModel(model=JUDGE_MODEL' in code
-    assert 'judge = OpenAIModel(' in code
-    assert 'judge = OllamaModel(' in code
-    assert 'model=JUDGE_MODEL' in code
-    assert 'effective_config_hash(prompt_text)' in code
-    assert 'files.append(WORKSPACE / ".cli-agent" / filename)' in code
-    assert 'builder.with_system_prompt(prompt_text)' in code
-    assert 'PROMPT_VARIANTS = {' in code
-    assert 'all_responses[variant_id]' in code
-    assert 'identifier=f"rag-{variant_id}-answer"' in code
-    assert 'identifier=f"rag-{variant_id}-retrieval"' in code
-    assert 'name="Style compliance"' in code
-    assert 'name="Uncertainty calibration"' in code
-    assert 'SingleTurnParams.RETRIEVAL_CONTEXT' in code
-    assert 'CACHE_EPOCH' in code
-    assert 'CACHE_EPOCH' in code
-    assert 'cached_response=cached' in code
-    assert 'default_admin_config_file()' in code
-    assert 'os.chmod(tmp, 0o600)' in code
-    assert 'os.replace(tmp, checkpoint)' in code
-    assert 'tempfile.NamedTemporaryFile(' in code
-    assert 'CacheConfig(use_cache=not FRESH_EVALUATION' in code
-
-
-def test_native_dataset_loader_on_real_deepeval_when_available(tmp_path):
-    """Optional real-API smoke test; no LLM calls and no network needed."""
-    import pytest
-
-    dataset_module = pytest.importorskip("deepeval.dataset")
-    path = tmp_path / "deepeval-goldens.json"
-    payload = [{
-        "input": "What happens without a token?",
-        "expected_output": "The gateway rejects the request.",
-        "additional_metadata": {
-            "golden_id": "b0001-g0001",
-            "required_sources": ["md/a.md", "md/b.md"],
-        },
-    }]
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    ds = dataset_module.EvaluationDataset()
-    ds.add_goldens_from_json_file(str(path))
-    assert len(ds.goldens) == 1
-    assert ds.goldens[0].input == payload[0]["input"]
-    assert ds.goldens[0].expected_output == payload[0]["expected_output"]
-    assert ds.goldens[0].additional_metadata == payload[0]["additional_metadata"]
-
-
-
-def test_prompt_comparison_uses_same_reference_and_independent_score_dimensions():
-    code = "\n".join(notebook_sources())
-    # All variants reuse one dataset and its fixed expected_output. The
-    # experiment must never rewrite reference answers per response style.
-    assert "dataset.add_goldens_from_json_file(str(GOLDENS_FILE))" in code
-    assert "expected_output=golden.expected_output" in code
-    assert 'name="Answer correctness"' in code
-    assert 'name="Style compliance"' in code
-    assert 'name="Uncertainty calibration"' in code
-    assert 'if retrieval_cases:' in code
-    assert 'trace.get("content_included") is True' in code
-    assert 'trace.get("truncated") is not True' in code
-    assert "metric.error or metric.score is None" in code
-    assert 'metric.name.removesuffix(" [GEval]")' in code
-    assert '"retrieval_cases": outputs["retrieval_case_count"]' in code
-
-
-def test_prompt_variant_cache_separation_and_config_order():
-    code = "\n".join(notebook_sources())
-    assert 'for variant_id, variant in PROMPT_VARIANTS.items():' in code
-    assert 'builder.with_project_config(' in code
-    assert 'builder.with_system_prompt(prompt_text)' in code
-    assert code.index("builder.with_project_config(") < code.index(
-        "builder.with_system_prompt(prompt_text)"
-    )
-    assert '[variant_id, fingerprint, golden_id, golden.input, golden.expected_output]' in code
-    assert 'prompt_text": prompt_text' in code
-    assert 'cache_epoch": CACHE_EPOCH' in code
-    assert 'os.chmod(tmp, 0o600)' in code
-    assert 'os.replace(tmp, checkpoint)' in code
-    assert 'FRESH_SDK' in code and 'FRESH_EVALUATION' in code
-
-
-
-def test_target_factory_contract_and_single_injection_point():
-    notebook_cells = notebook()["cells"]
-    code_cells = ["".join(c["source"]) for c in notebook_cells
-                  if c["cell_type"] == "code"]
-    factory_cells = [s for s in code_cells if "def create_target(" in s]
-    assert len(factory_cells) == 1
-    factory = factory_cells[0]
-    assert "class BenchmarkTarget(Protocol):" in factory
-    assert "class TargetSpec:" in factory
-    assert "target: BenchmarkTarget" in factory
-    assert "cache_identity: str" in factory
-    assert 'target=builder.build_deepeval_target(include_knowledge_content=True)' in factory
-    assert 'cache_identity="cli-agent-sdk:" + effective_config_hash(prompt_text)' in factory
-    # The experiment loop cannot depend on the SDK Builder: one return
-    # value from create_target provides the implementation and cache identity.
-    execution = next(s for s in code_cells if "for golden in dataset.evals_iterator(" in s)
-    assert "target_spec = create_target(variant_id, variant)" in execution
-    assert "target = target_spec.target" in execution
-    assert "fingerprint = target_spec.cache_identity" in execution
-    assert "AgentBuilder(" not in execution
-    assert "with_project_config(" not in execution
-    assert "with_system_prompt(" not in execution
-    assert "await target.ask(" in execution
-    assert "cached_response=cached" in execution
-
-
-def test_factory_can_produce_alternative_implementation_without_sdk_builder(monkeypatch):
-    """Execute actual factory definition with stubbed external SDK dependencies."""
-    import sys
-    import types
-    from dataclasses import dataclass
-    from typing import Protocol
-
-    factory = next("".join(c["source"]) for c in notebook()["cells"]
-                   if c["cell_type"] == "code"
-                   and "def create_target(" in "".join(c["source"]))
-    fake_sdk_module = types.ModuleType("cli_agent.sdk.deepeval_adapter")
-    fake_sdk_module.DeepEvalTarget = type("FakeDeepEvalTarget", (), {})
-    monkeypatch.setitem(sys.modules, "cli_agent.sdk.deepeval_adapter", fake_sdk_module)
-
-    env = {
-        "dataclass": dataclass,
-        "Protocol": Protocol,
-        "AgentBuilder": object,  # must not be called for other agents
-        "effective_config_hash": lambda _: "default-hash",
+def test_adapter_output_validation_and_entrypoint_guard():
+    ns = adapter_namespace()
+    with pytest.raises(ValueError, match="entrypoint"):
+        ns["create_agent"]({"entrypoint": "not-a-module"})
+    with pytest.raises(ValueError, match="Invalid agent module"):
+        ns["create_agent"]({"entrypoint": "../file:answer"})
+    with pytest.raises(ValueError, match="empty answer"):
+        ns["normalize_answer"]("   ")
+    with pytest.raises(ValueError, match="retrieval_context"):
+        ns["normalize_answer"]({"answer": "ok", "retrieval_context": [""]})
+    with pytest.raises(TypeError, match="string or an answer mapping"):
+        ns["normalize_answer"](4)
+    assert ns["normalize_answer"]({"answer": "valid"}) == {
+        "actual_output": "valid", "retrieval_context": None,
     }
-    exec(compile(factory, "<benchmark-target-factory>", "exec"), env)
-    TargetSpec = env["TargetSpec"]
 
-    class OtherTarget:
-        async def ask(self, question, *, expected_output, cached_response=None):
-            # Only question goes to the underlying agent implementation;
-            # reference remains outside the model call.
-            return {"actual_output": question.upper(), "knowledge_trace": None}
 
-    def alternate_factory(variant_id, variant):
-        return TargetSpec(OtherTarget(), "other-v1:" + variant_id)
+def test_optional_sdk_retrieval_only_verified_complete_text():
+    ns = adapter_namespace()
+    acceptable = {"content_included": True, "truncated": False,
+                  "selected": [{"content": "actual retrieved passage"}]}
+    assert ns["cli_agent_retrieval_context"](acceptable) == ["actual retrieved passage"]
+    assert ns["cli_agent_retrieval_context"]({**acceptable, "truncated": True}) is None
+    assert ns["cli_agent_retrieval_context"]({**acceptable, "selected": [{"content": None}]}) is None
+    assert ns["cli_agent_retrieval_context"]({**acceptable, "content_included": False}) is None
 
-    spec = alternate_factory("concise", {"system_prompt": "anything"})
-    assert spec.cache_identity == "other-v1:concise"
-    assert hasattr(spec.target, "ask")
+
+def test_deepeval_scores_same_reference_and_reports_agent_failures():
+    source = code()
+    assert "for golden in dataset.goldens:" in source
+    assert "all_failures[agent_id] = failures" in source
+    assert 'response = responses.get(golden.additional_metadata["golden_id"])' in source
+    assert "if response is None:" in source
+    assert '"agent_failures": len(all_failures[agent_id])' in source
+    assert '"answered": results["successful_cases"]' in source
+    assert '"expected_output": golden.expected_output' in source
+    assert 'retrieval_context=response["retrieval_context"]' in source
+    assert 'name="Answer correctness"' in source
+    assert 'name="Uncertainty calibration"' in source
+    assert 'metric.name.removesuffix(" [GEval]")' in source
+    assert "answer_results = evaluate(" in source
+    assert "retrieval_results = evaluate(" in source
+
+
+def test_response_cache_is_private_unique_and_invalidates_on_revision():
+    source = code()
+    assert 'spec["revision"]' in source
+    assert '"epoch": CACHE_EPOCH' in source
+    assert '"entrypoint": spec["entrypoint"]' in source
+    assert 'golden.additional_metadata["golden_id"]' in source
+    assert "FRESH_RESPONSES" in source
+    assert 'os.chmod(temporary, 0o600)' in source
+    assert "os.replace(temporary, path)" in source
+    assert "tempfile.NamedTemporaryFile(" in source
+    assert "default_admin_config_file" in source
+
+
+def test_native_deepeval_json_loader_when_installed(tmp_path):
+    dataset_mod = pytest.importorskip("deepeval.dataset")
+    path = tmp_path / "deepeval-goldens.json"
+    sample = [{"input": "Q", "expected_output": "A",
+               "additional_metadata": {"golden_id": "g1", "required_sources": []}}]
+    path.write_text(json.dumps(sample), encoding="utf-8")
+    ds = dataset_mod.EvaluationDataset()
+    ds.add_goldens_from_json_file(str(path))
+    assert ds.goldens[0].input == "Q"
+    assert ds.goldens[0].expected_output == "A"
+    assert ds.goldens[0].additional_metadata["golden_id"] == "g1"

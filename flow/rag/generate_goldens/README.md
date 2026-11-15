@@ -198,29 +198,34 @@ Export deduplicates exact normalized questions across groups and variants.
 It cannot prove that two differently worded questions are semantically
 distinct; the independent reviewer is responsible for that judgment.
 
-## Compare RAG system prompts with DeepEval
+## Benchmark independently developed agents with DeepEval
 
-The exporter writes `rag-goldens/deepeval-goldens.json` with stable
-identifiers and fixed reference answers. The
-[benchmark notebook](benchmark.ipynb) imports this directly through the
-native DeepEval dataset API, without importing generator scripts.
+The exporter produces `rag-goldens/deepeval-goldens.json`, directly
+readable by DeepEval's `EvaluationDataset.add_goldens_from_json_file()`.
+The [benchmark notebook](benchmark.ipynb) compares **multiple independent
+agents against the same immutable Golden references**.
 
-The notebook compares multiple `PROMPT_VARIANTS`, applied through the
-`cli-agent` SDK's new `AgentBuilder.with_system_prompt(text)`.
-The Judge is independent of the target. Scores are grouped into shared
-factual quality, retrieval grounding/uncertainty where verified selected
-passages exist, and variant-specific style compliance. **Golden reference
-answers remain unchanged** regardless of the target response style.
+Each team supplies an installed Python module exposing one
+`answer(question)` function returning a string or an answer mapping with
+optional actual `retrieval_context`. Teams can use completely different
+frameworks or models. Edit the notebook's `AGENTS` dictionary to select
+participants; neither DeepEval nor cli-agent knowledge is needed in
+each team's implementation. The `builtin:cli-agent` entry is an optional
+example.
+
+DeepEval is used **only** to score saved agent answers via
+`LLMTestCase` and `evaluate()`, independently of agent invocation.
+The notebook reports factual quality, optional retrieval/uncertainty,
+optional style metrics, and success/failure coverage. Agent responses
+and judge evaluations use separate caches.
 
 ```bash
-python -m pip install --upgrade cli-agent "deepeval>=4,<5" pandas jupyterlab ipykernel
-python flow/rag/generate_goldens/scripts/export.py --workspace .
+python -m pip install "deepeval>=4,<5" pandas jupyterlab ipykernel
 jupyter lab flow/rag/generate_goldens/benchmark.ipynb
 ```
 
-See [benchmark instructions](scripts/README-benchmark.md) for
-fair comparisons, limitations of the uncertainty metric, cache
-invalidation, and the companion SDK requirement.
+See the [benchmark guide](scripts/README-benchmark.md) for the minimal
+adapter contract, reproducibility, and cache handling.
 
 ## Limitations and safety considerations
 
