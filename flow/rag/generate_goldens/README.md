@@ -212,14 +212,20 @@ while teams isolate each Golden question's conversation state.
 Each answer is a string or an answer mapping with optional actual
 `retrieval_context`. The `AGENTS` dictionary specifies an importable
 `module:WrapperClass` and optional constructor `kwargs`.
-No DeepEval or cli-agent dependency is required in team wrappers;
-`builtin:cli-agent` remains an optional example.
+No DeepEval dependency is required in team wrappers. The adjacent
+[`cli_agent_wrapper.py`](cli_agent_wrapper.py) is a regular imported
+`AgentWrapper` implementation and encapsulates all cli-agent-specific
+SDK code. Its entrypoint is
+`flow.rag.generate_goldens.cli_agent_wrapper:CliAgentWrapper`. Other
+agents use the same factory and do not need cli-agent installed.
 
 DeepEval is used **only** to score saved agent answers via
 `LLMTestCase` and `evaluate()`, independently of agent invocation.
 The notebook reports factual quality, optional retrieval/uncertainty,
 optional style metrics, and success/failure coverage. Agent responses
-and judge evaluations use separate caches.
+and judge evaluations use separate caches. The optional `cache_files`
+setting includes arbitrary local configuration/prompt files in each
+agent's cache identity without any special-case SDK logic.
 
 ```bash
 python -m pip install "deepeval>=4,<5" pandas jupyterlab ipykernel

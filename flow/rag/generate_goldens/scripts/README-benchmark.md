@@ -45,14 +45,13 @@ Ein Tool-Eintrag enthält mindestens `name`. Weitere optionale Felder:
 enthalten und werden im privaten Cache gespeichert. Sie sollten nur
 übergeben werden, wenn die Verwendung im Benchmark freigegeben ist.
 
-Der eingebaute `CliAgentWrapper` übernimmt Toolnamen, Status,
-Aufruf-ID und Laufzeiten aus `AgentResult.tool_calls`. Mit dem begleitenden
-`cli-agent`-SDK-PR #314 aktiviert er ausdrücklich
-`with_tool_trace(include_arguments=True)`, wodurch zusätzlich begrenzte
-und best-effort bereinigte `input_parameters` erfasst werden können.
-Tool-Outputs bleiben weiterhin ausgeschlossen. Diese Argumente können
-trotz der Redaction vertrauliche Inhalte enthalten und werden im privaten
-Benchmark-Cache gespeichert. Nutze die Option nur für freigegebene Daten.
+Die mitgelieferte Datei [`cli_agent_wrapper.py`](../cli_agent_wrapper.py)
+enthält **sämtlichen cli-agent-spezifischen Code**: SDK-Initialisierung,
+Konfiguration, Reset je Golden, Knowledge-Passagen und Tool-Telemetrie.
+Ihr Wrapper nutzt opt-in `with_tool_trace(include_arguments=True)`,
+wenn `include_tool_arguments=True` als Konstruktorargument gesetzt ist.
+Tool-Ergebnisse bleiben ausgeschlossen. Die Argument-Redaction des SDK
+ist best effort; für vertrauliche Daten sollte die Option deaktiviert bleiben.
 
 `AgentWrapper` ist ein strukturelles Python-`Protocol` zur Beschreibung
 dieser drei Methoden. **Keine Vererbung oder Import aus dem Notebook**
@@ -86,11 +85,30 @@ verwendet denselben Wrapper für weitere Fragen und garantiert ein
 `close()` am Ende. Nach einem Fehler oder Timeout wird der beschädigte
 Wrapper geschlossen und vor der nächsten Frage neu aufgebaut.
 
-Der mitgelieferte Eintrag `builtin:cli-agent` ist optional und dient
-als Beispiel. Er erstellt den SDK-Agenten **einmal** beim `start()` und
-ruft `agent.reset()` vor jeder Frage auf; dabei bleiben Modell- und
-MCP-Verbindungen grundsätzlich bestehen. Andere Teams brauchen kein
-`cli-agent` zu installieren.
+Auch cli-agent ist jetzt ein **normaler Import** wie alle anderen Teams:
+
+```python
+"cli-agent": {
+    "entrypoint": "flow.rag.generate_goldens.cli_agent_wrapper:CliAgentWrapper",
+    "revision": "sdk-baseline-v1",
+    "kwargs": {
+        "workspace": str(WORKSPACE),
+        "include_tool_arguments": True,
+        # Optional: "config_file": "config.toml",
+        # Optional: "admin_config_file": "admin.toml",
+        # Optional: "system_prompt": "Answer factually...",
+        # Optional: "approve_tools": ["vector__knowledge_search"],
+        # Optional: "redact_keys": ["business_private_field"],
+    },
+},
+```
+
+Das Notebook enthält **weder cli-agent-Imports noch besondere
+Fallunterscheidungen**. Der Wrapper initialisiert den SDK-Agenten einmal
+beim `start()` und ruft `agent.reset()` vor jeder Frage auf. Andere Teams
+brauchen keine cli-agent-Installation, sofern sie den cli-agent-Wrapper
+nicht ausführen. Die Namespacemodule unter `flow.rag.generate_goldens`
+sind vom Workspace-Root importierbar.
 
 ## Bewertung
 
@@ -140,8 +158,11 @@ alle Teilnehmer anwendbar sind.
   fehlgeschlagener Fragen; Durchschnittswerte mit unterschiedlicher
   Abdeckung sind nur eingeschränkt vergleichbar
 - Ergebnisse werden pro Agent-ID, Modul, Revision, `kwargs`, Golden und
-  `CACHE_EPOCH` getrennt gecacht. Für den eingebauten SDK-Wrapper
-  werden zusätzlich Konfigurationsdateien berücksichtigt
+  `CACHE_EPOCH` getrennt gecacht. Optional kann **jedes Team**
+  `"cache_files": ["path/to/agent.toml", "path/to/prompt.md"]` angeben,
+  um die Inhalte dieser Konfigurationsdateien in den Schlüssel aufzunehmen.
+  Es gibt keinen Sonderfall für cli-agent mehr. Wird ein Prompt oder
+  eine Datei nicht eingetragen, muss eine neue `revision` verwendet werden
 - Nach einer Änderung von Agent, Prompt, Index oder Modell die Revision
   bzw. `CACHE_EPOCH` ändern oder `FRESH_RESPONSES=True` setzen
 - Das Speichern erfolgt atomar mit privaten Dateirechten.
