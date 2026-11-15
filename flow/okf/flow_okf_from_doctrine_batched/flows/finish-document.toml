@@ -1,38 +1,21 @@
 version = 1
-inputs = ["source", "scan_tasks", "okf_root"]
+inputs = ["source", "sections", "scans", "outline", "okf_root"]
 result = "steps.final_manifest_inventory.output"
-
-# This operation checks all section scans, including full normative and
-# descriptive sweeps, before allowing planning. It is deterministic.
-[[steps]]
-id = "outline"
-output = "okf-batched/state-v2/docs/${input.source.slug}/outline.json"
-overwrite_output = false
-[steps.json_operation]
-kind = "assemble_okf_outline"
-input = "scans"
-expected_source_path = "${input.source.path}"
-expected_source_slug = "${input.source.slug}"
-[steps.json_inputs.scans]
-iterate = "input.scan_tasks.tasks[]"
-path = "okf-batched/state-v2/docs/${input.source.slug}/scan-${each.id}.json"
-[steps.json_inputs.sections]
-path = "okf-batched/state-v2/docs/${input.source.slug}/sections.json"
 
 [[steps]]
 id = "taxonomy_profile"
-output = "okf-batched/state-v2/docs/${input.source.slug}/taxonomy-profile.json"
+output = "okf-batched/state-v3/docs/${input.source.slug}/taxonomy-profile.json"
 overwrite_output = false
 [steps.json_operation]
 kind = "doctrine_taxonomy_profile"
 input = "outline"
 [steps.json_inputs.outline]
-path = "okf-batched/state-v2/docs/${input.source.slug}/outline.json"
+path = "okf-batched/state-v3/docs/${input.source.slug}/outline.json"
 
 [[steps]]
 id = "taxonomy"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/02_taxonomy.md"
-output = "okf-batched/state-v2/docs/${input.source.slug}/taxonomy.json"
+output = "okf-batched/state-v3/docs/${input.source.slug}/taxonomy.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
@@ -44,23 +27,23 @@ profile = "${steps.taxonomy_profile.output}"
 # no entire doctrine in an LLM request, just 6 compact topic summaries.
 [[steps]]
 id = "consolidation_batches"
-output = "okf-batched/state-v2/docs/${input.source.slug}/consolidation-batches.json"
+output = "okf-batched/state-v3/docs/${input.source.slug}/consolidation-batches.json"
 overwrite_output = false
 [steps.json_operation]
 kind = "prepare_doctrine_consolidation"
 input = "outline"
 batch_size = 6
 [steps.json_inputs.outline]
-path = "okf-batched/state-v2/docs/${input.source.slug}/outline.json"
+path = "okf-batched/state-v3/docs/${input.source.slug}/outline.json"
 [steps.json_inputs.taxonomy]
-path = "okf-batched/state-v2/docs/${input.source.slug}/taxonomy.json"
+path = "okf-batched/state-v3/docs/${input.source.slug}/taxonomy.json"
 
 [[steps]]
 id = "consolidate"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/03_consolidate.md"
 foreach = "steps.consolidation_batches.output.batches"
 iteration_id = "${item.id}"
-output = "okf-batched/state-v2/docs/${input.source.slug}/consolidation-${iteration.id}.json"
+output = "okf-batched/state-v3/docs/${input.source.slug}/consolidation-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
@@ -70,7 +53,7 @@ batch = "${item}"
 # Validates exact one-to-one membership of every original topic candidate.
 [[steps]]
 id = "consolidated"
-output = "okf-batched/state-v2/docs/${input.source.slug}/consolidated.json"
+output = "okf-batched/state-v3/docs/${input.source.slug}/consolidated.json"
 overwrite_output = false
 [steps.json_operation]
 kind = "assemble_doctrine_consolidation"
@@ -78,27 +61,64 @@ input = "outline"
 results_step = "consolidate"
 batches_step = "consolidation_batches"
 [steps.json_inputs.outline]
-path = "okf-batched/state-v2/docs/${input.source.slug}/outline.json"
+path = "okf-batched/state-v3/docs/${input.source.slug}/outline.json"
 [steps.json_inputs.taxonomy]
-path = "okf-batched/state-v2/docs/${input.source.slug}/taxonomy.json"
+path = "okf-batched/state-v3/docs/${input.source.slug}/taxonomy.json"
 
-# Deterministically map original knowledge items onto consolidated topics.
-# Existing group_items creates bounded concept parts without losing items.
+# Schema-neutral ID joins: the runner knows only JSON selectors and aliases.
+# The OKF-specific field names live exclusively in this declarative config.
 [[steps]]
-id = "group"
-output = "okf-batched/state-v2/docs/${input.source.slug}/group.json"
+id = "assign"
+output = "okf-batched/state-v3/docs/${input.source.slug}/assign.json"
 overwrite_output = false
 [steps.json_operation]
-kind = "group_consolidated_items"
-input = "scans"
-max_concept_bytes = 12000
-[steps.json_inputs.scans]
-iterate = "input.scan_tasks.tasks[]"
-path = "okf-batched/state-v2/docs/${input.source.slug}/scan-${each.id}.json"
-[steps.json_inputs.sections]
-path = "okf-batched/state-v2/docs/${input.source.slug}/sections.json"
+kind = "json_join_aliases"
+input = "items"
+items_path = "/*/knowledge_items/*"
+item_id_path = "/id"
+item_key_path = "/topic_key"
+mapping_path = "/concepts/*"
+mapping_id_path = "/id"
+mapping_alias_path = "/merged_from/*"
+id_prefix = "${input.source.slug}:"
+require_all_aliases = true
+[steps.json_inputs.items]
+iterate = "input.scans.iterations[]"
+path = "okf-batched/state-v3/docs/${input.source.slug}/scan-${each.id}.json"
+[steps.json_inputs.mapping]
+path = "okf-batched/state-v3/docs/${input.source.slug}/consolidated.json"
+
+[[steps]]
+id = "topics"
+output = "okf-batched/state-v3/docs/${input.source.slug}/topics.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "json_project"
+input = "consolidated"
+[steps.json_operation.fields]
+folder = "/folder"
+folders = "/folders"
+topics = "/concepts"
 [steps.json_inputs.consolidated]
-path = "okf-batched/state-v2/docs/${input.source.slug}/consolidated.json"
+path = "okf-batched/state-v3/docs/${input.source.slug}/consolidated.json"
+
+# Reuse the existing (older) deterministic group_items operation,
+# without a new doctrine-specific join or validation in the runner.
+[[steps]]
+id = "group"
+output = "okf-batched/state-v3/docs/${input.source.slug}/group.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "group_items"
+input = "assignments"
+max_concept_bytes = 12000
+[steps.json_inputs.routes]
+iterate = "input.scans.iterations[]"
+path = "okf-batched/state-v3/docs/${input.source.slug}/scan-${each.id}.json"
+[steps.json_inputs.assignments]
+path = "okf-batched/state-v3/docs/${input.source.slug}/assign.json"
+[steps.json_inputs.topics]
+path = "okf-batched/state-v3/docs/${input.source.slug}/topics.json"
 
 [[steps]]
 id = "build_concepts"
@@ -122,7 +142,7 @@ concepts = "${steps.group.output.concepts}"
 [[steps]]
 id = "coverage_manifest"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/05_coverage_manifest.md"
-output = "okf-batched/state-v2/docs/${input.source.slug}/manifests/coverage.json"
+output = "okf-batched/state-v3/docs/${input.source.slug}/manifests/coverage.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
@@ -132,11 +152,11 @@ coverage = "${steps.coverage.output}"
 
 [[steps]]
 id = "manifest_inventory"
-output = "okf-batched/state-v2/docs/${input.source.slug}/manifest-inventory.json"
+output = "okf-batched/state-v3/docs/${input.source.slug}/manifest-inventory.json"
 overwrite_output = true
 [steps.filesystem_operation]
 kind = "inventory"
-directory = "okf-batched/state-v2/docs/${input.source.slug}/manifests"
+directory = "okf-batched/state-v3/docs/${input.source.slug}/manifests"
 recursive = false
 extensions = [".json"]
 max_entries = 1000
@@ -155,7 +175,7 @@ coverage = "${steps.coverage.output}"
 [[steps]]
 id = "module_index"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/06_module_index.md"
-output = "okf-batched/state-v2/docs/${input.source.slug}/module-index.json"
+output = "okf-batched/state-v3/docs/${input.source.slug}/module-index.json"
 overwrite_output = false
 workspace_access = "write"
 response_format = "json"
@@ -174,7 +194,7 @@ folders = "${steps.group.output.folders}"
 [[steps]]
 id = "navigation_manifest"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_navigation_manifest.md"
-output = "okf-batched/state-v2/docs/${input.source.slug}/manifests/navigation.json"
+output = "okf-batched/state-v3/docs/${input.source.slug}/manifests/navigation.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
@@ -186,11 +206,11 @@ folder_indexes = "${steps.folder_indexes.output.iterations}"
 
 [[steps]]
 id = "final_manifest_inventory"
-output = "okf-batched/state-v2/docs/${input.source.slug}/final-manifest-inventory.json"
+output = "okf-batched/state-v3/docs/${input.source.slug}/final-manifest-inventory.json"
 overwrite_output = true
 [steps.filesystem_operation]
 kind = "inventory"
-directory = "okf-batched/state-v2/docs/${input.source.slug}/manifests"
+directory = "okf-batched/state-v3/docs/${input.source.slug}/manifests"
 recursive = false
 extensions = [".json"]
 max_entries = 1000

@@ -5,21 +5,39 @@ result = "steps.validate.output"
 [[steps]]
 id = "registry"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/08_registry.md"
-output = "okf-batched/state-v2/global/registry-${input.batch.id}.json"
+output = "okf-batched/state-v3/global/registry-${input.batch.id}.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
 [steps.vars]
 batch = "${input.batch}"
 
-# Reject omitted eligible groups, invented members, duplicate refs and
-# discarded singleton groups deterministically before writing any theme.
+# Generic, fail-closed ID and membership-set partition validation.
+# Every OKF-specific selector and eligibility threshold is defined here.
 [[steps]]
 id = "validate"
-output = "okf-batched/state-v2/global/validated-registry-${input.batch.id}.json"
+output = "okf-batched/state-v3/global/validated-registry-${input.batch.id}.json"
 overwrite_output = false
 [steps.json_operation]
-kind = "validate_theme_registry"
+kind = "json_validate_partition"
 input = "registry"
+source_input = "batch"
+source_path = "/items/*/groups/*"
+reference_template = "i{0:04d}-g{1:04d}"
+distinct_path = "/members/*/source_slug"
+min_distinct = 2
+selected_path = "/themes/*"
+references_path = "/group_refs/*"
+excluded_path = "/excluded_group_refs/*"
+source_members_path = "/members/*"
+result_members_path = "/members/*"
+result_id_path = "/id"
+result_path_field = "/path"
+result_path_template = "themen/{id}.md"
+source_status_path = "/status"
+source_warnings_path = "/warnings"
+result_status_path = "/status"
+result_warnings_path = "/warnings"
+member_fields = ["/source_slug", "/path"]
 [steps.json_inputs.registry]
-path = "okf-batched/state-v2/global/registry-${input.batch.id}.json"
+path = "okf-batched/state-v3/global/registry-${input.batch.id}.json"
