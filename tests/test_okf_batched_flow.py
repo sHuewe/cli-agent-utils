@@ -35,8 +35,10 @@ def test_golden_checkpoint_contract_is_exactly_unchanged():
     golden_inventory = _steps(GOLDEN / "flow.toml")["inventory"]
     source = _steps(NEW / "flow.toml")
     assert source["inventory"] == golden_inventory
-    assert source["golden_profiles"]["flow"] == "flow/rag/generate_goldens/flows/analyze-document.toml"
-    assert source["golden_profiles"]["foreach"] == "steps.inventory.output.files"
+    assert source["analyze_documents"]["flow"] == "flow/rag/generate_goldens/flows/analyze-document.toml"
+    assert source["analyze_documents"]["foreach"] == "steps.inventory.output.files"
+    golden = _steps(GOLDEN / "flow.toml")["analyze_documents"]
+    assert source["analyze_documents"] == golden
 
 
 def test_all_document_scans_complete_before_document_consolidation():
