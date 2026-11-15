@@ -216,7 +216,10 @@ No DeepEval dependency is required in team wrappers. The adjacent
 [`cli_agent_wrapper.py`](cli_agent_wrapper.py) is a regular imported
 `AgentWrapper` implementation and encapsulates all cli-agent-specific
 SDK code. Its entrypoint is
-`flow.rag.generate_goldens.cli_agent_wrapper:CliAgentWrapper`. Other
+`cli_agent_wrapper:CliAgentWrapper`, resolved from the notebook directory.
+The SDK workspace defaults independently to `"."` and is configurable
+through the wrapper's constructor `kwargs`. The Golden data path is
+resolved from the notebook location, not the agent workspace. Other
 agents use the same factory and do not need cli-agent installed.
 
 DeepEval is used **only** to score saved agent answers via

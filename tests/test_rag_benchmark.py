@@ -79,7 +79,8 @@ def test_wrapper_protocol_and_factory_has_no_deepeval_dependency():
         cell for cell in notebook_code() if "def create_wrapper(spec)" in cell
     )
     assert 'if entrypoint == "builtin:cli-agent":' not in code
-    assert "wrapper_class = getattr(importlib.import_module(module_name), class_name)" in code
+    assert "wrapper_class = getattr(module, class_name)" in code
+    assert "importlib.util.spec_from_file_location(module_name, sibling)" in code
     # Lifecycle method implementations live in imported modules, not here.
     assert "async def start(self) -> None:" in code
     assert "async def close(self) -> None:" in code
@@ -295,15 +296,16 @@ def test_cli_agent_wrapper_importable_through_same_generic_factory():
     """No special entrypoint, no SDK dependency during import."""
     env = wrapper_namespace()
     spec = {
-        "entrypoint": "flow.rag.generate_goldens.cli_agent_wrapper:CliAgentWrapper",
+        "entrypoint": "cli_agent_wrapper:CliAgentWrapper",
         "kwargs": {
-            "workspace": ".", "system_prompt": "Be accurate",
+            "system_prompt": "Be accurate",
             "include_tool_arguments": False,
         },
     }
     wrapper = env["create_wrapper"](spec)
     assert type(wrapper).__name__ == "CliAgentWrapper"
     assert wrapper.system_prompt == "Be accurate"
+    assert wrapper.workspace == Path.cwd().resolve()
     assert wrapper.include_tool_arguments is False
     assert wrapper.agent is None
     for name in ("start", "answer", "close"):
@@ -422,7 +424,7 @@ def test_generic_agent_config_cache_files_validation(tmp_path):
     """A config file influences the cache key for any agent module."""
     ns = {}
     exec(compile(notebook_code()[0], "<benchmark-config>", "exec"), ns)
-    ns["WORKSPACE"] = tmp_path
+    ns["GOLDENS_FILE"] = tmp_path / "deepeval-goldens.json"
     cache_code = next(cell for cell in notebook_code()
                       if "def agent_fingerprint(" in cell)
     # Avoid executing the notebook's evaluation loop; extract one function.
@@ -444,3 +446,31 @@ def test_generic_agent_config_cache_files_validation(tmp_path):
     second = ns["agent_fingerprint"]("team-1", spec)
     assert first != second
     assert second != ns["agent_fingerprint"]("team-2", spec)
+
+
+
+def test_notebook_paths_and_default_cli_workspace_from_both_start_directories(monkeypatch):
+    """Repository cwd and notebook cwd resolve same Goldens, without SDK root."""
+    repo = BASE.parents[2]
+    config_cell = notebook_code()[0]
+    namespaces = []
+    for cwd in (repo, BASE):
+        monkeypatch.chdir(cwd)
+        ns = {}
+        exec(compile(config_cell, "<notebook-config>", "exec"), ns)
+        assert ns["NOTEBOOK_DIR"] == BASE
+        assert ns["GOLDENS_FILE"] == repo / "rag-goldens/deepeval-goldens.json"
+        assert ns["OUTPUT_DIR"] == repo / "rag-goldens/evaluation"
+        assert ns["AGENTS"]["cli-agent"]["kwargs"]["workspace"] == "."
+        namespaces.append(ns)
+    assert namespaces[0]["GOLDENS_FILE"] == namespaces[1]["GOLDENS_FILE"]
+
+
+def test_cli_agent_wrapper_supports_custom_workspace(tmp_path, monkeypatch):
+    from flow.rag.generate_goldens.cli_agent_wrapper import CliAgentWrapper
+
+    monkeypatch.chdir(tmp_path)
+    assert CliAgentWrapper().workspace == tmp_path
+    configured = tmp_path / "agent-files"
+    configured.mkdir()
+    assert CliAgentWrapper(workspace=str(configured)).workspace == configured

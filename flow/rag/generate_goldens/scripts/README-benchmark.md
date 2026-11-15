@@ -89,10 +89,10 @@ Auch cli-agent ist jetzt ein **normaler Import** wie alle anderen Teams:
 
 ```python
 "cli-agent": {
-    "entrypoint": "flow.rag.generate_goldens.cli_agent_wrapper:CliAgentWrapper",
+    "entrypoint": "cli_agent_wrapper:CliAgentWrapper",
     "revision": "sdk-baseline-v1",
     "kwargs": {
-        "workspace": str(WORKSPACE),
+        "workspace": ".",  # optional; default is "."
         "include_tool_arguments": True,
         # Optional: "config_file": "config.toml",
         # Optional: "admin_config_file": "admin.toml",
@@ -107,8 +107,9 @@ Das Notebook enthält **weder cli-agent-Imports noch besondere
 Fallunterscheidungen**. Der Wrapper initialisiert den SDK-Agenten einmal
 beim `start()` und ruft `agent.reset()` vor jeder Frage auf. Andere Teams
 brauchen keine cli-agent-Installation, sofern sie den cli-agent-Wrapper
-nicht ausführen. Die Namespacemodule unter `flow.rag.generate_goldens`
-sind vom Workspace-Root importierbar.
+nicht ausführen. `cli_agent_wrapper.py` wird direkt aus dem Verzeichnis
+des Notebooks importiert. Agenten aus installierten Python-Paketen werden
+weiterhin über ihre regulären Modulnamen geladen.
 
 ## Bewertung
 
@@ -117,8 +118,16 @@ python -m pip install "deepeval>=4,<5" pandas jupyterlab ipykernel
 jupyter lab flow/rag/generate_goldens/benchmark.ipynb
 ```
 
-Jupyter wird aus dem Workspace mit `rag-goldens/deepeval-goldens.json`
-gestartet. `MAX_CASES=3` testet zuerst drei Goldens;
+Jupyter kann im Repository-Root oder direkt im Verzeichnis des Notebooks
+gestartet werden. Der Benchmark ermittelt das Notebook-Verzeichnis
+und verwendet standardmäßig die exportierten Goldens im Repository-Root
+unter `rag-goldens/deepeval-goldens.json`. Ein anderer Golden-Datensatz
+kann separat über `GOLDENS_FILE` im Notebook eingestellt werden.
+
+**Der SDK-Workspace ist davon unabhängig:** `CliAgentWrapper` verwendet
+`workspace="."` als Standard, bezogen auf das aktuelle Arbeitsverzeichnis
+des Kernels. Über `kwargs: {"workspace": "/anderer/pfad"}` ist er
+konfigurierbar. `MAX_CASES=3` testet zuerst drei Goldens;
 `MAX_CASES=None` testet alle.
 
 DeepEval lädt die unveränderten Referenzantworten, erstellt aus den
