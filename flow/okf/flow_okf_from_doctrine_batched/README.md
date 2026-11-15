@@ -66,9 +66,9 @@ as reusable semantic analysis, not used to assert OKF completeness.
 ## Bounds and limitations
 
 * A section is ~5 KB. Every LLM call uses one section, one concept,
-  one document's index or a 12 KB maximum consolidation batch.
-* Global stages split complete JSON array entries into 4 KB target
-  fragments, at most two fragments per 12 KB batch. No content is
+  one document's index or a 8 KB maximum consolidation batch.
+* Global stages split complete JSON array entries into 2.5 KB target
+  fragments, at most two fragments per 8 KB batch. No content is
   intentionally truncated. An indivisible oversized item raises an error.
 * Model provider timeout is 120 seconds; these limits **reduce risk**, but
   do not guarantee completion within 120 seconds. Retries do not fix
@@ -93,3 +93,5 @@ as reusable semantic analysis, not used to assert OKF completeness.
 * Always inspect `needs_attention` results, source citations and the
   final OKF before using it as an authoritative reference.
 
+
+The final flow result is a set of independent per-registry-shard status reports, not merely the root index writer status. Each shard audit checks registry, all theme verifications and the navigation status. No unbounded final status LLM call is used.

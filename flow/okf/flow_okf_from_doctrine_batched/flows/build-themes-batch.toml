@@ -1,6 +1,6 @@
 version = 1
-inputs = ["registry", "okf_root"]
-result = "steps.themes.output"
+inputs = ["registry", "okf_root", "batch_id"]
+result = "steps.audit.output"
 
 [[steps]]
 id = "themes"
@@ -11,3 +11,14 @@ iteration_id = "${item.id}"
 theme = "${item}"
 okf_root = "${input.okf_root}"
 
+[[steps]]
+id = "audit"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/12_shard_audit.md"
+output = "okf-batched/state/global/audit-${input.batch_id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch_id = "${input.batch_id}"
+registry = "${input.registry}"
+theme_results = "${steps.themes.output.iterations}"

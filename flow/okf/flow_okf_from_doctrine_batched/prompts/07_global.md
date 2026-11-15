@@ -24,7 +24,15 @@ Output JSON OBJECT:
                "source_slug":"<slug>"}]}
  ],
  "warnings":[]}
-At most 20 groups per batch, at most 12 members per group, each
-description <=180 characters. Preserve ALL singletons and warnings
-within the given limits. Never silently drop excess input.
+Never impose a smaller output group-count cap than the groups/concepts
+in batch.items[] can require. Input byte size is bounded by the runner;
+the output MUST retain every distinct unmerged topic and singleton. The
+group count may equal the number of distinct input topics. Do not create
+more groups than there are distinct input concepts/groups. If some groups
+cannot be merged, preserve them as separate entries. A needs_attention
+warning is NOT a substitute for retaining those source groups.
 
+Keep at most 12 members per group, each description <=180 characters.
+If a group requires more members, keep separate supported groups and
+mark needs_attention; never truncate members or knowledge coverage.
+Preserve all warnings and status information across stages.

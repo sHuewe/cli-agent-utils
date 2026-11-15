@@ -1,0 +1,15 @@
+version = 1
+inputs = ["shard_report", "root_index", "batch_id"]
+result = "steps.result.output"
+
+[[steps]]
+id = "result"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/13_final_audit.md"
+output = "okf-batched/state/global/final-report-${input.batch_id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch_id = "${input.batch_id}"
+shard_report = "${input.shard_report}"
+root_index = "${input.root_index}"

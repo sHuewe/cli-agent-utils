@@ -1,6 +1,6 @@
 version = 1
 inputs = ["module_results", "okf_root"]
-result = "steps.root_index.output"
+result = "steps.final_reports.output"
 
 # Input is the per-module manifest INVENTORY. No whole document aggregation.
 [[steps]]
@@ -12,8 +12,8 @@ kind = "batch_arrays"
 input = "manifests"
 array_paths = ["/concepts", "/warnings"]
 batch_size = 2
-target_fragment_bytes = 4000
-max_batch_bytes = 12000
+target_fragment_bytes = 2500
+max_batch_bytes = 8000
 [steps.json_inputs.manifests]
 iterate = "input.module_results[].output.files[]"
 path = "${each.path}"
@@ -122,6 +122,7 @@ foreach = "steps.registry.output.iterations"
 iteration_id = "${item.id}"
 [steps.input]
 registry = "${item.output}"
+batch_id = "${item.id}"
 okf_root = "${input.okf_root}"
 
 [[steps]]
@@ -135,3 +136,15 @@ approve_tools = ["os__make_directory", "os__write_file"]
 [steps.vars]
 okf_root = "${input.okf_root}"
 
+
+# Final status is NOT the navigation writer's status. For every registry
+# shard, propagate registry/verification failures and root failures.
+[[steps]]
+id = "final_reports"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/report-shard.toml"
+foreach = "steps.build_themes.output.iterations"
+iteration_id = "${item.id}"
+[steps.input]
+shard_report = "${item.output}"
+root_index = "${steps.root_index.output}"
+batch_id = "${item.id}"
