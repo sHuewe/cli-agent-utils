@@ -77,7 +77,8 @@ def test_wrapper_protocol_and_factory_has_no_deepeval_dependency():
     assert 'if entrypoint == "builtin:cli-agent":' in code
     assert "class CliAgentWrapper:" in code
     assert "await self.agent.reset()" in code
-    assert "builder.with_knowledge_trace(include_content=True).build()" in code
+    assert ".with_knowledge_trace(include_content=True)" in code
+    assert ".with_tool_trace(include_arguments=True)" in code
     assert "async def start(self)" in code
     assert "async def close(self)" in code
     assert 'target.ask(' not in code
@@ -265,7 +266,7 @@ def test_optional_tool_calls_normalization_and_redacted_sdk_mapping():
     assert 'for call in result.tool_calls' in full
     assert 'call.call_id' in full and 'call.duration_ms' in full
     assert 'call.status' in full
-    assert "call.input_parameters" not in full
+    assert 'if call.input_parameters is not None else {}' in full
 
 
 def test_tool_correctness_runs_only_for_goldens_with_expected_tools():

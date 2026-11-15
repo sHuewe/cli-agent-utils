@@ -46,9 +46,13 @@ enthalten und werden im privaten Cache gespeichert. Sie sollten nur
 übergeben werden, wenn die Verwendung im Benchmark freigegeben ist.
 
 Der eingebaute `CliAgentWrapper` übernimmt Toolnamen, Status,
-Aufruf-ID und Laufzeiten aus `AgentResult.tool_calls`. Das SDK stellt
-**keine Eingabeparameter** oder Tool-Outputs bereit; das Benchmark
-ergänzt diese Informationen nicht künstlich.
+Aufruf-ID und Laufzeiten aus `AgentResult.tool_calls`. Mit dem begleitenden
+`cli-agent`-SDK-PR #314 aktiviert er ausdrücklich
+`with_tool_trace(include_arguments=True)`, wodurch zusätzlich begrenzte
+und best-effort bereinigte `input_parameters` erfasst werden können.
+Tool-Outputs bleiben weiterhin ausgeschlossen. Diese Argumente können
+trotz der Redaction vertrauliche Inhalte enthalten und werden im privaten
+Benchmark-Cache gespeichert. Nutze die Option nur für freigegebene Daten.
 
 `AgentWrapper` ist ein strukturelles Python-`Protocol` zur Beschreibung
 dieser drei Methoden. **Keine Vererbung oder Import aus dem Notebook**
