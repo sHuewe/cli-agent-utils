@@ -32,6 +32,43 @@ excluded_path = "/excluded_group_refs/*"
 source_members_path = "/members/*"
 result_members_path = "/members/*"
 result_id_path = "/id"
+result_id_pattern = '^[a-z][a-z0-9-]*
+result_path_template = "themen/{id}.md"
+source_status_path = "/status"
+source_warnings_path = "/warnings"
+result_status_path = "/status"
+result_warnings_path = "/warnings"
+member_fields = ["/source_slug", "/path"]
+[steps.json_operation.member_patterns]
+"/source_slug" = '^[a-z0-9]+(?:-[a-z0-9]+)*
+path = "okf-batched/state-v3/global/registry-${input.batch.id}.json"
+
+result_path_field = "/path"
+result_path_template = "themen/{id}.md"
+source_status_path = "/status"
+source_warnings_path = "/warnings"
+result_status_path = "/status"
+result_warnings_path = "/warnings"
+member_fields = ["/source_slug", "/path"]
+[steps.json_inputs.registry]
+path = "okf-batched/state-v3/global/registry-${input.batch.id}.json"
+
+"/path" = '^doctrines/[a-z0-9]+(?:-[a-z0-9]+)*/(?:[a-z0-9]+(?:-[a-z0-9]+)*/)?[a-z0-9]+(?:-[a-z0-9]+)*\\.md
+path = "okf-batched/state-v3/global/registry-${input.batch.id}.json"
+
+result_path_field = "/path"
+result_path_template = "themen/{id}.md"
+source_status_path = "/status"
+source_warnings_path = "/warnings"
+result_status_path = "/status"
+result_warnings_path = "/warnings"
+member_fields = ["/source_slug", "/path"]
+[steps.json_inputs.registry]
+path = "okf-batched/state-v3/global/registry-${input.batch.id}.json"
+
+[steps.json_inputs.registry]
+path = "okf-batched/state-v3/global/registry-${input.batch.id}.json"
+
 result_path_field = "/path"
 result_path_template = "themen/{id}.md"
 source_status_path = "/status"
