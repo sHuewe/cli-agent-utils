@@ -71,7 +71,7 @@ def test_wrapper_protocol_and_factory_has_no_deepeval_dependency():
     assert "async def answer(self, question: str)" in code
     assert "async def close(self) -> None:" in code
     assert "def create_wrapper(spec) -> AgentWrapper:" in code
-    assert "inspect.isclass(factory)" in code
+    assert "inspect.isclass(wrapper_class)" in code
     assert "wrapper = factory(**spec.get(" + '"kwargs", {})' + ")" in code
     # Notebook must be fully generic; SDK integration lives in sibling file.
     assert "from cli_agent" not in code
@@ -352,6 +352,10 @@ def test_cli_agent_wrapper_lifecycle_and_trace_passthrough(monkeypatch, tmp_path
 
         def with_project_config(self, **kwargs):
             calls.append(("project_config", kwargs))
+            return self
+
+        def with_approval_callback(self, callback):
+            calls.append(("approval_callback", callback))
             return self
 
         def with_system_prompt(self, prompt):
