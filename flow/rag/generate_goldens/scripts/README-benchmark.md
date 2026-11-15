@@ -1,120 +1,120 @@
-# Benchmark: one shared Golden set, interchangeable team agents
+# Gemeinsamer DeepEval-Benchmark mit AgentWrapper
 
-The [benchmark notebook](../benchmark.ipynb) evaluates independently
-developed agents against **exactly the same** exported
-`rag-goldens/deepeval-goldens.json`. DeepEval loads the Golden dataset,
-judges the saved answers, caches judge metrics and generates reports.
-**Agent execution does not depend on DeepEval.**
+Das [Notebook](../benchmark.ipynb) verwendet dieselben exportierten
+`rag-goldens/deepeval-goldens.json` für alle Agenten. Die Agenten werden
+**ohne DeepEval-Abhängigkeit** ausgeführt; DeepEval übernimmt danach
+ausschließlich die Bewertung der Antworten und optional der tatsächlich
+gefundenen Passagen.
 
-## Minimal contract for each team
+## Schnittstelle für jedes Team
 
-Install the team's Python package into the Jupyter environment and
-provide one public callable, synchronous or asynchronous:
+Ein Team stellt eine importierbare Python-Klasse mit drei asynchronen
+Methoden bereit:
 
 ```python
 # team_b/benchmark.py
-async def answer(question: str) -> str:
-    return await my_agent.answer(question)
+class TeamBWrapper:
+    def __init__(self, endpoint: str):
+        self.endpoint = endpoint
+        self.agent = None
+
+    async def start(self):
+        # Einmalig Modelle, Verbindungen und Index initialisieren.
+        self.agent = await connect(self.endpoint)
+
+    async def answer(self, question: str):
+        # Jede Frage in einer frischen Unterhaltung behandeln.
+        return await self.agent.ask_new_conversation(question)
+
+    async def close(self):
+        if self.agent is not None:
+            await self.agent.close()
+            self.agent = None
 ```
 
-Optional retrieval evidence:
+`answer()` gibt entweder einen nichtleeren String oder ein Dictionary
+`{"answer": str, "retrieval_context": list[str]}` zurück.
+`retrieval_context` darf ausschließlich **tatsächlich abgerufene**
+Passagen enthalten. Ohne Retrieval-Kontext werden fachliche Metriken
+weiterhin ausgewertet.
 
-```python
-async def answer(question: str) -> dict:
-    result = await my_agent.answer(question)
-    return {
-        "answer": result.text,
-        "retrieval_context": result.actual_retrieved_passages,
-    }
-```
+`AgentWrapper` ist ein strukturelles Python-`Protocol` zur Beschreibung
+dieser drei Methoden. **Keine Vererbung oder Import aus dem Notebook**
+ist erforderlich. Das Team ist selbst für die Unabhängigkeit aufeinander-
+folgender Fragen zuständig. Jede Frage muss ohne Konversationswissen
+aus anderen Goldens beantwortet werden.
 
-`retrieval_context` must contain **actual** passages retrieved by that
-agent, never ideal passages from the Golden dataset. No context is also
-valid: the agent can still compete on answer correctness/relevancy.
-Each adapter owns initialization, cleanup, and **isolation of conversation
-state per question**.
+## Teilnehmer konfigurieren
 
-There is no required base class, inheritance, mixin, SDK, tracer or
-DeepEval dependency. A module can simply export `def answer(...)`.
-External modules are imported by name; install them instead of modifying
-`sys.path`.
-
-## Configure participants
-
-In the notebook's `AGENTS` mapping:
+Die Team-Module müssen im Jupyter-Python-Environment installiert sein.
+Im Notebook genügt:
 
 ```python
 AGENTS = {
     "team-a": {
-        "entrypoint": "team_a.benchmark:answer",
-        "revision": "git-commit-a1b2c3",
+        "entrypoint": "team_a.benchmark:TeamAWrapper",
+        "revision": "commit-a1b2c3",
     },
     "team-b": {
-        "entrypoint": "team_b.benchmark:answer",
-        "revision": "git-commit-d4e5f6",
+        "entrypoint": "team_b.benchmark:TeamBWrapper",
+        "revision": "commit-d4e5f6",
+        "kwargs": {"endpoint": "http://localhost:8080"},
     },
 }
 ```
 
-The supplied `builtin:cli-agent` entry is an **optional example**.
-For external-only agents, `cli-agent` itself does not need to be installed.
-Only that example's adapter imports the SDK.
+`entrypoint` bezeichnet die Python-Klasse, `kwargs` ihre optionalen
+Konstruktorparameter. `create_wrapper(spec)` erzeugt **nur die Instanz**.
+Der Benchmark ruft `start()` beim ersten nicht gecachten Golden auf,
+verwendet denselben Wrapper für weitere Fragen und garantiert ein
+`close()` am Ende. Nach einem Fehler oder Timeout wird der beschädigte
+Wrapper geschlossen und vor der nächsten Frage neu aufgebaut.
 
-To change frameworks, agents or teams, change `AGENTS`: **no editing
-of DeepEval's evaluation loop or metric construction**.
+Der mitgelieferte Eintrag `builtin:cli-agent` ist optional und dient
+als Beispiel. Er erstellt den SDK-Agenten **einmal** beim `start()` und
+ruft `agent.reset()` vor jeder Frage auf; dabei bleiben Modell- und
+MCP-Verbindungen grundsätzlich bestehen. Andere Teams brauchen kein
+`cli-agent` zu installieren.
 
-## Run
+## Bewertung
 
 ```bash
 python -m pip install "deepeval>=4,<5" pandas jupyterlab ipykernel
-# install each team's agent package in the same environment
 jupyter lab flow/rag/generate_goldens/benchmark.ipynb
 ```
 
-Launch Jupyter from the workspace root containing
-`rag-goldens/deepeval-goldens.json`; if necessary, regenerate the
-Golden JSON using the separate exporter. Set `MAX_CASES=3` for a quick
-check and `MAX_CASES=None` to judge all shared Goldens.
+Jupyter wird aus dem Workspace mit `rag-goldens/deepeval-goldens.json`
+gestartet. `MAX_CASES=3` testet zuerst drei Goldens;
+`MAX_CASES=None` testet alle.
 
-## Evaluation and fairness
+DeepEval lädt die unveränderten Referenzantworten, erstellt aus den
+Ergebnissen `LLMTestCase` und bewertet mit `evaluate()`:
+fachliche Korrektheit und Relevanz für alle erfolgreichen Antworten,
+Faithfulness/Recall/Precision/Unsicherheit nur bei vollständigem
+tatsächlichen Retrieval-Kontext, optional Stilkonformität je Team.
 
-- **Common answer quality**: fixed-reference G-Eval correctness and
-  answer relevancy, using the same Golden questions, judge model,
-  rubric and threshold for every team
-- **Optional retrieval quality**: DeepEval faithfulness, contextual
-  recall/precision, and uncertainty calibration only where the agent
-  actually supplies complete retrieval passages
-- **Optional style**: a team's `style_criteria` may be assessed separately,
-  but incomparable style rubrics must not be pooled or ranked as a common
-  quality metric
+Es gibt **kein** DeepEval-spezifisches Interface oder automatisches
+Tracing im Wrapper. Die Referenzantwort wird niemals an `answer()`
+übergeben.
 
-DeepEval is used only to evaluate constructed `LLMTestCase` objects
-via `evaluate()`. No `DeepEvalTarget`, `evals_iterator()` or
-DeepEval-specific interface is needed in agent implementations.
+## Fairness, Fehler und Caching
 
-Execution is sequential across agents and Golden questions. Successful
-responses are checkpointed; failures are recorded with Golden ID and
-exception class and never silently counted as successful. The notebook
-reports the **number of answered Goldens and failed requests** alongside
-average judge scores. Do not compare averages on unequal question subsets
-without considering the missing cases.
+- Alle Teams verwenden dieselben Goldens, identische Judge-Metriken,
+  dieselbe Judge-Modellkonfiguration und einen festgelegten Korpusstand
+- Der Benchmark zeigt die Zahl erfolgreich beantworteter Goldens und
+  fehlgeschlagener Fragen; Durchschnittswerte mit unterschiedlicher
+  Abdeckung sind nur eingeschränkt vergleichbar
+- Ergebnisse werden pro Agent-ID, Modul, Revision, `kwargs`, Golden und
+  `CACHE_EPOCH` getrennt gecacht. Für den eingebauten SDK-Wrapper
+  werden zusätzlich Konfigurationsdateien berücksichtigt
+- Nach einer Änderung von Agent, Prompt, Index oder Modell die Revision
+  bzw. `CACHE_EPOCH` ändern oder `FRESH_RESPONSES=True` setzen
+- Das Speichern erfolgt atomar mit privaten Dateirechten.
+  `FRESH_EVALUATION=True` deaktiviert unabhängig davon das
+  DeepEval-Judge-Cache-Replay
+- Bei Sync-Frameworks sollte der Wrapper die Aufrufe selbst asynchron
+  kapseln. Async-Cancellation muss bei laufenden Modellaufrufen sauber
+  abgewickelt werden
 
-Use the same corpus/index snapshot, judge configuration and Golden
-dataset for a fair team comparison. Every agent should be able to handle
-the same request timeout and question-only input. A sync function runs
-in a worker thread and may continue after timeout; prefer async
-cancellation for costly model calls.
-
-## Caching and privacy
-
-Response cache keys include agent ID, entrypoint, revision, workspace,
-Golden ID, question/reference, and `CACHE_EPOCH`. For the built-in SDK
-agent, the local config, admin policy and file-backed system prompt are
-also hashed. Teams must update their revision after any agent code,
-model or prompt change, or use `FRESH_RESPONSES=True`; external index
-changes can be recorded through `CACHE_EPOCH`.
-
-Responses are written atomically with owner-only permissions (0600 where
-supported). Judge cache is independent (`FRESH_EVALUATION=True` to skip
-reuse). Local responses and judge reports may contain confidential
-information and should not be committed to version control.
+Antwort-Caches und Judge-Reports können vertrauliche Daten enthalten.
+Sie gehören nicht in die Versionsverwaltung.

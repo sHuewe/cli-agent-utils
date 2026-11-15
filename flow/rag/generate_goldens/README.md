@@ -205,13 +205,15 @@ readable by DeepEval's `EvaluationDataset.add_goldens_from_json_file()`.
 The [benchmark notebook](benchmark.ipynb) compares **multiple independent
 agents against the same immutable Golden references**.
 
-Each team supplies an installed Python module exposing one
-`answer(question)` function returning a string or an answer mapping with
-optional actual `retrieval_context`. Teams can use completely different
-frameworks or models. Edit the notebook's `AGENTS` dictionary to select
-participants; neither DeepEval nor cli-agent knowledge is needed in
-each team's implementation. The `builtin:cli-agent` entry is an optional
-example.
+Each team provides an installed Python module exporting an
+`AgentWrapper`-compatible class with async `start()`, `answer(question)`
+and `close()` methods. The notebook owns initialization and cleanup,
+while teams isolate each Golden question's conversation state.
+Each answer is a string or an answer mapping with optional actual
+`retrieval_context`. The `AGENTS` dictionary specifies an importable
+`module:WrapperClass` and optional constructor `kwargs`.
+No DeepEval or cli-agent dependency is required in team wrappers;
+`builtin:cli-agent` remains an optional example.
 
 DeepEval is used **only** to score saved agent answers via
 `LLMTestCase` and `evaluate()`, independently of agent invocation.
