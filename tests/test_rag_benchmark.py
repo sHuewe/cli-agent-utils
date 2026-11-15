@@ -1,154 +1,284 @@
-"""Native DeepEval benchmark contract tests.
-
-The benchmark imports no generator script. Source evidence is intentionally
-not embedded as retrieval context; only the live SDK trace may supply it.
-"""
+"""Contract tests for interchangeable AgentWrapper-based Golden evaluation."""
 from __future__ import annotations
 
 import ast
+import asyncio
 import json
+import sys
+import types
 from pathlib import Path
+
+import pytest
 
 BASE = Path(__file__).resolve().parents[1] / "flow/rag/generate_goldens"
 
 
-def notebook():
-    return json.loads((BASE / "benchmark.ipynb").read_text(encoding="utf-8"))
-
-
-def notebook_sources():
+def notebook_code():
+    notebook = json.loads((BASE / "benchmark.ipynb").read_text(encoding="utf-8"))
     return [
         "".join(cell["source"])
-        for cell in notebook()["cells"]
+        for cell in notebook["cells"]
         if cell["cell_type"] == "code"
     ]
 
 
-def test_notebook_uses_native_json_loader_and_sdk_not_scripts():
-    sources = notebook_sources()
-    code = "\n".join(sources)
+def notebook_text():
+    return "\n".join(notebook_code())
+
+
+def wrapper_namespace():
+    """Run only notebook configuration + wrapper definitions, not the judge."""
+    env = {}
+    exec(compile(notebook_code()[0], "<benchmark-config>", "exec"), env)
+    cell = next(
+        text for text in notebook_code()
+        if "class AgentWrapper(Protocol):" in text
+    )
+    exec(compile(cell, "<benchmark-wrappers>", "exec"), env)
+    return env
+
+
+def test_notebook_syntax_and_unmodified_golden_reference():
+    code = notebook_text()
+    for cell in notebook_code():
+        compile(cell, "<notebook>", "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
     assert 'dataset.add_goldens_from_json_file(str(GOLDENS_FILE))' in code
-    assert 'deepeval-goldens.json' in code
-    assert 'builder.build_deepeval_target(' in code
-    assert 'dataset.evals_iterator(' in code
-    assert 'await target.ask(' in code
-    assert 'from deepeval import evaluate' in code
-    assert 'answer_results = evaluate(' in code
-    assert 'retrieval_results = evaluate(' in code
-    assert 'benchmark_adapter' not in code
-    assert 'sys.path' not in code
-    assert 'from scripts' not in code
-    assert 'import scripts' not in code
-    assert 'collect_responses(' not in code
-    assert 'deep_eval_dataset(' not in code
-    for cell in sources:
-        compile(cell, "<benchmark cell>", "exec",
-                flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+    assert '"expected_output": golden.expected_output' in code
+    assert "await invoke_agent(wrapper, golden.input)" in code
+    assert "dataset.evals_iterator(" not in code
+    assert "DeepEvalTarget" not in code
+    assert "sys.path" not in code
+    assert "from scripts" not in code
+    assert "from deepeval import evaluate" in code
+    assert "answer_results = evaluate(" in code
+    assert "retrieval_results = evaluate(" in code
 
 
-def test_exported_deepeval_dataset_is_directly_importable():
-    """Check supported DeepEval fields independently of the SDK adapter."""
+def test_exported_native_deepeval_goldens():
     export = (BASE / "scripts/export.py").read_text(encoding="utf-8")
     assert '"deepeval-goldens.json"' in export
-    assert '"additional_metadata": {' in export
     assert '"golden_id": g["id"]' in export
-    assert '"required_sources":' in export
     assert '"input": g["input"]' in export
     assert '"expected_output": g["expected_output"]' in export
     assert '"context": [item["quote"]' not in export
     assert '"retrieval_context": [item["quote"]' not in export
 
 
-def test_dataset_notebook_does_not_use_reference_context_as_retrieval():
-    code = "\n".join(notebook_sources())
-    assert 'response.get("knowledge_trace") or {}' in code
-    assert 'trace.get("content_included") is True' in code
-    assert 'trace.get("truncated") is not True' in code
-    assert 'retrieval_context=[hit["content"] for hit in selected]' in code
-    assert 'golden.context' not in code
-    assert 'golden.retrieval_context' not in code
+def test_wrapper_protocol_and_factory_has_no_deepeval_dependency():
+    code = notebook_text()
+    assert "class AgentWrapper(Protocol):" in code
+    assert "async def start(self) -> None:" in code
+    assert "async def answer(self, question: str)" in code
+    assert "async def close(self) -> None:" in code
+    assert "def create_wrapper(spec) -> AgentWrapper:" in code
+    assert "inspect.isclass(factory)" in code
+    assert "wrapper = factory(**spec.get(" + '"kwargs", {})' + ")" in code
+    assert "from cli_agent.sdk import AgentBuilder" in code
+    assert 'if entrypoint == "builtin:cli-agent":' in code
+    assert "class CliAgentWrapper:" in code
+    assert "await self.agent.reset()" in code
+    assert ".with_knowledge_trace(include_content=True)" in code
+    assert ".with_tool_trace(include_arguments=True)" in code
+    assert "async def start(self)" in code
+    assert "async def close(self)" in code
+    assert 'target.ask(' not in code
 
 
-def test_separate_judge_and_cache_fingerprint_includes_prompt_file():
-    code = "\n".join(notebook_sources())
-    assert 'JUDGE_PROVIDER = "openrouter"' in code
-    assert 'JUDGE_MODEL = "openai/gpt-4.1"' in code
-    assert 'OpenRouterModel(model=JUDGE_MODEL' in code
-    assert 'judge = OpenAIModel(' in code
-    assert 'judge = OllamaModel(' in code
-    assert 'model=JUDGE_MODEL' in code
-    assert 'effective_config_hash(prompt_text)' in code
-    assert 'files.append(WORKSPACE / ".cli-agent" / filename)' in code
-    assert 'builder.with_system_prompt(prompt_text)' in code
-    assert 'PROMPT_VARIANTS = {' in code
-    assert 'all_responses[variant_id]' in code
-    assert 'identifier=f"rag-{variant_id}-answer"' in code
-    assert 'identifier=f"rag-{variant_id}-retrieval"' in code
-    assert 'name="Style compliance"' in code
-    assert 'name="Uncertainty calibration"' in code
-    assert 'SingleTurnParams.RETRIEVAL_CONTEXT' in code
-    assert 'CACHE_EPOCH' in code
-    assert 'CACHE_EPOCH' in code
-    assert 'cached_response=cached' in code
-    assert 'default_admin_config_file()' in code
-    assert 'os.chmod(tmp, 0o600)' in code
-    assert 'os.replace(tmp, checkpoint)' in code
-    assert 'tempfile.NamedTemporaryFile(' in code
-    assert 'CacheConfig(use_cache=not FRESH_EVALUATION' in code
+def test_team_wrapper_lifecycle_and_question_only(monkeypatch):
+    env = wrapper_namespace()
+    calls = []
+    package = types.ModuleType("team_b")
+    package.__path__ = []
+    module = types.ModuleType("team_b.adapter")
+
+    class TeamWrapper:
+        def __init__(self, *, model):
+            self.model = model
+
+        async def start(self):
+            calls.append(("start", self.model))
+
+        async def answer(self, question):
+            calls.append(("answer", question))
+            return {"answer": question.upper(), "retrieval_context": ["selected passage"]}
+
+        async def close(self):
+            calls.append(("close", self.model))
+
+    module.TeamWrapper = TeamWrapper
+    monkeypatch.setitem(sys.modules, "team_b", package)
+    monkeypatch.setitem(sys.modules, "team_b.adapter", module)
+
+    instance = env["create_wrapper"]({
+        "entrypoint": "team_b.adapter:TeamWrapper",
+        "kwargs": {"model": "model-x"},
+    })
+
+    async def run():
+        await instance.start()
+        answer = await env["invoke_agent"](instance, "Q1")
+        await instance.close()
+        return answer
+
+    answer = asyncio.run(run())
+    assert calls == [("start", "model-x"), ("answer", "Q1"), ("close", "model-x")]
+    assert answer == {
+        "actual_output": "Q1", "retrieval_context": ["selected passage"],
+        "tools_called": None,
+    }
 
 
-def test_native_dataset_loader_on_real_deepeval_when_available(tmp_path):
-    """Optional real-API smoke test; no LLM calls and no network needed."""
-    import pytest
-
-    dataset_module = pytest.importorskip("deepeval.dataset")
-    path = tmp_path / "deepeval-goldens.json"
-    payload = [{
-        "input": "What happens without a token?",
-        "expected_output": "The gateway rejects the request.",
-        "additional_metadata": {
-            "golden_id": "b0001-g0001",
-            "required_sources": ["md/a.md", "md/b.md"],
-        },
-    }]
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    ds = dataset_module.EvaluationDataset()
-    ds.add_goldens_from_json_file(str(path))
-    assert len(ds.goldens) == 1
-    assert ds.goldens[0].input == payload[0]["input"]
-    assert ds.goldens[0].expected_output == payload[0]["expected_output"]
-    assert ds.goldens[0].additional_metadata == payload[0]["additional_metadata"]
+def test_built_in_retrieval_validation():
+    env = wrapper_namespace()
+    trace = {
+        "content_included": True, "truncated": False,
+        "selected": [{"content": "Observed passage"}],
+    }
+    assert env["cli_agent_retrieval_context"](trace) == ["Observed passage"]
+    assert env["cli_agent_retrieval_context"]({**trace, "truncated": True}) is None
+    assert env["cli_agent_retrieval_context"]({**trace, "selected": [{"content": ""}]}) is None
 
 
+def test_wrapper_validation_and_missing_methods(monkeypatch):
+    env = wrapper_namespace()
+    with pytest.raises(ValueError, match="entrypoint"):
+        env["create_wrapper"]({"entrypoint": "bad-entrypoint"})
+    with pytest.raises(ValueError, match="Invalid wrapper module"):
+        env["create_wrapper"]({"entrypoint": "../file:Wrapper"})
+    with pytest.raises(ValueError, match="Invalid wrapper class"):
+        env["create_wrapper"]({"entrypoint": "valid.module:wrong-name"})
+    with pytest.raises(ValueError, match="empty answer"):
+        env["normalize_answer"](" ")
+    with pytest.raises(TypeError, match="string or an answer mapping"):
+        env["normalize_answer"](7)
+    with pytest.raises(ValueError, match="retrieval_context"):
+        env["normalize_answer"]({"answer": "ok", "retrieval_context": [""]})
+    assert env["normalize_answer"]({"answer": "ok", "retrieval_context": []}) == {
+        "actual_output": "ok",
+        "retrieval_context": None,
+        "tools_called": None,
+    }
+    assert env["normalize_answer"]({"answer": "ok", "retrieval_context": None}) == {
+        "actual_output": "ok",
+        "retrieval_context": None,
+        "tools_called": None,
+    }
 
-def test_prompt_comparison_uses_same_reference_and_independent_score_dimensions():
-    code = "\n".join(notebook_sources())
-    # All variants reuse one dataset and its fixed expected_output. The
-    # experiment must never rewrite reference answers per response style.
-    assert "dataset.add_goldens_from_json_file(str(GOLDENS_FILE))" in code
-    assert "expected_output=golden.expected_output" in code
-    assert 'name="Answer correctness"' in code
-    assert 'name="Style compliance"' in code
-    assert 'name="Uncertainty calibration"' in code
-    assert 'if retrieval_cases:' in code
-    assert 'trace.get("content_included") is True' in code
-    assert 'trace.get("truncated") is not True' in code
-    assert "metric.error or metric.score is None" in code
+    module = types.ModuleType("fake_wrapper")
+    class MissingClose:
+        async def start(self): pass
+        async def answer(self, question): return "ok"
+    module.MissingClose = MissingClose
+    monkeypatch.setitem(sys.modules, "fake_wrapper", module)
+    with pytest.raises(TypeError, match="missing close"):
+        env["create_wrapper"]({"entrypoint": "fake_wrapper:MissingClose"})
+
+
+def test_execution_loop_starts_once_closes_and_restarts_on_error():
+    code = notebook_text()
+    assert "wrapper = create_wrapper(spec)" in code
+    assert "if wrapper is None:" in code
+    assert "await asyncio.wait_for(started, timeout=TIMEOUT_SECONDS)" in code
+    assert "response = await invoke_agent(wrapper, golden.input)" in code
+    assert "await close_wrapper(wrapper)" in code
+    assert "wrapper = None" in code
+    assert "finally:" in code
+    assert "all_failures[agent_id] = failures" in code
+    assert "if cached is not None:" in code
+    assert '"agent_failures": len(all_failures[agent_id])' in code
+
+
+def test_caching_keys_and_private_checkpoint():
+    code = notebook_text()
+    assert '"kwargs": spec.get("kwargs", {})' in code
+    assert 'spec["revision"]' in code
+    assert '"epoch": CACHE_EPOCH' in code
+    assert '"entrypoint": spec["entrypoint"]' in code
+    assert 'golden.additional_metadata["golden_id"]' in code
+    assert "FRESH_RESPONSES" in code
+    assert 'os.chmod(temporary, 0o600)' in code
+    assert 'os.replace(temporary, path)' in code
+
+
+def test_evaluation_uses_actual_retrieval_context_and_counts_failures():
+    code = notebook_text()
+    assert 'retrieval_context=response["retrieval_context"]' in code
+    assert '"answered": results["successful_cases"]' in code
+    assert '"agent_failures": len(all_failures[agent_id])' in code
     assert 'metric.name.removesuffix(" [GEval]")' in code
-    assert '"retrieval_cases": outputs["retrieval_case_count"]' in code
+    assert 'name="Answer correctness"' in code
+    assert 'name="Uncertainty calibration"' in code
 
 
-def test_prompt_variant_cache_separation_and_config_order():
-    code = "\n".join(notebook_sources())
-    assert 'for variant_id, variant in PROMPT_VARIANTS.items():' in code
-    assert 'builder.with_project_config(' in code
-    assert 'builder.with_system_prompt(prompt_text)' in code
-    assert code.index("builder.with_project_config(") < code.index(
-        "builder.with_system_prompt(prompt_text)"
-    )
-    assert '[variant_id, fingerprint, golden_id, golden.input, golden.expected_output]' in code
-    assert 'prompt_text": prompt_text' in code
-    assert 'cache_epoch": CACHE_EPOCH' in code
-    assert 'os.chmod(tmp, 0o600)' in code
-    assert 'os.replace(tmp, checkpoint)' in code
-    assert 'FRESH_SDK' in code and 'FRESH_EVALUATION' in code
+def test_deepeval_native_json_loader_if_available(tmp_path):
+    deepeval = pytest.importorskip("deepeval.dataset")
+    file = tmp_path / "deepeval-goldens.json"
+    file.write_text(json.dumps([{
+        "input": "Question", "expected_output": "Reference",
+        "additional_metadata": {"golden_id": "g1", "required_sources": []},
+    }]), encoding="utf-8")
+    dataset = deepeval.EvaluationDataset()
+    dataset.add_goldens_from_json_file(str(file))
+    assert dataset.goldens[0].additional_metadata["golden_id"] == "g1"
+
+
+
+def test_optional_tool_calls_normalization_and_redacted_sdk_mapping():
+    env = wrapper_namespace()
+    normalized = env["normalize_answer"]({
+        "answer": "The gateway rejects the request.",
+        "retrieval_context": [],
+        "tools_called": [
+            {
+                "name": "search",
+                "input_parameters": {"query": "auth"},
+                "call_id": "run123",
+                "status": "finished",
+                "duration_ms": 12.5,
+            },
+            {"name": "fetch"},
+        ],
+    })
+    assert normalized == {
+        "actual_output": "The gateway rejects the request.",
+        "retrieval_context": None,
+        "tools_called": [
+            {"name": "search", "input_parameters": {"query": "auth"},
+             "call_id": "run123", "status": "finished", "duration_ms": 12.5},
+            {"name": "fetch"},
+        ],
+    }
+    assert env["normalize_answer"]({"answer": "fine", "tools_called": []}) == {
+        "actual_output": "fine", "retrieval_context": None, "tools_called": [],
+    }
+    for bad in (
+        {"tools_called": ["search"]},
+        {"tools_called": [{"name": ""}]},
+        {"tools_called": [{"name": "search", "input_parameters": "secret"}]},
+        {"tools_called": [{"name": "search", "duration_ms": -2}]},
+        {"tools_called": [{"name": "search", "duration_ms": float("nan")}]},
+        {"tools_called": [{"name": "search", "input_parameters": {"x": object()}}]},
+    ):
+        with pytest.raises(ValueError, match="tools_called|input_parameters"):
+            env["normalize_answer"]({"answer": "fine", **bad})
+    full = notebook_text()
+    assert '"tools_called": [' in full
+    assert 'for call in result.tool_calls' in full
+    assert 'call.call_id' in full and 'call.duration_ms' in full
+    assert 'call.status' in full
+    assert 'if call.input_parameters is not None else {}' in full
+
+
+def test_tool_correctness_runs_only_for_goldens_with_expected_tools():
+    full = notebook_text()
+    assert "ToolCorrectnessMetric(" in full
+    assert "ToolCall(" in full
+    assert "golden.expected_tools is not None" in full
+    assert 'response["tools_called"] is not None' in full
+    assert "if tool_cases:" in full
+    assert 'identifier=f"rag-{agent_id}-tools"' in full
+    assert 'results["tool_cases"]' in full
+    assert '"tool_telemetry_cases"' in full
+    assert '"total_tool_calls"' in full
+    assert '"tool_error_calls"' in full
+    assert '"tool_calls_with_arguments"' in full

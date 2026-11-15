@@ -1,90 +1,155 @@
-# Native DeepEval benchmark – prompt comparisons
+# Gemeinsamer DeepEval-Benchmark mit AgentWrapper
 
-The [benchmark notebook](../benchmark.ipynb) reads the exported
-`rag-goldens/deepeval-goldens.json` **directly** through DeepEval's native
-`EvaluationDataset.add_goldens_from_json_file()`. No generator scripts are
-imported. The detailed `goldens.json` remains for auditing.
+Das [Notebook](../benchmark.ipynb) verwendet dieselben exportierten
+`rag-goldens/deepeval-goldens.json` für alle Agenten. Die Agenten werden
+**ohne DeepEval-Abhängigkeit** ausgeführt; DeepEval übernimmt danach
+ausschließlich die Bewertung der Antworten und optional der tatsächlich
+gefundenen Passagen.
 
-## Setup
+## Schnittstelle für jedes Team
 
-Install a cli-agent SDK release containing the companion
-`AgentBuilder.with_system_prompt(text)` API, then run Jupyter from the
-workspace root:
+Ein Team stellt eine importierbare Python-Klasse mit drei asynchronen
+Methoden bereit:
+
+```python
+# team_b/benchmark.py
+class TeamBWrapper:
+    def __init__(self, endpoint: str):
+        self.endpoint = endpoint
+        self.agent = None
+
+    async def start(self):
+        # Einmalig Modelle, Verbindungen und Index initialisieren.
+        self.agent = await connect(self.endpoint)
+
+    async def answer(self, question: str):
+        # Jede Frage in einer frischen Unterhaltung behandeln.
+        return await self.agent.ask_new_conversation(question)
+
+    async def close(self):
+        if self.agent is not None:
+            await self.agent.close()
+            self.agent = None
+```
+
+`answer()` gibt entweder einen nichtleeren String oder ein Dictionary
+mit `answer: str` und optional `retrieval_context: list[str]` sowie
+`tools_called: list[dict]` zurück. `retrieval_context` darf ausschließlich
+**tatsächlich abgerufene** Passagen enthalten. Eine leere Liste ist
+gültig; ohne Retrieval-Kontext werden fachliche Metriken trotzdem bewertet.
+
+Ein Tool-Eintrag enthält mindestens `name`. Weitere optionale Felder:
+`call_id`, `status`, `duration_ms` und `input_parameters` (Dictionary).
+`tools_called=None` bedeutet **nicht gemeldet**, `[]` bedeutet
+**beobachtet, aber kein Tool aufgerufen**. Parameter können Geheimnisse
+enthalten und werden im privaten Cache gespeichert. Sie sollten nur
+übergeben werden, wenn die Verwendung im Benchmark freigegeben ist.
+
+Der eingebaute `CliAgentWrapper` übernimmt Toolnamen, Status,
+Aufruf-ID und Laufzeiten aus `AgentResult.tool_calls`. Mit dem begleitenden
+`cli-agent`-SDK-PR #314 aktiviert er ausdrücklich
+`with_tool_trace(include_arguments=True)`, wodurch zusätzlich begrenzte
+und best-effort bereinigte `input_parameters` erfasst werden können.
+Tool-Outputs bleiben weiterhin ausgeschlossen. Diese Argumente können
+trotz der Redaction vertrauliche Inhalte enthalten und werden im privaten
+Benchmark-Cache gespeichert. Nutze die Option nur für freigegebene Daten.
+
+`AgentWrapper` ist ein strukturelles Python-`Protocol` zur Beschreibung
+dieser drei Methoden. **Keine Vererbung oder Import aus dem Notebook**
+ist erforderlich. Das Team ist selbst für die Unabhängigkeit aufeinander-
+folgender Fragen zuständig. Jede Frage muss ohne Konversationswissen
+aus anderen Goldens beantwortet werden.
+
+## Teilnehmer konfigurieren
+
+Die Team-Module müssen im Jupyter-Python-Environment installiert sein.
+Im Notebook genügt:
+
+```python
+AGENTS = {
+    "team-a": {
+        "entrypoint": "team_a.benchmark:TeamAWrapper",
+        "revision": "commit-a1b2c3",
+    },
+    "team-b": {
+        "entrypoint": "team_b.benchmark:TeamBWrapper",
+        "revision": "commit-d4e5f6",
+        "kwargs": {"endpoint": "http://localhost:8080"},
+    },
+}
+```
+
+`entrypoint` bezeichnet die Python-Klasse, `kwargs` ihre optionalen
+Konstruktorparameter. `create_wrapper(spec)` erzeugt **nur die Instanz**.
+Der Benchmark ruft `start()` beim ersten nicht gecachten Golden auf,
+verwendet denselben Wrapper für weitere Fragen und garantiert ein
+`close()` am Ende. Nach einem Fehler oder Timeout wird der beschädigte
+Wrapper geschlossen und vor der nächsten Frage neu aufgebaut.
+
+Der mitgelieferte Eintrag `builtin:cli-agent` ist optional und dient
+als Beispiel. Er erstellt den SDK-Agenten **einmal** beim `start()` und
+ruft `agent.reset()` vor jeder Frage auf; dabei bleiben Modell- und
+MCP-Verbindungen grundsätzlich bestehen. Andere Teams brauchen kein
+`cli-agent` zu installieren.
+
+## Bewertung
 
 ```bash
-python -m pip install --upgrade cli-agent "deepeval>=4,<5" pandas jupyterlab ipykernel
-python flow/rag/generate_goldens/scripts/export.py --workspace .
+python -m pip install "deepeval>=4,<5" pandas jupyterlab ipykernel
 jupyter lab flow/rag/generate_goldens/benchmark.ipynb
 ```
 
-## Prompt experiments
+Jupyter wird aus dem Workspace mit `rag-goldens/deepeval-goldens.json`
+gestartet. `MAX_CASES=3` testet zuerst drei Goldens;
+`MAX_CASES=None` testet alle.
 
-Configure `PROMPT_VARIANTS` in the first notebook code cell.
-Each variant contains:
+DeepEval lädt die unveränderten Referenzantworten, erstellt aus den
+Ergebnissen `LLMTestCase` und bewertet mit `evaluate()`:
+fachliche Korrektheit und Relevanz für alle erfolgreichen Antworten,
+Faithfulness/Recall/Precision/Unsicherheit nur bei vollständigem
+tatsächlichen Retrieval-Kontext, optional Stilkonformität je Team.
 
-- `system_prompt`: direct system prompt text; `None` uses the configured
-  file-based system prompt, if any
-- `style_criteria`: a short, **separate** set of intended response-style
-  requirements, evaluated only by the style judge
+Es gibt **kein** DeepEval-spezifisches Interface oder automatisches
+Tracing im Wrapper. Die Referenzantwort wird niemals an `answer()`
+übergeben.
 
-The notebook creates a **new** SDK Builder for each variant. It calls
-`with_project_config(...)` and then, if configured,
-`with_system_prompt(text)`. The latter overrides the base system prompt
-without altering mandatory tool or security instructions.
+## Bewertung von Werkzeugaufrufen
 
-All variants use **the same Goldens and unchanged expected answers**.
-For a fair comparison, fix the target model, corpus/index, judge model
-and run parameters across variants, and test all Goldens (`MAX_CASES=None`)
-once the smoke test succeeds.
+DeepEval unterstützt `ToolCorrectnessMetric`, aber nur Testfälle mit
+explizit erwarteten Werkzeugen können sinnvoll gegen ein Soll bewertet
+werden. Unsere generierten Goldens enthalten bisher **keine**
+`expected_tools`. Das Notebook speichert und zählt `tools_called`
+dennoch, führt `ToolCorrectnessMetric` aber nur aus, wenn sowohl
+beobachtete Aufrufe als auch `golden.expected_tools` vorhanden sind.
+Mit `TOOL_COMPARE_ARGUMENTS=True` werden zusätzlich die Argumente
+verglichen; dies setzt entsprechende tatsächlich verfügbare, freigegebene
+Argumente auf beiden Seiten voraus.
 
-## Separate evaluation dimensions
+Die Vergleichstabelle führt `tool_telemetry_cases`,
+`total_tool_calls`, `tool_error_calls`,
+`tool_calls_with_arguments` und `tool_correctness_cases` auf.
+Unterschiedliche Agenten können völlig verschiedene technische Tools
+verwenden. Vorgeschriebene Toolnamen sind daher nur fair, wenn sie auf
+alle Teilnehmer anwendbar sind.
 
-**Factual quality**: fixed-reference G-Eval answer correctness and DeepEval
-answer relevancy are directly comparable across prompt variants because
-they use one shared rubric and identical Goldens.
+## Fairness, Fehler und Caching
 
-**Grounding and uncertainty**: DeepEval faithfulness/contextual recall/
-precision and a separate uncertainty-calibration G-Eval are run **only**
-when the SDK returned verified, complete selected Knowledge passages.
-This judge checks for unsupported confident assertions and unwarranted
-refusals based on the passages available to the agent; this is a proxy,
-not a proof that every document relevant to the question was available.
-Cases without verified context are marked as *not assessed*; do not
-interpret missing scores as zero or success. Compare case counts too.
+- Alle Teams verwenden dieselben Goldens, identische Judge-Metriken,
+  dieselbe Judge-Modellkonfiguration und einen festgelegten Korpusstand
+- Der Benchmark zeigt die Zahl erfolgreich beantworteter Goldens und
+  fehlgeschlagener Fragen; Durchschnittswerte mit unterschiedlicher
+  Abdeckung sind nur eingeschränkt vergleichbar
+- Ergebnisse werden pro Agent-ID, Modul, Revision, `kwargs`, Golden und
+  `CACHE_EPOCH` getrennt gecacht. Für den eingebauten SDK-Wrapper
+  werden zusätzlich Konfigurationsdateien berücksichtigt
+- Nach einer Änderung von Agent, Prompt, Index oder Modell die Revision
+  bzw. `CACHE_EPOCH` ändern oder `FRESH_RESPONSES=True` setzen
+- Das Speichern erfolgt atomar mit privaten Dateirechten.
+  `FRESH_EVALUATION=True` deaktiviert unabhängig davon das
+  DeepEval-Judge-Cache-Replay
+- Bei Sync-Frameworks sollte der Wrapper die Aufrufe selbst asynchron
+  kapseln. Async-Cancellation muss bei laufenden Modellaufrufen sauber
+  abgewickelt werden
 
-**Style compliance**: a variant-specific G-Eval assesses whether the response
-matches its style criteria. Different style rubrics have different targets,
-so those scores cannot be ranked as a single apples-to-apples quality metric.
-They should be interpreted alongside the common factual scores.
-
-DeepEval handles judge caching, concurrency and detailed reports. The last
-cell displays a summary table with metric means, counted evaluations/errors,
-and retrieval-case coverage. Inspect individual judge reasons before
-drawing conclusions about small differences.
-
-## SDK target and judge
-
-The target uses the normal CLI-agent SDK project/admin settings.
-`with_system_prompt(text)` passes a direct override to the SDK worker,
-not a file name. In the SDK Builder, the last explicit system prompt wins:
-a subsequent file-backed `with_project_config` may replace an earlier
-inline prompt. `build_deepeval_target()` snapshots the Builder.
-
-The **judge** uses an independent OpenAI, OpenRouter or Ollama model.
-The reference answer is supplied only to DeepEval, never to cli-agent.
-The judge can receive actual selected passages; use only approved models/
-providers for your content.
-
-## Caching and privacy
-
-Successful target responses are stored in `rag-goldens/evaluation/responses/`
-with atomic owner-only files (mode 0600 where supported).
-Their cache key includes variant ID, inline prompt, effective project/admin
-files, configured file-based prompt, Golden input/reference, workspace and
-`CACHE_EPOCH`. The workspace `.cli-agent/project.toml` is **not**
-automatically used by SDK runs. If the live RAG index, files, model weights
-or external tools change, set `FRESH_SDK=True` or update `CACHE_EPOCH`.
-
-DeepEval metric caching is separate and can be disabled using
-`FRESH_EVALUATION=True`. Response files and DeepEval reports may contain
-sensitive information and must not be committed or shared without review.
+Antwort-Caches und Judge-Reports können vertrauliche Daten enthalten.
+Sie gehören nicht in die Versionsverwaltung.
