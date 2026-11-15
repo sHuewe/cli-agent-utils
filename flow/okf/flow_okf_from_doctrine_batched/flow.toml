@@ -31,10 +31,12 @@ exclude_names = ["index.md"]
 max_entries = 10000
 stable_slugs = true
 
+# Keep the original Golden step ID: compact child checkpoint identity includes
+# the full parent invocation namespace, not just the checkpoint filename.
 # Exact Golden subflow; unchanged scan/profile checkpoints are reused.
 # NOTE: Golden topic profiles are navigation hints, NOT complete OKF coverage.
 [[steps]]
-id = "golden_profiles"
+id = "analyze_documents"
 flow = "flow/rag/generate_goldens/flows/analyze-document.toml"
 foreach = "steps.inventory.output.files"
 iteration_id = "${item.slug}"

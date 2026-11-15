@@ -25,7 +25,7 @@ Input: `[vars].doctrine_path = "doctrines"` by default. Output:
 The new root `inventory` step matches Golden's inventory definition exactly
 and reuses its original `rag-goldens/state/source-inventory.json` output.
 It invokes the **original** `flow/rag/generate_goldens/flows/analyze-document.toml`
-subflow, without modification or copies, sharing the per-document checkpoints
+subflow under the original parent step ID `analyze_documents` (NOT `golden_profiles`). Compact completion-marker identities contain that parent namespace; changing the ID invalidates the marker lookup even when output JSON paths are identical. No copies are needed, and the per-document checkpoints are shared
 at their original `rag-goldens/state/docs/<slug>/` paths.
 
 Golden profiles serve as existing complementary analyses; they cannot
