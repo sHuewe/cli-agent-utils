@@ -62,6 +62,50 @@ cell displays a summary table with metric means, counted evaluations/errors,
 and retrieval-case coverage. Inspect individual judge reasons before
 drawing conclusions about small differences.
 
+## Replaceable target factory
+
+The notebook defines `create_target(variant_id, variant) -> TargetSpec`.
+The returned `TargetSpec.target` is a `BenchmarkTarget`: an object with
+
+```python
+async def ask(question: str, *, expected_output: str,
+              cached_response: Mapping | None = None) -> dict:
+    # Return {"actual_output": str, "knowledge_trace": dict | None}
+    ...
+```
+
+`TargetSpec.cache_identity` is a **nonempty stable identifier** of the
+target's actual configuration (including agent type, model, prompt, and any
+other state that affects responses). The benchmark uses it to separate
+response checkpoints; change it when the target changes, or set
+`FRESH_SDK=True` after untracked external changes.
+
+The default target is `cli_agent.sdk.deepeval_adapter.DeepEvalTarget`,
+**not** a raw SDK `Agent`. It wraps `AgentBuilder.build()`, initializes
+a **fresh** agent per noncached question, traces it through DeepEval, and
+keeps the reference answer out of the target prompt.
+
+To swap the agent, change only `create_target()`. Example for an agent
+with the SDK-like `async with agent` and `agent.ask(question)` protocol
+returning `.answer` and `.knowledge_trace`:
+
+```python
+from cli_agent.sdk.deepeval_adapter import DeepEvalTarget
+
+def create_target(variant_id, variant) -> TargetSpec:
+    return TargetSpec(
+        target=DeepEvalTarget(lambda: MyAlternativeAgent(...)),
+        cache_identity="my-other-agent-v1:" + stable_configuration_hash,
+    )
+```
+
+Alternatively return any other adapter implementing `BenchmarkTarget.ask()`
+directly; it is then responsible for tracing expected output within DeepEval's
+active evaluation context and for safe cache replay. The Golden's
+`expected_output` must **never** be forwarded to the answering agent.
+The rest of the notebook (iteration, checkpoints, judge and score table)
+does not depend on cli-agent SDK internals.
+
 ## SDK target and judge
 
 The target uses the normal CLI-agent SDK project/admin settings.

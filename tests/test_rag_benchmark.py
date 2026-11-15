@@ -152,3 +152,67 @@ def test_prompt_variant_cache_separation_and_config_order():
     assert 'os.chmod(tmp, 0o600)' in code
     assert 'os.replace(tmp, checkpoint)' in code
     assert 'FRESH_SDK' in code and 'FRESH_EVALUATION' in code
+
+
+
+def test_target_factory_contract_and_single_injection_point():
+    notebook_cells = notebook()["cells"]
+    code_cells = ["".join(c["source"]) for c in notebook_cells
+                  if c["cell_type"] == "code"]
+    factory_cells = [s for s in code_cells if "def create_target(" in s]
+    assert len(factory_cells) == 1
+    factory = factory_cells[0]
+    assert "class BenchmarkTarget(Protocol):" in factory
+    assert "class TargetSpec:" in factory
+    assert "target: BenchmarkTarget" in factory
+    assert "cache_identity: str" in factory
+    assert 'target=builder.build_deepeval_target(include_knowledge_content=True)' in factory
+    assert 'cache_identity="cli-agent-sdk:" + effective_config_hash(prompt_text)' in factory
+    # The experiment loop cannot depend on the SDK Builder: one return
+    # value from create_target provides the implementation and cache identity.
+    execution = next(s for s in code_cells if "for golden in dataset.evals_iterator(" in s)
+    assert "target_spec = create_target(variant_id, variant)" in execution
+    assert "target = target_spec.target" in execution
+    assert "fingerprint = target_spec.cache_identity" in execution
+    assert "AgentBuilder(" not in execution
+    assert "with_project_config(" not in execution
+    assert "with_system_prompt(" not in execution
+    assert "await target.ask(" in execution
+    assert "cached_response=cached" in execution
+
+
+def test_factory_can_produce_alternative_implementation_without_sdk_builder(monkeypatch):
+    """Execute actual factory definition with stubbed external SDK dependencies."""
+    import sys
+    import types
+    from dataclasses import dataclass
+    from typing import Protocol
+
+    factory = next("".join(c["source"]) for c in notebook()["cells"]
+                   if c["cell_type"] == "code"
+                   and "def create_target(" in "".join(c["source"]))
+    fake_sdk_module = types.ModuleType("cli_agent.sdk.deepeval_adapter")
+    fake_sdk_module.DeepEvalTarget = type("FakeDeepEvalTarget", (), {})
+    monkeypatch.setitem(sys.modules, "cli_agent.sdk.deepeval_adapter", fake_sdk_module)
+
+    env = {
+        "dataclass": dataclass,
+        "Protocol": Protocol,
+        "AgentBuilder": object,  # must not be called for other agents
+        "effective_config_hash": lambda _: "default-hash",
+    }
+    exec(compile(factory, "<benchmark-target-factory>", "exec"), env)
+    TargetSpec = env["TargetSpec"]
+
+    class OtherTarget:
+        async def ask(self, question, *, expected_output, cached_response=None):
+            # Only question goes to the underlying agent implementation;
+            # reference remains outside the model call.
+            return {"actual_output": question.upper(), "knowledge_trace": None}
+
+    def alternate_factory(variant_id, variant):
+        return TargetSpec(OtherTarget(), "other-v1:" + variant_id)
+
+    spec = alternate_factory("concise", {"system_prompt": "anything"})
+    assert spec.cache_identity == "other-v1:concise"
+    assert hasattr(spec.target, "ask")
