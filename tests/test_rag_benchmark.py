@@ -80,8 +80,9 @@ def test_wrapper_protocol_and_factory_has_no_deepeval_dependency():
     )
     assert 'if entrypoint == "builtin:cli-agent":' not in code
     assert "wrapper_class = getattr(importlib.import_module(module_name), class_name)" in code
-    assert "async def start(self)" in code
-    assert "async def close(self)" in code
+    # Lifecycle method implementations live in imported modules, not here.
+    assert "async def start(self) -> None:" in code
+    assert "async def close(self) -> None:" in code
     assert 'target.ask(' not in code
 
 
