@@ -5,7 +5,7 @@ result = "steps.final_reports.output"
 # Input is the per-module manifest INVENTORY. No whole document aggregation.
 [[steps]]
 id = "profile_batches"
-output = "okf-batched/state/global/profile-batches.json"
+output = "okf-batched/state-v2/global/profile-batches.json"
 overwrite_output = false
 [steps.json_operation]
 kind = "batch_arrays"
@@ -23,7 +23,7 @@ id = "candidates"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
 foreach = "steps.profile_batches.output.batches"
 iteration_id = "${item.id}"
-output = "okf-batched/state/global/candidates-${iteration.id}.json"
+output = "okf-batched/state-v2/global/candidates-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
@@ -44,7 +44,7 @@ id = "reduce1"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
 foreach = "steps.batch_reduce1.output.batches"
 iteration_id = "${item.id}"
-output = "okf-batched/state/global/reduce1-${iteration.id}.json"
+output = "okf-batched/state-v2/global/reduce1-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
@@ -65,7 +65,7 @@ id = "reduce2"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
 foreach = "steps.batch_reduce2.output.batches"
 iteration_id = "${item.id}"
-output = "okf-batched/state/global/reduce2-${iteration.id}.json"
+output = "okf-batched/state-v2/global/reduce2-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
@@ -86,7 +86,7 @@ id = "reduce3"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
 foreach = "steps.batch_reduce3.output.batches"
 iteration_id = "${item.id}"
-output = "okf-batched/state/global/reduce3-${iteration.id}.json"
+output = "okf-batched/state-v2/global/reduce3-${iteration.id}.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"
@@ -96,22 +96,16 @@ stage = "reduce3"
 
 [[steps]]
 id = "batch_registry"
-flow = "flow/okf/flow_okf_from_doctrine_batched/flows/batch-global.toml"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/batch-registry.toml"
 [steps.input]
 previous_batches = "${steps.batch_reduce3.output.batches}"
-stage = "reduce3"
-next_stage = "registry"
 
 [[steps]]
 id = "registry"
-prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/08_registry.md"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/registry-shard.toml"
 foreach = "steps.batch_registry.output.batches"
 iteration_id = "${item.id}"
-output = "okf-batched/state/global/registry-${iteration.id}.json"
-overwrite_output = false
-workspace_access = "none"
-response_format = "json"
-[steps.vars]
+[steps.input]
 batch = "${item}"
 
 # A registry shard remains separate. Never construct one giant registry.
@@ -128,7 +122,7 @@ okf_root = "${input.okf_root}"
 [[steps]]
 id = "root_index"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/11_root_index.md"
-output = "okf-batched/state/global/root-index.json"
+output = "okf-batched/state-v2/global/root-index.json"
 overwrite_output = false
 workspace_access = "write"
 response_format = "json"

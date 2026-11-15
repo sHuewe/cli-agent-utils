@@ -1,12 +1,12 @@
 version = 1
 inputs = ["source", "concept", "okf_root"]
-result = "steps.repair.output"
+result = "steps.manifest.output"
 
 [[steps]]
 id = "build"
 prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/08_build_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "okf-batched/state/docs/${input.source.slug}/concept-${input.concept.id}-build.json"
+output = "okf-batched/state-v2/docs/${input.source.slug}/concept-${input.concept.id}-build.json"
 overwrite_output = false
 workspace_access = "write"
 response_format = "json"
@@ -19,7 +19,7 @@ okf_root = "${input.okf_root}"
 id = "verify"
 prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/09_verify_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "okf-batched/state/docs/${input.source.slug}/concept-${input.concept.id}-verify.json"
+output = "okf-batched/state-v2/docs/${input.source.slug}/concept-${input.concept.id}-verify.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -32,7 +32,7 @@ okf_root = "${input.okf_root}"
 id = "repair"
 prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/10_repair_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
-output = "okf-batched/state/docs/${input.source.slug}/concept-${input.concept.id}-repair.json"
+output = "okf-batched/state-v2/docs/${input.source.slug}/concept-${input.concept.id}-repair.json"
 overwrite_output = false
 workspace_access = "write"
 response_format = "json"
@@ -41,4 +41,17 @@ approve_tools = ["os__write_file"]
 concept = "${input.concept}"
 verification = "${steps.verify.output}"
 okf_root = "${input.okf_root}"
+
+# A very short per-CONCEPT semantic profile for bounded global matching.
+[[steps]]
+id = "manifest"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/04_concept_manifest.md"
+output = "okf-batched/state-v2/docs/${input.source.slug}/manifests/concept-${input.concept.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+concept = "${input.concept}"
+repair = "${steps.repair.output}"
 

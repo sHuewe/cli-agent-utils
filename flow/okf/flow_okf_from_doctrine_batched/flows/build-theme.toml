@@ -5,7 +5,7 @@ result = "steps.verify.output"
 [[steps]]
 id = "write"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/09_theme.md"
-output = "okf-batched/state/global/theme-${input.theme.id}-write.json"
+output = "okf-batched/state-v2/global/theme-${input.theme.id}-write.json"
 overwrite_output = false
 workspace_access = "write"
 response_format = "json"
@@ -17,7 +17,7 @@ okf_root = "${input.okf_root}"
 [[steps]]
 id = "verify"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/10_verify_theme.md"
-output = "okf-batched/state/global/theme-${input.theme.id}-verify.json"
+output = "okf-batched/state-v2/global/theme-${input.theme.id}-verify.json"
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
@@ -25,4 +25,3 @@ response_format = "json"
 theme = "${input.theme}"
 write = "${steps.write.output}"
 okf_root = "${input.okf_root}"
-

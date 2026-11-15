@@ -1,7 +1,7 @@
 # Audit ONE bounded global registry shard, independently
 
 Registry shard ID: {{var:batch_id}}
-Registry object: {{var:registry}}
+DETERMINISTICALLY VALIDATED Registry object: {{var:registry}}
 Per-theme verification results: {{var:theme_results}}
 
 No tools. Verify each registry theme has exactly one corresponding

@@ -1,0 +1,157 @@
+version = 1
+inputs = ["source", "scan_tasks", "okf_root"]
+result = "steps.manifest_inventory.output"
+
+# This operation checks all section scans, including full normative and
+# descriptive sweeps, before allowing planning. It is deterministic.
+[[steps]]
+id = "outline"
+output = "okf-batched/state-v2/docs/${input.source.slug}/outline.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "assemble_okf_outline"
+input = "scans"
+expected_source_path = "${input.source.path}"
+expected_source_slug = "${input.source.slug}"
+[steps.json_inputs.scans]
+iterate = "input.scan_tasks.tasks[]"
+path = "okf-batched/state-v2/docs/${input.source.slug}/scan-${each.id}.json"
+[steps.json_inputs.sections]
+path = "okf-batched/state-v2/docs/${input.source.slug}/sections.json"
+
+[[steps]]
+id = "taxonomy_profile"
+output = "okf-batched/state-v2/docs/${input.source.slug}/taxonomy-profile.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "doctrine_taxonomy_profile"
+input = "outline"
+[steps.json_inputs.outline]
+path = "okf-batched/state-v2/docs/${input.source.slug}/outline.json"
+
+[[steps]]
+id = "taxonomy"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/02_taxonomy.md"
+output = "okf-batched/state-v2/docs/${input.source.slug}/taxonomy.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+profile = "${steps.taxonomy_profile.output}"
+
+# Existing deterministic semantic-neighbor grouping from cli-agent:
+# no entire doctrine in an LLM request, just 6 compact topic summaries.
+[[steps]]
+id = "consolidation_batches"
+output = "okf-batched/state-v2/docs/${input.source.slug}/consolidation-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "prepare_doctrine_consolidation"
+input = "outline"
+batch_size = 6
+[steps.json_inputs.outline]
+path = "okf-batched/state-v2/docs/${input.source.slug}/outline.json"
+[steps.json_inputs.taxonomy]
+path = "okf-batched/state-v2/docs/${input.source.slug}/taxonomy.json"
+
+[[steps]]
+id = "consolidate"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/03_consolidate.md"
+foreach = "steps.consolidation_batches.output.batches"
+iteration_id = "${item.id}"
+output = "okf-batched/state-v2/docs/${input.source.slug}/consolidation-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${item}"
+
+# Validates exact one-to-one membership of every original topic candidate.
+[[steps]]
+id = "consolidated"
+output = "okf-batched/state-v2/docs/${input.source.slug}/consolidated.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "assemble_doctrine_consolidation"
+input = "outline"
+results_step = "consolidate"
+batches_step = "consolidation_batches"
+[steps.json_inputs.outline]
+path = "okf-batched/state-v2/docs/${input.source.slug}/outline.json"
+[steps.json_inputs.taxonomy]
+path = "okf-batched/state-v2/docs/${input.source.slug}/taxonomy.json"
+
+# Deterministically map original knowledge items onto consolidated topics.
+# Existing group_items creates bounded concept parts without losing items.
+[[steps]]
+id = "group"
+output = "okf-batched/state-v2/docs/${input.source.slug}/group.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "group_consolidated_items"
+input = "scans"
+max_concept_bytes = 12000
+[steps.json_inputs.scans]
+iterate = "input.scan_tasks.tasks[]"
+path = "okf-batched/state-v2/docs/${input.source.slug}/scan-${each.id}.json"
+[steps.json_inputs.sections]
+path = "okf-batched/state-v2/docs/${input.source.slug}/sections.json"
+[steps.json_inputs.consolidated]
+path = "okf-batched/state-v2/docs/${input.source.slug}/consolidated.json"
+
+[[steps]]
+id = "build_concepts"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/build-concept.toml"
+foreach = "steps.group.output.concepts"
+iteration_id = "${item.id}"
+[steps.input]
+source = "${input.source}"
+concept = "${item}"
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "coverage"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/verify-document.toml"
+[steps.input]
+source = "${input.source}"
+concepts = "${steps.group.output.concepts}"
+
+# A compact coverage manifest is consumed by the global reduction alongside
+# concept manifests; incomplete source coverage is never invisible.
+[[steps]]
+id = "coverage_manifest"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/05_coverage_manifest.md"
+output = "okf-batched/state-v2/docs/${input.source.slug}/manifests/coverage.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+coverage = "${steps.coverage.output}"
+
+[[steps]]
+id = "manifest_inventory"
+output = "okf-batched/state-v2/docs/${input.source.slug}/manifest-inventory.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "inventory"
+directory = "okf-batched/state-v2/docs/${input.source.slug}/manifests"
+recursive = false
+extensions = [".json"]
+max_entries = 1000
+
+[[steps]]
+id = "module_index"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/06_module_index.md"
+output = "okf-batched/state-v2/docs/${input.source.slug}/module-index.json"
+overwrite_output = false
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__make_directory", "os__write_file"]
+[steps.vars]
+source = "${input.source}"
+okf_root = "${input.okf_root}"
+coverage = "${steps.coverage.output}"
+manifest_inventory = "${steps.manifest_inventory.output}"
+

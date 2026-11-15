@@ -1,12 +1,12 @@
 version = 1
 inputs = ["source", "okf_root"]
-# Output is the compact JSON file inventory; the index writer executes
-# afterwards and is a dependency for complete module navigation.
-result = "steps.manifest_inventory.output"
+result = "steps.finish.output"
 
+# New state namespace: section->concept planning changed fundamentally.
+# Golden checkpoints are separate and deliberately unaffected.
 [[steps]]
 id = "sections"
-output = "okf-batched/state/docs/${input.source.slug}/sections.json"
+output = "okf-batched/state-v2/docs/${input.source.slug}/sections.json"
 overwrite_output = false
 [steps.filesystem_operation]
 kind = "markdown_sections"
@@ -14,48 +14,39 @@ source_path = "${input.source.path}"
 target_chars = 5000
 max_sections = 512
 
+# Uniform deterministic tasks, including a single direct task for short docs.
 [[steps]]
-id = "direct"
-when = { ref = "steps.sections.output.mode", eq = "direct" }
-flow = "flow/okf/flow_okf_from_doctrine_batched/flows/process-section.toml"
-[steps.input]
-source = "${input.source}"
-section = "null"
-section_id = "direct"
-okf_root = "${input.okf_root}"
-
-[[steps]]
-id = "sections_flow"
-flow = "flow/okf/flow_okf_from_doctrine_batched/flows/process-section.toml"
-foreach = "steps.sections.output.sections"
-iteration_id = "${item.id}"
-[steps.input]
-source = "${input.source}"
-section = "${item}"
-section_id = "${item.id}"
-okf_root = "${input.okf_root}"
-
-[[steps]]
-id = "manifest_inventory"
-output = "okf-batched/state/docs/${input.source.slug}/manifest-inventory.json"
-overwrite_output = true
-[steps.filesystem_operation]
-kind = "inventory"
-directory = "okf-batched/state/docs/${input.source.slug}/manifests"
-recursive = false
-extensions = [".json"]
-max_entries = 1000
-
-[[steps]]
-id = "module_index"
-prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/06_module_index.md"
-output = "okf-batched/state/docs/${input.source.slug}/module-index.json"
+id = "scan_tasks"
+output = "okf-batched/state-v2/docs/${input.source.slug}/scan-tasks.json"
 overwrite_output = false
-workspace_access = "write"
+[steps.json_operation]
+kind = "prepare_okf_scan_tasks"
+input = "sections"
+[steps.json_inputs.sections]
+path = "okf-batched/state-v2/docs/${input.source.slug}/sections.json"
+
+# NO knowledge concepts are written during scanning.
+[[steps]]
+id = "scan"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/01_scan.md"
+foreach = "steps.scan_tasks.output.tasks"
+iteration_id = "${item.id}"
+json_restart_attempts = 1
+output = "okf-batched/state-v2/docs/${input.source.slug}/scan-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
 response_format = "json"
-approve_tools = ["os__make_directory","os__write_file"]
 [steps.vars]
 source = "${input.source}"
+task = "${item}"
+
+# Document-wide semantic consolidation runs AFTER all complete scans,
+# and before any concept is written.
+[[steps]]
+id = "finish"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/finish-document.toml"
+[steps.input]
+source = "${input.source}"
+scan_tasks = "${steps.scan_tasks.output}"
 okf_root = "${input.okf_root}"
-manifest_inventory = "${steps.manifest_inventory.output}"
 

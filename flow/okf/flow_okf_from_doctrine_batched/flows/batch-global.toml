@@ -4,7 +4,7 @@ result = "steps.batch.output"
 
 [[steps]]
 id = "batch"
-output = "okf-batched/state/global/batch-${input.next_stage}.json"
+output = "okf-batched/state-v2/global/batch-${input.next_stage}.json"
 overwrite_output = false
 [steps.json_operation]
 kind = "batch_arrays"
@@ -15,4 +15,4 @@ target_fragment_bytes = 2500
 max_batch_bytes = 8000
 [steps.json_inputs.summaries]
 iterate = "input.previous_batches[]"
-path = "okf-batched/state/global/${input.stage}-${each.id}.json"
+path = "okf-batched/state-v2/global/${input.stage}-${each.id}.json"

@@ -5,7 +5,7 @@ result = "steps.result.output"
 [[steps]]
 id = "result"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/13_final_audit.md"
-output = "okf-batched/state/global/final-report-${input.batch_id}.json"
+output = "okf-batched/state-v2/global/final-report-${input.batch_id}.json"
 overwrite_output = false
 workspace_access = "none"
 response_format = "json"

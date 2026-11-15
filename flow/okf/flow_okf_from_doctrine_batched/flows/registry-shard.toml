@@ -1,0 +1,25 @@
+version = 1
+inputs = ["batch"]
+result = "steps.validate.output"
+
+[[steps]]
+id = "registry"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/08_registry.md"
+output = "okf-batched/state-v2/global/registry-${input.batch.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${input.batch}"
+
+# Reject omitted eligible groups, invented members, duplicate refs and
+# discarded singleton groups deterministically before writing any theme.
+[[steps]]
+id = "validate"
+output = "okf-batched/state-v2/global/validated-registry-${input.batch.id}.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "validate_theme_registry"
+input = "registry"
+[steps.json_inputs.registry]
+path = "okf-batched/state-v2/global/registry-${input.batch.id}.json"
