@@ -14,6 +14,10 @@ batch = "${input.batch}"
 
 # Generic, fail-closed ID and membership-set partition validation.
 # Every OKF-specific selector and eligibility threshold is defined here.
+# IMPORTANT: source_input references this subflow's declared input.batch
+# (supplied by global-topics.toml's [steps.input]), NOT a json_inputs key.
+# The runner reads flow_input[operation["source_input"]] independently of
+# json_inputs.registry, which supplies the LLM-generated registry result.
 [[steps]]
 id = "validate"
 output = "okf-batched/state-v3/global/validated-registry-${input.batch.id}.json"
