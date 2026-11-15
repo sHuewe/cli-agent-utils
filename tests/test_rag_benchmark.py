@@ -74,15 +74,25 @@ def test_separate_judge_and_cache_fingerprint_includes_prompt_file():
     assert 'JUDGE_PROVIDER = "openrouter"' in code
     assert 'JUDGE_MODEL = "openai/gpt-4.1"' in code
     assert 'OpenRouterModel(model=JUDGE_MODEL' in code
-    assert 'OpenAIModel(model=JUDGE_MODEL' in code
-    assert 'OllamaModel(model=JUDGE_MODEL' in code
-    assert 'tomllib.loads(override.read_text' in code
-    assert 'files.append(WORKSPACE / ".cli-agent" / prompt_name)' in code
+    assert 'judge = OpenAIModel(' in code
+    assert 'judge = OllamaModel(' in code
+    assert 'model=JUDGE_MODEL' in code
+    assert 'effective_config_hash(prompt_text)' in code
+    assert 'files.append(WORKSPACE / ".cli-agent" / filename)' in code
+    assert 'builder.with_system_prompt(prompt_text)' in code
+    assert 'PROMPT_VARIANTS = {' in code
+    assert 'all_responses[variant_id]' in code
+    assert 'identifier=f"rag-{variant_id}-answer"' in code
+    assert 'identifier=f"rag-{variant_id}-retrieval"' in code
+    assert 'name="Style compliance"' in code
+    assert 'name="Uncertainty calibration"' in code
+    assert 'SingleTurnParams.RETRIEVAL_CONTEXT' in code
+    assert 'CACHE_EPOCH' in code
     assert 'CACHE_EPOCH' in code
     assert 'cached_response=cached' in code
     assert 'default_admin_config_file()' in code
-    assert 'os.chmod(temp_name, 0o600)' in code
-    assert 'os.replace(temp_name, checkpoint)' in code
+    assert 'os.chmod(tmp, 0o600)' in code
+    assert 'os.replace(tmp, checkpoint)' in code
     assert 'tempfile.NamedTemporaryFile(' in code
     assert 'CacheConfig(use_cache=not FRESH_EVALUATION' in code
 
@@ -108,3 +118,37 @@ def test_native_dataset_loader_on_real_deepeval_when_available(tmp_path):
     assert ds.goldens[0].input == payload[0]["input"]
     assert ds.goldens[0].expected_output == payload[0]["expected_output"]
     assert ds.goldens[0].additional_metadata == payload[0]["additional_metadata"]
+
+
+
+def test_prompt_comparison_uses_same_reference_and_independent_score_dimensions():
+    code = "\n".join(notebook_sources())
+    # All variants reuse one dataset and its fixed expected_output. The
+    # experiment must never rewrite reference answers per response style.
+    assert "dataset.add_goldens_from_json_file(str(GOLDENS_FILE))" in code
+    assert "expected_output=golden.expected_output" in code
+    assert 'name="Answer correctness"' in code
+    assert 'name="Style compliance"' in code
+    assert 'name="Uncertainty calibration"' in code
+    assert 'if retrieval_cases:' in code
+    assert 'trace.get("content_included") is True' in code
+    assert 'trace.get("truncated") is not True' in code
+    assert "metric.error or metric.score is None" in code
+    assert 'metric.name.removesuffix(" [GEval]")' in code
+    assert '"retrieval_cases": outputs["retrieval_case_count"]' in code
+
+
+def test_prompt_variant_cache_separation_and_config_order():
+    code = "\n".join(notebook_sources())
+    assert 'for variant_id, variant in PROMPT_VARIANTS.items():' in code
+    assert 'builder.with_project_config(' in code
+    assert 'builder.with_system_prompt(prompt_text)' in code
+    assert code.index("builder.with_project_config(") < code.index(
+        "builder.with_system_prompt(prompt_text)"
+    )
+    assert '[variant_id, fingerprint, golden_id, golden.input, golden.expected_output]' in code
+    assert 'prompt_text": prompt_text' in code
+    assert 'cache_epoch": CACHE_EPOCH' in code
+    assert 'os.chmod(tmp, 0o600)' in code
+    assert 'os.replace(tmp, checkpoint)' in code
+    assert 'FRESH_SDK' in code and 'FRESH_EVALUATION' in code
