@@ -121,7 +121,10 @@ def test_team_wrapper_lifecycle_and_question_only(monkeypatch):
 
     answer = asyncio.run(run())
     assert calls == [("start", "model-x"), ("answer", "Q1"), ("close", "model-x")]
-    assert answer == {"actual_output": "Q1", "retrieval_context": ["selected passage"]}
+    assert answer == {
+        "actual_output": "Q1", "retrieval_context": ["selected passage"],
+        "tools_called": None,
+    }
 
 
 def test_built_in_retrieval_validation():
@@ -152,10 +155,12 @@ def test_wrapper_validation_and_missing_methods(monkeypatch):
     assert env["normalize_answer"]({"answer": "ok", "retrieval_context": []}) == {
         "actual_output": "ok",
         "retrieval_context": None,
+        "tools_called": None,
     }
     assert env["normalize_answer"]({"answer": "ok", "retrieval_context": None}) == {
         "actual_output": "ok",
         "retrieval_context": None,
+        "tools_called": None,
     }
 
     module = types.ModuleType("fake_wrapper")
@@ -214,3 +219,65 @@ def test_deepeval_native_json_loader_if_available(tmp_path):
     dataset = deepeval.EvaluationDataset()
     dataset.add_goldens_from_json_file(str(file))
     assert dataset.goldens[0].additional_metadata["golden_id"] == "g1"
+
+
+
+def test_optional_tool_calls_normalization_and_redacted_sdk_mapping():
+    env = wrapper_namespace()
+    normalized = env["normalize_answer"]({
+        "answer": "The gateway rejects the request.",
+        "retrieval_context": [],
+        "tools_called": [
+            {
+                "name": "search",
+                "input_parameters": {"query": "auth"},
+                "call_id": "run123",
+                "status": "finished",
+                "duration_ms": 12.5,
+            },
+            {"name": "fetch"},
+        ],
+    })
+    assert normalized == {
+        "actual_output": "The gateway rejects the request.",
+        "retrieval_context": None,
+        "tools_called": [
+            {"name": "search", "input_parameters": {"query": "auth"},
+             "call_id": "run123", "status": "finished", "duration_ms": 12.5},
+            {"name": "fetch"},
+        ],
+    }
+    assert env["normalize_answer"]({"answer": "fine", "tools_called": []}) == {
+        "actual_output": "fine", "retrieval_context": None, "tools_called": [],
+    }
+    for bad in (
+        {"tools_called": ["search"]},
+        {"tools_called": [{"name": ""}]},
+        {"tools_called": [{"name": "search", "input_parameters": "secret"}]},
+        {"tools_called": [{"name": "search", "duration_ms": -2}]},
+        {"tools_called": [{"name": "search", "duration_ms": float("nan")}]},
+        {"tools_called": [{"name": "search", "input_parameters": {"x": object()}}]},
+    ):
+        with pytest.raises(ValueError, match="tools_called|input_parameters"):
+            env["normalize_answer"]({"answer": "fine", **bad})
+    full = notebook_text()
+    assert '"tools_called": [' in full
+    assert 'for call in result.tool_calls' in full
+    assert 'call.call_id' in full and 'call.duration_ms' in full
+    assert 'call.status' in full
+    assert "call.input_parameters" not in full
+
+
+def test_tool_correctness_runs_only_for_goldens_with_expected_tools():
+    full = notebook_text()
+    assert "ToolCorrectnessMetric(" in full
+    assert "ToolCall(" in full
+    assert "golden.expected_tools is not None" in full
+    assert 'response["tools_called"] is not None' in full
+    assert "if tool_cases:" in full
+    assert 'identifier=f"rag-{agent_id}-tools"' in full
+    assert 'results["tool_cases"]' in full
+    assert '"tool_telemetry_cases"' in full
+    assert '"total_tool_calls"' in full
+    assert '"tool_error_calls"' in full
+    assert '"tool_calls_with_arguments"' in full
