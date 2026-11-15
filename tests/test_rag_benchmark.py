@@ -380,12 +380,34 @@ def test_cli_agent_wrapper_lifecycle_and_trace_passthrough(monkeypatch, tmp_path
     sdk_module = types.ModuleType("cli_agent.sdk")
     sdk_module.AgentBuilder = FakeBuilder
     config_module = types.ModuleType("cli_agent.settings.config")
+    from dataclasses import dataclass
+
+    @dataclass
+    class OkfConfig:
+        repository: str
+        required: bool = True
+
+    @dataclass
+    class VectorKnowledgeConfig:
+        mode: str = "okf"
+        database: str = "knowledge.sqlite"
+        provider: str = "ollama"
+        model: str = "embeddinggemma"
+        base_url: str = "http://localhost:11434"
+        required: bool = True
+
+    config_module.OkfConfig = OkfConfig
+    config_module.VectorKnowledgeConfig = VectorKnowledgeConfig
     config_module.ensure_default_config_file = lambda: tmp_path / "config.toml"
     monkeypatch.setitem(sys.modules, "cli_agent.sdk", sdk_module)
     monkeypatch.setitem(sys.modules, "cli_agent.settings.config", config_module)
 
     module = importlib.import_module("flow.rag.generate_goldens.cli_agent_wrapper")
     wrapper = module.CliAgentWrapper(
+        okf={"repository": str(tmp_path / "knowledge"), "required": False},
+        rag={"mode": "okf", "database": "knowledge.sqlite",
+             "provider": "ollama", "model": "embeddinggemma",
+             "base_url": "http://localhost:11434", "required": False},
         workspace=str(tmp_path), include_tool_arguments=True,
         redact_keys=["private_info"], approve_tools=["knowledge__search"],
         system_prompt="Be accurate",
@@ -409,6 +431,18 @@ def test_cli_agent_wrapper_lifecycle_and_trace_passthrough(monkeypatch, tmp_path
     }]
     assert second["tools_called"][0]["call_id"] == "q2"
     assert calls.count("start") == 1 and calls.count("close") == 1
+    admin = next(v[1] for v in calls if isinstance(v, tuple)
+                 and v[0] == "admin_config")
+    assert admin["model_allowed_hosts"] == ["REPLACE_WITH_MODEL_HOST.example"]
+    assert admin["mcp_allowed_hosts"] == ["REPLACE_WITH_MCP_HOST.example"]
+    assert admin["web_allowed_hosts"] == []
+    assert "path" not in admin
+    project = next(v[1] for v in calls if isinstance(v, tuple)
+                   and v[0] == "project_config")
+    assert isinstance(project["okf"], OkfConfig)
+    assert project["okf"].repository == str(tmp_path / "knowledge")
+    assert isinstance(project["knowledge_vector"], VectorKnowledgeConfig)
+    assert project["knowledge_vector"].database == "knowledge.sqlite"
     assert calls.count("reset") == 2
     assert [v for v in calls if isinstance(v, tuple) and v[0] == "system_prompt"] == [
         ("system_prompt", "Be accurate")
@@ -542,3 +576,65 @@ def test_cache_identity_separates_relative_kernel_workspaces(tmp_path, monkeypat
     monkeypatch.chdir(nested)
     second = ns["agent_fingerprint"]("cli-agent", settings)
     assert first != second
+
+
+
+def test_cli_agent_knowledge_placeholder_defaults_and_disabled_settings():
+    from flow.rag.generate_goldens.cli_agent_wrapper import (
+        CliAgentWrapper, EXAMPLE_OKF, EXAMPLE_RAG, _knowledge_config,
+    )
+    from dataclasses import dataclass
+
+    @dataclass
+    class FakeOkf:
+        repository: str
+        required: bool = True
+
+    @dataclass
+    class FakeRag:
+        database: str
+        mode: str = "okf"
+        provider: str = "ollama"
+        model: str = "embeddinggemma"
+        base_url: str = "http://localhost:11434"
+        search_limit: int = 5
+        required: bool = True
+
+    defaults = CliAgentWrapper()
+    assert defaults.okf == EXAMPLE_OKF
+    assert defaults.rag == EXAMPLE_RAG
+    assert defaults.okf is not EXAMPLE_OKF
+    assert defaults.rag is not EXAMPLE_RAG
+    with pytest.raises(ValueError, match="placeholders"):
+        _knowledge_config(defaults.okf, FakeOkf, "okf")
+    with pytest.raises(ValueError, match="placeholders"):
+        _knowledge_config(defaults.rag, FakeRag, "rag")
+    with pytest.raises(ValueError, match="Unknown okf"):
+        _knowledge_config({"repository": "repo", "other": 1}, FakeOkf, "okf")
+    with pytest.raises(TypeError, match="dictionary or None"):
+        _knowledge_config("repo", FakeOkf, "okf")
+    assert _knowledge_config(None, FakeOkf, "okf") is None
+
+    off = CliAgentWrapper(okf=None, rag=None)
+    assert off.okf is None and off.rag is None
+    configured = CliAgentWrapper(
+        okf={"repository": "documents"},
+        rag={"database": "database.sqlite", "mode": "okf"},
+    )
+    assert _knowledge_config(configured.okf, FakeOkf, "okf").repository == "documents"
+    assert _knowledge_config(configured.rag, FakeRag, "rag").database == "database.sqlite"
+
+
+def test_cli_agent_admin_policy_never_reads_system_configuration():
+    """No call to with_admin_config() without explicit override options."""
+    from flow.rag.generate_goldens import cli_agent_wrapper
+    code = Path(cli_agent_wrapper.__file__).read_text(encoding="utf-8")
+    assert "with_admin_config(" in code
+    assert "model_allowed_hosts=list(ADMIN_MODEL_ALLOWED_HOSTS)" in code
+    assert "mcp_allowed_hosts=list(ADMIN_MCP_ALLOWED_HOSTS)" in code
+    assert "web_allowed_hosts=list(ADMIN_WEB_ALLOWED_HOSTS)" in code
+    assert "model_credentials=ADMIN_MODEL_CREDENTIALS" in code
+    assert "trusted_servers=ADMIN_TRUSTED_SERVERS" in code
+    assert "web_providers=ADMIN_WEB_PROVIDERS" in code
+    assert "admin_config_file" not in code
+    assert "load_admin_config(" not in code

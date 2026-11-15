@@ -218,7 +218,11 @@ No DeepEval dependency is required in team wrappers. The adjacent
 SDK code. Its entrypoint is
 `cli_agent_wrapper:CliAgentWrapper`, resolved from the notebook directory.
 The SDK workspace defaults independently to `"."` and is configurable
-through the wrapper's constructor `kwargs`. The Golden data path is
+through the wrapper's constructor `kwargs`. The wrapper also accepts
+`okf` and `rag` dictionaries, with explicit placeholder templates that
+must be replaced or disabled (`None`) before execution. Its admin policy,
+including network allowlists, is defined **in the wrapper source** and never
+loaded from the machine-wide admin file. The Golden data path is
 resolved from the notebook location, not the agent workspace. Other
 agents use the same factory and do not need cli-agent installed.
 
