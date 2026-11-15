@@ -71,16 +71,19 @@ def test_wrapper_protocol_and_factory_has_no_deepeval_dependency():
     assert "async def answer(self, question: str)" in code
     assert "async def close(self) -> None:" in code
     assert "def create_wrapper(spec) -> AgentWrapper:" in code
-    assert "inspect.isclass(factory)" in code
-    assert "wrapper = factory(**spec.get(" + '"kwargs", {})' + ")" in code
-    assert "from cli_agent.sdk import AgentBuilder" in code
-    assert 'if entrypoint == "builtin:cli-agent":' in code
-    assert "class CliAgentWrapper:" in code
-    assert "await self.agent.reset()" in code
-    assert ".with_knowledge_trace(include_content=True)" in code
-    assert ".with_tool_trace(include_arguments=True)" in code
-    assert "async def start(self)" in code
-    assert "async def close(self)" in code
+    assert "inspect.isclass(wrapper_class)" in code
+    assert 'wrapper = wrapper_class(**spec.get("kwargs", {}))' in code
+    # Notebook must be fully generic; SDK integration lives in sibling file.
+    assert "from cli_agent" not in code
+    assert "CliAgentWrapper" not in next(
+        cell for cell in notebook_code() if "def create_wrapper(spec)" in cell
+    )
+    assert 'if entrypoint == "builtin:cli-agent":' not in code
+    assert "wrapper_class = getattr(module, class_name)" in code
+    assert "importlib.util.spec_from_file_location(sibling_name, sibling)" in code
+    # Lifecycle method implementations live in imported modules, not here.
+    assert "async def start(self) -> None:" in code
+    assert "async def close(self) -> None:" in code
     assert 'target.ask(' not in code
 
 
@@ -129,14 +132,14 @@ def test_team_wrapper_lifecycle_and_question_only(monkeypatch):
 
 
 def test_built_in_retrieval_validation():
-    env = wrapper_namespace()
+    from flow.rag.generate_goldens.cli_agent_wrapper import selected_knowledge_passages
     trace = {
         "content_included": True, "truncated": False,
         "selected": [{"content": "Observed passage"}],
     }
-    assert env["cli_agent_retrieval_context"](trace) == ["Observed passage"]
-    assert env["cli_agent_retrieval_context"]({**trace, "truncated": True}) is None
-    assert env["cli_agent_retrieval_context"]({**trace, "selected": [{"content": ""}]}) is None
+    assert selected_knowledge_passages(trace) == ["Observed passage"]
+    assert selected_knowledge_passages({**trace, "truncated": True}) is None
+    assert selected_knowledge_passages({**trace, "selected": [{"content": ""}]}) is None
 
 
 def test_wrapper_validation_and_missing_methods(monkeypatch):
@@ -258,15 +261,19 @@ def test_optional_tool_calls_normalization_and_redacted_sdk_mapping():
         {"tools_called": [{"name": "search", "duration_ms": -2}]},
         {"tools_called": [{"name": "search", "duration_ms": float("nan")}]},
         {"tools_called": [{"name": "search", "input_parameters": {"x": object()}}]},
+        {"tools_called": [{"name": "search", "arguments_truncated": "yes"}]},
     ):
         with pytest.raises(ValueError, match="tools_called|input_parameters"):
             env["normalize_answer"]({"answer": "fine", **bad})
     full = notebook_text()
-    assert '"tools_called": [' in full
-    assert 'for call in result.tool_calls' in full
-    assert 'call.call_id' in full and 'call.duration_ms' in full
-    assert 'call.status' in full
-    assert 'if call.input_parameters is not None else {}' in full
+    from flow.rag.generate_goldens import cli_agent_wrapper
+    wrapper_source = Path(cli_agent_wrapper.__file__).read_text(encoding="utf-8")
+    assert '"tools_called": [' in wrapper_source
+    assert 'for call in result.tool_calls' in wrapper_source
+    assert 'call.call_id' in wrapper_source and 'call.duration_ms' in wrapper_source
+    assert 'call.status' in wrapper_source
+    assert 'if call.input_parameters is not None else {}' in wrapper_source
+    assert '"arguments_truncated": call.arguments_truncated' in wrapper_source
 
 
 def test_tool_correctness_runs_only_for_goldens_with_expected_tools():
@@ -282,3 +289,256 @@ def test_tool_correctness_runs_only_for_goldens_with_expected_tools():
     assert '"total_tool_calls"' in full
     assert '"tool_error_calls"' in full
     assert '"tool_calls_with_arguments"' in full
+
+
+
+def test_cli_agent_wrapper_importable_through_same_generic_factory():
+    """No special entrypoint, no SDK dependency during import."""
+    env = wrapper_namespace()
+    spec = {
+        "entrypoint": "cli_agent_wrapper:CliAgentWrapper",
+        "kwargs": {
+            "system_prompt": "Be accurate",
+            "include_tool_arguments": False,
+        },
+    }
+    wrapper = env["create_wrapper"](spec)
+    assert type(wrapper).__name__ == "CliAgentWrapper"
+    assert wrapper.system_prompt == "Be accurate"
+    assert wrapper.workspace == Path.cwd().resolve()
+    assert wrapper.include_tool_arguments is False
+    assert wrapper.agent is None
+    for name in ("start", "answer", "close"):
+        assert callable(getattr(wrapper, name))
+
+
+def test_cli_agent_wrapper_lifecycle_and_trace_passthrough(monkeypatch, tmp_path):
+    """Exercise real wrapper with SDK stub: one initialization, two resets."""
+    import importlib
+    from types import SimpleNamespace
+
+    calls = []
+
+    class FakeAgent:
+        async def start(self):
+            calls.append("start")
+
+        async def reset(self):
+            calls.append("reset")
+
+        async def ask(self, question):
+            calls.append(("ask", question))
+            return SimpleNamespace(
+                answer="reply to " + question,
+                knowledge_trace={
+                    "content_included": True, "truncated": False,
+                    "selected": [{"content": "retrieved text"}],
+                },
+                tool_calls=[
+                    SimpleNamespace(
+                        name="knowledge__search", call_id=question,
+                        status="success", duration_ms=25.0,
+                        input_parameters={"query": question},
+                        arguments_truncated=False,
+                    )
+                ],
+            )
+
+        async def close(self):
+            calls.append("close")
+
+    class FakeBuilder:
+        def with_admin_config(self, **kwargs):
+            calls.append(("admin_config", kwargs))
+            return self
+
+        def with_project_config(self, **kwargs):
+            calls.append(("project_config", kwargs))
+            return self
+
+        def with_approval_callback(self, callback):
+            calls.append(("approval_callback", callback))
+            return self
+
+        def with_system_prompt(self, prompt):
+            calls.append(("system_prompt", prompt))
+            return self
+
+        def with_knowledge_trace(self, **kwargs):
+            calls.append(("knowledge_trace", kwargs))
+            return self
+
+        def with_tool_trace(self, **kwargs):
+            calls.append(("tool_trace", kwargs))
+            return self
+
+        def build(self):
+            calls.append("build")
+            return FakeAgent()
+
+    # The module itself contains no CLI imports at module import time.
+    sdk_module = types.ModuleType("cli_agent.sdk")
+    sdk_module.AgentBuilder = FakeBuilder
+    config_module = types.ModuleType("cli_agent.settings.config")
+    config_module.ensure_default_config_file = lambda: tmp_path / "config.toml"
+    monkeypatch.setitem(sys.modules, "cli_agent.sdk", sdk_module)
+    monkeypatch.setitem(sys.modules, "cli_agent.settings.config", config_module)
+
+    module = importlib.import_module("flow.rag.generate_goldens.cli_agent_wrapper")
+    wrapper = module.CliAgentWrapper(
+        workspace=str(tmp_path), include_tool_arguments=True,
+        redact_keys=["private_info"], approve_tools=["knowledge__search"],
+        system_prompt="Be accurate",
+    )
+
+    async def scenario():
+        await wrapper.start()
+        first = await wrapper.answer("q1")
+        second = await wrapper.answer("q2")
+        await wrapper.close()
+        await wrapper.close()
+        return first, second
+
+    first, second = asyncio.run(scenario())
+    assert first["answer"] == "reply to q1"
+    assert first["retrieval_context"] == ["retrieved text"]
+    assert first["tools_called"] == [{
+        "name": "knowledge__search", "call_id": "q1",
+        "status": "success", "duration_ms": 25.0,
+        "input_parameters": {"query": "q1"}, "arguments_truncated": False,
+    }]
+    assert second["tools_called"][0]["call_id"] == "q2"
+    assert calls.count("start") == 1 and calls.count("close") == 1
+    assert calls.count("reset") == 2
+    assert [v for v in calls if isinstance(v, tuple) and v[0] == "system_prompt"] == [
+        ("system_prompt", "Be accurate")
+    ]
+    assert [v for v in calls if isinstance(v, tuple) and v[0] == "tool_trace"] == [
+        ("tool_trace", {
+            "include_arguments": True, "redact_keys": ("private_info",),
+        })
+    ]
+
+
+def test_generic_agent_config_cache_files_validation(tmp_path):
+    """A config file influences the cache key for any agent module."""
+    ns = {}
+    exec(compile(notebook_code()[0], "<benchmark-config>", "exec"), ns)
+    ns["GOLDENS_FILE"] = tmp_path / "deepeval-goldens.json"
+    cache_code = next(cell for cell in notebook_code()
+                      if "def agent_fingerprint(" in cell)
+    # Avoid executing the notebook's evaluation loop; extract one function.
+    import ast
+    nodes = ast.parse(cache_code)
+    fn = next(node for node in nodes.body
+              if isinstance(node, ast.FunctionDef) and node.name == "agent_fingerprint")
+    func = ast.Module(body=[fn], type_ignores=[])
+    exec(compile(func, "<benchmark-cache>", "exec"), ns)
+
+    config = tmp_path / "agent.toml"
+    config.write_text("model = 'A'", encoding="utf-8")
+    spec = {
+        "entrypoint": "any_team.wrapper:Wrapper", "revision": "1",
+        "cache_files": [str(config)],
+    }
+    first = ns["agent_fingerprint"]("team-1", spec)
+    config.write_text("model = 'B'", encoding="utf-8")
+    second = ns["agent_fingerprint"]("team-1", spec)
+    assert first != second
+    assert second != ns["agent_fingerprint"]("team-2", spec)
+
+
+
+def test_notebook_paths_and_default_cli_workspace_from_both_start_directories(monkeypatch):
+    """Repository cwd and notebook cwd resolve same Goldens, without SDK root."""
+    repo = BASE.parents[2]
+    config_cell = notebook_code()[0]
+    namespaces = []
+    for cwd in (repo, BASE):
+        monkeypatch.chdir(cwd)
+        ns = {}
+        exec(compile(config_cell, "<notebook-config>", "exec"), ns)
+        assert ns["NOTEBOOK_DIR"] == BASE
+        assert ns["GOLDENS_FILE"] == repo / "rag-goldens/deepeval-goldens.json"
+        assert ns["OUTPUT_DIR"] == repo / "rag-goldens/evaluation"
+        assert ns["AGENTS"]["cli-agent"]["kwargs"]["workspace"] == "."
+        namespaces.append(ns)
+    assert namespaces[0]["GOLDENS_FILE"] == namespaces[1]["GOLDENS_FILE"]
+
+
+def test_cli_agent_wrapper_supports_custom_workspace(tmp_path, monkeypatch):
+    from flow.rag.generate_goldens.cli_agent_wrapper import CliAgentWrapper
+
+    monkeypatch.chdir(tmp_path)
+    assert CliAgentWrapper().workspace == tmp_path
+    configured = tmp_path / "agent-files"
+    configured.mkdir()
+    assert CliAgentWrapper(workspace=str(configured)).workspace == configured
+
+
+
+def test_sibling_wrapper_dataclass_import_and_failed_import_cleanup(tmp_path, monkeypatch):
+    """Decorators using sys.modules see the module during exec_module()."""
+    import hashlib
+
+    env = wrapper_namespace()
+    monkeypatch.setitem(env, "NOTEBOOK_DIR", tmp_path)
+    path = tmp_path / "dataclass_wrapper.py"
+    path.write_text(
+        "from __future__ import annotations\n"
+        "from dataclasses import dataclass\n"
+        "@dataclass\n"
+        "class DataclassWrapper:\n"
+        "    endpoint: str = 'local'\n"
+        "    async def start(self): pass\n"
+        "    async def answer(self, question: str): return question\n"
+        "    async def close(self): pass\n",
+        encoding="utf-8",
+    )
+    entrypoint = {"entrypoint": "dataclass_wrapper:DataclassWrapper"}
+    wrapper = env["create_wrapper"](entrypoint)
+    assert wrapper.endpoint == "local"
+    assert env["create_wrapper"](entrypoint).__class__ is type(wrapper)
+
+    sibling_name = (
+        "_benchmark_sibling_dataclass_wrapper_"
+        + hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:16]
+    )
+    assert sibling_name in sys.modules
+    monkeypatch.delitem(sys.modules, sibling_name)
+
+    bad_path = tmp_path / "broken_wrapper.py"
+    bad_path.write_text("raise RuntimeError('failed to import')\n", encoding="utf-8")
+    bad_name = (
+        "_benchmark_sibling_broken_wrapper_"
+        + hashlib.sha256(str(bad_path.resolve()).encode("utf-8")).hexdigest()[:16]
+    )
+    with pytest.raises(RuntimeError, match="failed to import"):
+        env["create_wrapper"]({"entrypoint": "broken_wrapper:Wrapper"})
+    assert bad_name not in sys.modules
+
+
+def test_cache_identity_separates_relative_kernel_workspaces(tmp_path, monkeypatch):
+    """Identical Golden/agent settings must not reuse a different cwd's cache."""
+    ns = {}
+    exec(compile(notebook_code()[0], "<benchmark-config>", "exec"), ns)
+    cache_cell = next(cell for cell in notebook_code()
+                      if "def agent_fingerprint(" in cell)
+    function = next(node for node in ast.parse(cache_cell).body
+                    if isinstance(node, ast.FunctionDef)
+                    and node.name == "agent_fingerprint")
+    exec(compile(ast.Module(body=[function], type_ignores=[]),
+                 "<benchmark-cache>", "exec"), ns)
+    settings = {
+        "entrypoint": "cli_agent_wrapper:CliAgentWrapper",
+        "kwargs": {"workspace": "."},
+        "revision": "same",
+    }
+    root = tmp_path / "root"
+    nested = root / "flow" / "rag" / "generate_goldens"
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(root)
+    first = ns["agent_fingerprint"]("cli-agent", settings)
+    monkeypatch.chdir(nested)
+    second = ns["agent_fingerprint"]("cli-agent", settings)
+    assert first != second
