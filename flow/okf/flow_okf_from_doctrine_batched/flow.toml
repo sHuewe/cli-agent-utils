@@ -1,0 +1,62 @@
+version = 1
+exclude_paths = ["flow"]
+result = "steps.global_topics.output"
+
+[vars]
+doctrine_path = "doctrines"
+okf_root = "okf-batched-generated"
+
+[checkpoint]
+max_snapshot_bytes = 600000000
+max_candidates = 100000
+
+[retry]
+max_attempts = 3
+initial_delay_seconds = 2
+backoff_multiplier = 2
+max_delay_seconds = 15
+
+# Keep this definition BIT-FOR-BIT compatible with the Golden generator.
+# It intentionally shares its refreshed source inventory checkpoint.
+[[steps]]
+id = "inventory"
+output = "rag-goldens/state/source-inventory.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "inventory"
+directory = "${var.doctrine_path}"
+recursive = true
+extensions = [".md", ".markdown"]
+exclude_names = ["index.md"]
+max_entries = 10000
+stable_slugs = true
+
+# Exact Golden subflow; unchanged scan/profile checkpoints are reused.
+# NOTE: Golden topic profiles are navigation hints, NOT complete OKF coverage.
+[[steps]]
+id = "golden_profiles"
+flow = "flow/rag/generate_goldens/flows/analyze-document.toml"
+foreach = "steps.inventory.output.files"
+iteration_id = "${item.slug}"
+[steps.input]
+source = "${item}"
+
+# Independent, finer-grained normative/descriptive sweep for OKF coverage.
+[[steps]]
+id = "build_modules"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/build-document.toml"
+foreach = "steps.inventory.output.files"
+iteration_id = "${item.slug}"
+[steps.input]
+source = "${item}"
+okf_root = "${var.okf_root}"
+
+# Global semantic reduction uses compact COMPLETED concept manifests.
+# It never reads a complete doctrine or a whole module into one LLM call.
+[[steps]]
+id = "global_topics"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/global-topics.toml"
+[steps.input]
+module_results = "${steps.build_modules.output.iterations}"
+okf_root = "${var.okf_root}"
+

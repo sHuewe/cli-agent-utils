@@ -1,0 +1,13 @@
+version = 1
+inputs = ["registry", "okf_root"]
+result = "steps.themes.output"
+
+[[steps]]
+id = "themes"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/build-theme.toml"
+foreach = "input.registry.themes"
+iteration_id = "${item.id}"
+[steps.input]
+theme = "${item}"
+okf_root = "${input.okf_root}"
+
