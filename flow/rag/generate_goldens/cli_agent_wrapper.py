@@ -10,6 +10,48 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any
 
+# All admin permissions for this benchmark are defined HERE, not loaded
+# from /etc/cli-agent/admin_config.toml or Windows ProgramData.
+# Replace example names with the EXACT hosts needed for your model and MCPs.
+# Network access fails closed until those allowlists are configured.
+ADMIN_MODEL_ALLOWED_HOSTS = ("REPLACE_WITH_MODEL_HOST.example",)
+ADMIN_MCP_ALLOWED_HOSTS = ("REPLACE_WITH_MCP_HOST.example",)
+ADMIN_WEB_ALLOWED_HOSTS: tuple[str, ...] = ()
+ADMIN_MODEL_CREDENTIALS: tuple = ()
+ADMIN_TRUSTED_SERVERS: tuple = ()
+ADMIN_WEB_PROVIDERS: tuple = ()
+
+# Templates: deliberately not real document stores, credentials or services.
+# Pass either mapping to the wrapper constructor (or supply custom values).
+# Set okf=None / rag=None to explicitly disable that subsystem.
+EXAMPLE_OKF = {
+    "repository": "REPLACE_WITH_OKF_REPOSITORY",
+    "required": True,
+}
+EXAMPLE_RAG = {
+    # SQLite hybrid RAG requires OKF; alternatively use mode="chroma".
+    "mode": "okf",
+    "database": "REPLACE_WITH_VECTOR_DATABASE",
+    "provider": "ollama",
+    "model": "REPLACE_WITH_EMBEDDING_MODEL",
+    "base_url": "http://REPLACE_WITH_EMBEDDING_HOST.example:11434",
+    "search_limit": 5,
+    "required": True,
+}
+
+
+def _knowledge_config(value: dict | None, cls: type, field: str):
+    """Fail on malformed mappings, instead of accepting partial silent fallback."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError(f"{field} must be a dictionary or None")
+    allowed = set(cls.__dataclass_fields__)
+    unknown = set(value) - allowed
+    if unknown:
+        raise ValueError(f"Unknown {field} keys: {sorted(unknown)}")
+    return cls(**value)
+
 
 def selected_knowledge_passages(trace: Any) -> list[str] | None:
     """Return actual selected retrieval text only when complete and verified."""
@@ -39,7 +81,8 @@ class CliAgentWrapper:
         *,
         workspace: str = ".",
         config_file: str | None = None,
-        admin_config_file: str | None = None,
+        okf: dict | None = None,
+        rag: dict | None = None,
         system_prompt: str | None = None,
         approve_tools: list[str] | tuple[str, ...] = (),
         include_tool_arguments: bool = False,
@@ -47,9 +90,8 @@ class CliAgentWrapper:
     ) -> None:
         self.workspace = Path(workspace).expanduser().resolve()
         self.config_file = Path(config_file).expanduser() if config_file else None
-        self.admin_config_file = (
-            Path(admin_config_file).expanduser() if admin_config_file else None
-        )
+        self.okf = okf
+        self.rag = rag
         self.system_prompt = system_prompt
         self.approve_tools = frozenset(approve_tools)
         self.include_tool_arguments = include_tool_arguments
@@ -63,15 +105,33 @@ class CliAgentWrapper:
         # Importing the wrapper requires no cli-agent installation. The SDK
         # is imported only when this particular agent is actually started.
         from cli_agent.sdk import AgentBuilder
-        from cli_agent.settings.config import ensure_default_config_file
+        from cli_agent.settings.config import (
+            OkfConfig, VectorKnowledgeConfig, ensure_default_config_file,
+        )
 
+        # Explicit overrides begin with AdminConfig()'s restrictive policy.
+        # Crucially, no path is passed and no no-arg with_admin_config()
+        # call is made: those would read the machine-wide admin policy.
+        builder = AgentBuilder().with_admin_config(
+            model_allowed_hosts=list(ADMIN_MODEL_ALLOWED_HOSTS),
+            mcp_allowed_hosts=list(ADMIN_MCP_ALLOWED_HOSTS),
+            web_allowed_hosts=list(ADMIN_WEB_ALLOWED_HOSTS),
+            model_credentials=ADMIN_MODEL_CREDENTIALS,
+            trusted_servers=ADMIN_TRUSTED_SERVERS,
+            web_providers=ADMIN_WEB_PROVIDERS,
+        )
         config = self.config_file or ensure_default_config_file()
-        builder = AgentBuilder().with_admin_config(path=self.admin_config_file)
         builder.with_project_config(
             path=config,
             workspace=self.workspace,
             workspace_access="none",
             response_format="text",
+            # Always override any Knowledge entries in the project config.
+            # None explicitly disables the corresponding subsystem.
+            okf=_knowledge_config(self.okf, OkfConfig, "okf"),
+            knowledge_vector=_knowledge_config(
+                self.rag, VectorKnowledgeConfig, "rag"
+            ),
         )
         if self.approve_tools:
             allowed = self.approve_tools
