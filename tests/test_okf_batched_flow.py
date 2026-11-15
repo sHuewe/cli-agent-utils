@@ -63,7 +63,7 @@ def test_small_section_and_sharded_global_steps() -> None:
             assert step.get("workspace_access") == "none"
     batch = _load(NEW / "flows" / "batch-global.toml")["steps"][0]
     assert batch["json_operation"]["kind"] == "batch_arrays"
-    assert batch["json_operation"]["max_batch_bytes"] == 12000
+    assert batch["json_operation"]["max_batch_bytes"] == 8000
     assert batch["json_operation"]["batch_size"] == 2
 
 
