@@ -80,3 +80,29 @@ def test_coverage_is_deterministic_and_path_isolated() -> None:
         for match in re.finditer(r'^output\s*=\s*"([^"]+)"', source, re.M):
             destination = match.group(1)
             assert not destination.startswith("flow/okf/flow_okf_from_doctrine_seperated/state"), path
+
+def test_final_status_preserves_each_registry_shard() -> None:
+    global_flow = _load(NEW / "flows" / "global-topics.toml")
+    assert global_flow["result"] == "steps.final_reports.output"
+    by_id = {step["id"]: step for step in global_flow["steps"]}
+    assert by_id["build_themes"]["foreach"] == "steps.registry.output.iterations"
+    assert by_id["final_reports"]["foreach"] == "steps.build_themes.output.iterations"
+    assert by_id["final_reports"]["input"]["root_index"] == "${steps.root_index.output}"
+    audit = _load(NEW / "flows" / "build-themes-batch.toml")
+    assert audit["result"] == "steps.audit.output"
+    assert next(s for s in audit["steps"] if s["id"] == "audit")["vars"]["registry"] == "${input.registry}"
+    final = _load(NEW / "flows" / "report-shard.toml")
+    assert final["result"] == "steps.result.output"
+    for path in ("12_shard_audit.md", "13_final_audit.md"):
+        prompt = (NEW / "prompts" / path).read_text(encoding="utf-8")
+        assert "needs_attention" in prompt
+
+
+def test_global_reduction_does_not_silently_drop_singletons() -> None:
+    prompt = (NEW / "prompts" / "07_global.md").read_text(encoding="utf-8")
+    assert "At most 20 groups" not in prompt
+    assert "preserve them as separate entries" in prompt
+    batch = _load(NEW / "flows" / "batch-global.toml")
+    op = batch["steps"][0]["json_operation"]
+    assert op["batch_size"] == 2
+    assert op["max_batch_bytes"] <= 8000
