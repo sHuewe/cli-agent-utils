@@ -149,6 +149,14 @@ def test_wrapper_validation_and_missing_methods(monkeypatch):
         env["normalize_answer"](7)
     with pytest.raises(ValueError, match="retrieval_context"):
         env["normalize_answer"]({"answer": "ok", "retrieval_context": [""]})
+    assert env["normalize_answer"]({"answer": "ok", "retrieval_context": []}) == {
+        "actual_output": "ok",
+        "retrieval_context": None,
+    }
+    assert env["normalize_answer"]({"answer": "ok", "retrieval_context": None}) == {
+        "actual_output": "ok",
+        "retrieval_context": None,
+    }
 
     module = types.ModuleType("fake_wrapper")
     class MissingClose:
