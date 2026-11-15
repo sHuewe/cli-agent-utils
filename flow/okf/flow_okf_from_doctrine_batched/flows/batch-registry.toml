@@ -1,0 +1,21 @@
+version = 1
+inputs = ["previous_batches"]
+result = "steps.batch.output"
+
+# The final model never receives more than 5 original complete groups.
+# max_fragment_items is enforced by cli-agent before batching, not the LLM.
+[[steps]]
+id = "batch"
+output = "okf-batched/state-v3/global/batch-registry-v2.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch_arrays"
+input = "summaries"
+array_paths = ["/groups", "/warnings"]
+batch_size = 1
+max_fragment_items = 5
+target_fragment_bytes = 2500
+max_batch_bytes = 8000
+[steps.json_inputs.summaries]
+iterate = "input.previous_batches[]"
+path = "okf-batched/state-v3/global/reduce3-${each.id}.json"

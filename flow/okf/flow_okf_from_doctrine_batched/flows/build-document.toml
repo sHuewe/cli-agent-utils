@@ -1,0 +1,81 @@
+version = 1
+inputs = ["source", "okf_root"]
+result = "steps.finish.output"
+
+# Golden analysis is invoked separately and retains its exact checkpoints.
+# V3 input/plan contracts are intentionally isolated from the V2 checkpoints.
+[[steps]]
+id = "sections"
+output = "okf-batched/state-v3/docs/${input.source.slug}/sections.json"
+overwrite_output = false
+[steps.filesystem_operation]
+kind = "markdown_sections"
+source_path = "${input.source.path}"
+target_chars = 5000
+max_sections = 512
+always_sections = true
+
+[[steps]]
+id = "scan"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/01_scan.md"
+foreach = "steps.sections.output.sections"
+iteration_id = "${item.id}"
+json_restart_attempts = 1
+output = "okf-batched/state-v3/docs/${input.source.slug}/scan-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+task = "${item}"
+
+# Existing runner operations; domain-specific outline metadata is authored
+# by a separate small, tool-free LLM call PER section, not the runner.
+[[steps]]
+id = "outline_tasks"
+output = "okf-batched/state-v3/docs/${input.source.slug}/outline-tasks.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "prepare_outline_tasks"
+input = "sections"
+results_step = "scan"
+[steps.json_inputs.sections]
+path = "okf-batched/state-v3/docs/${input.source.slug}/sections.json"
+
+[[steps]]
+id = "section_outlines"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/01b_outline_section.md"
+foreach = "steps.outline_tasks.output.tasks"
+iteration_id = "${item.id}"
+output = "okf-batched/state-v3/docs/${input.source.slug}/outline-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+task = "${item}"
+
+[[steps]]
+id = "outline"
+output = "okf-batched/state-v3/docs/${input.source.slug}/outline.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "assemble_section_outlines"
+input = "tasks"
+results_step = "section_outlines"
+batches_step = "outline_tasks"
+expected_source_path = "${input.source.path}"
+expected_source_slug = "${input.source.slug}"
+[steps.json_inputs.tasks]
+path = "okf-batched/state-v3/docs/${input.source.slug}/outline-tasks.json"
+
+# Existing runner directly validates source coverage before this subflow
+# can semantically consolidate or write final concepts.
+[[steps]]
+id = "finish"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/finish-document.toml"
+[steps.input]
+source = "${input.source}"
+sections = "${steps.sections.output}"
+scans = "${steps.scan.output}"
+outline = "${steps.outline.output}"
+okf_root = "${input.okf_root}"

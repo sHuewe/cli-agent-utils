@@ -1,0 +1,144 @@
+version = 1
+inputs = ["module_results", "okf_root"]
+result = "steps.final_reports.output"
+
+# Input is the per-module manifest INVENTORY. No whole document aggregation.
+[[steps]]
+id = "profile_batches"
+output = "okf-batched/state-v3/global/profile-batches.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "batch_arrays"
+input = "manifests"
+array_paths = ["/concepts", "/warnings"]
+batch_size = 2
+target_fragment_bytes = 2500
+max_batch_bytes = 8000
+[steps.json_inputs.manifests]
+iterate = "input.module_results[].output.files[]"
+path = "${each.path}"
+
+[[steps]]
+id = "candidates"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
+foreach = "steps.profile_batches.output.batches"
+iteration_id = "${item.id}"
+output = "okf-batched/state-v3/global/candidates-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${item}"
+stage = "discover"
+
+[[steps]]
+id = "batch_reduce1"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/batch-global.toml"
+[steps.input]
+previous_batches = "${steps.profile_batches.output.batches}"
+stage = "candidates"
+next_stage = "reduce1"
+
+[[steps]]
+id = "reduce1"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
+foreach = "steps.batch_reduce1.output.batches"
+iteration_id = "${item.id}"
+output = "okf-batched/state-v3/global/reduce1-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${item}"
+stage = "reduce1"
+
+[[steps]]
+id = "batch_reduce2"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/batch-global.toml"
+[steps.input]
+previous_batches = "${steps.batch_reduce1.output.batches}"
+stage = "reduce1"
+next_stage = "reduce2"
+
+[[steps]]
+id = "reduce2"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
+foreach = "steps.batch_reduce2.output.batches"
+iteration_id = "${item.id}"
+output = "okf-batched/state-v3/global/reduce2-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${item}"
+stage = "reduce2"
+
+[[steps]]
+id = "batch_reduce3"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/batch-global.toml"
+[steps.input]
+previous_batches = "${steps.batch_reduce2.output.batches}"
+stage = "reduce2"
+next_stage = "reduce3"
+
+[[steps]]
+id = "reduce3"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
+foreach = "steps.batch_reduce3.output.batches"
+iteration_id = "${item.id}"
+output = "okf-batched/state-v3/global/reduce3-${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+batch = "${item}"
+stage = "reduce3"
+
+[[steps]]
+id = "batch_registry"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/batch-registry.toml"
+[steps.input]
+previous_batches = "${steps.batch_reduce3.output.batches}"
+
+[[steps]]
+id = "registry"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/registry-shard.toml"
+foreach = "steps.batch_registry.output.batches"
+iteration_id = "${item.id}"
+[steps.input]
+batch = "${item}"
+
+# A registry shard remains separate. Never construct one giant registry.
+[[steps]]
+id = "build_themes"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/build-themes-batch.toml"
+foreach = "steps.registry.output.iterations"
+iteration_id = "${item.id}"
+[steps.input]
+registry = "${item.output}"
+batch_id = "${item.id}"
+okf_root = "${input.okf_root}"
+
+[[steps]]
+id = "root_index"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/11_root_index.md"
+output = "okf-batched/state-v3/global/root-index.json"
+overwrite_output = false
+workspace_access = "write"
+response_format = "json"
+approve_tools = ["os__make_directory", "os__write_file"]
+[steps.vars]
+okf_root = "${input.okf_root}"
+
+
+# Final status is NOT the navigation writer's status. For every registry
+# shard, propagate registry/verification failures and root failures.
+[[steps]]
+id = "final_reports"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/report-shard.toml"
+foreach = "steps.build_themes.output.iterations"
+iteration_id = "${item.id}"
+[steps.input]
+shard_report = "${item.output}"
+root_index = "${steps.root_index.output}"
+batch_id = "${item.id}"
