@@ -33,10 +33,22 @@ class TeamBWrapper:
 ```
 
 `answer()` gibt entweder einen nichtleeren String oder ein Dictionary
-`{"answer": str, "retrieval_context": list[str]}` zurück.
-`retrieval_context` darf ausschließlich **tatsächlich abgerufene**
-Passagen enthalten. Ohne Retrieval-Kontext werden fachliche Metriken
-weiterhin ausgewertet.
+mit `answer: str` und optional `retrieval_context: list[str]` sowie
+`tools_called: list[dict]` zurück. `retrieval_context` darf ausschließlich
+**tatsächlich abgerufene** Passagen enthalten. Eine leere Liste ist
+gültig; ohne Retrieval-Kontext werden fachliche Metriken trotzdem bewertet.
+
+Ein Tool-Eintrag enthält mindestens `name`. Weitere optionale Felder:
+`call_id`, `status`, `duration_ms` und `input_parameters` (Dictionary).
+`tools_called=None` bedeutet **nicht gemeldet**, `[]` bedeutet
+**beobachtet, aber kein Tool aufgerufen**. Parameter können Geheimnisse
+enthalten und werden im privaten Cache gespeichert. Sie sollten nur
+übergeben werden, wenn die Verwendung im Benchmark freigegeben ist.
+
+Der eingebaute `CliAgentWrapper` übernimmt Toolnamen, Status,
+Aufruf-ID und Laufzeiten aus `AgentResult.tool_calls`. Das SDK stellt
+**keine Eingabeparameter** oder Tool-Outputs bereit; das Benchmark
+ergänzt diese Informationen nicht künstlich.
 
 `AgentWrapper` ist ein strukturelles Python-`Protocol` zur Beschreibung
 dieser drei Methoden. **Keine Vererbung oder Import aus dem Notebook**
@@ -96,6 +108,25 @@ tatsächlichen Retrieval-Kontext, optional Stilkonformität je Team.
 Es gibt **kein** DeepEval-spezifisches Interface oder automatisches
 Tracing im Wrapper. Die Referenzantwort wird niemals an `answer()`
 übergeben.
+
+## Bewertung von Werkzeugaufrufen
+
+DeepEval unterstützt `ToolCorrectnessMetric`, aber nur Testfälle mit
+explizit erwarteten Werkzeugen können sinnvoll gegen ein Soll bewertet
+werden. Unsere generierten Goldens enthalten bisher **keine**
+`expected_tools`. Das Notebook speichert und zählt `tools_called`
+dennoch, führt `ToolCorrectnessMetric` aber nur aus, wenn sowohl
+beobachtete Aufrufe als auch `golden.expected_tools` vorhanden sind.
+Mit `TOOL_COMPARE_ARGUMENTS=True` werden zusätzlich die Argumente
+verglichen; dies setzt entsprechende tatsächlich verfügbare, freigegebene
+Argumente auf beiden Seiten voraus.
+
+Die Vergleichstabelle führt `tool_telemetry_cases`,
+`total_tool_calls`, `tool_error_calls`,
+`tool_calls_with_arguments` und `tool_correctness_cases` auf.
+Unterschiedliche Agenten können völlig verschiedene technische Tools
+verwenden. Vorgeschriebene Toolnamen sind daher nur fair, wenn sie auf
+alle Teilnehmer anwendbar sind.
 
 ## Fairness, Fehler und Caching
 
