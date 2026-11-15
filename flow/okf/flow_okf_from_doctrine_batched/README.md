@@ -19,8 +19,8 @@ cli-agent-flow validate flow/okf/flow_okf_from_doctrine_batched/flow.toml --work
 cli-agent-flow run flow/okf/flow_okf_from_doctrine_batched/flow.toml --workspace .
 ```
 
-The output repository defaults to `okf-batched-generated-v2/`. New intermediate
-checkpoints reside at `okf-batched/state-v2/`; this isolates the revised
+The output repository defaults to `okf-batched-generated-v3/`. New intermediate
+checkpoints reside at `okf-batched/state-v3/`; this isolates the revised
 document pipeline from `okf-batched/state/` and from the older separated flow.
 
 ## Reuse existing Golden checkpoints
@@ -44,19 +44,19 @@ downstream checkpoints when sources/prompt/model change.
 ## Document pipeline
 
 1. Deterministic `markdown_sections` (5,000 chars target) and
-   `prepare_okf_scan_tasks` produce exact 1-based source ranges for all
+   `markdown_sections(always_sections=true)` produce exact 1-based source ranges for all
    sections, including a single `direct` task for small documents.
 2. An independent source-bounded LLM scan inventories EVERY normative and
    descriptive knowledge item. Each item has a source citation and a unique
    local `topic_key`. Failed/incomplete scans block later publication.
-3. `assemble_okf_outline` checks full section coverage and constructs a
+3. `prepare_outline_tasks + assemble_section_outlines` checks full section coverage and constructs a
    compact source-local topic catalog; no concepts are written yet.
 4. A compact taxonomy profile is used to choose optional semantic subfolders.
    `prepare_doctrine_consolidation` groups **six related topic candidates
    per LLM call**. The model merges semantically coherent topics from
    DIFFERENT sections; `assemble_doctrine_consolidation` deterministically
    checks that every original topic ID appears once.
-5. `group_consolidated_items` maps all ORIGINAL source knowledge items onto
+5. `json_join_aliases + json_project + group_items` maps all ORIGINAL source knowledge items onto
    their consolidated canonical topic, preserving evidence and normative
    qualifiers. Existing `group_items` splits any oversized concept into
    bounded parts (12 KB JSON evidence plan), with complete item ID mapping.
@@ -81,7 +81,7 @@ silently discarded, not that an LLM discovers every possible synonym.
   bounded JSON bytes. Earlier reduction rounds limit complete array entries to six per fragment. This cap counts COMPLETE group/warning entries; none
   are truncated or silently omitted to satisfy a prompt limit.
 - Registry proposals cite every source group by positional
-  `iNNNN-gNNNN` reference. `validate_theme_registry` rejects missing,
+  `iNNNN-gNNNN` reference. `json_validate_partition` rejects missing,
   duplicate, ineligible or invented groups/members. Single-source groups
   must be explicitly recorded as excluded.
 - Each validated multi-document theme is built, tagged and verified in

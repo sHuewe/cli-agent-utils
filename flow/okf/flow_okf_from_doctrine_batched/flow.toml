@@ -4,7 +4,7 @@ result = "steps.global_topics.output"
 
 [vars]
 doctrine_path = "doctrines"
-okf_root = "okf-batched-generated-v2"
+okf_root = "okf-batched-generated-v3"
 
 [checkpoint]
 max_snapshot_bytes = 600000000

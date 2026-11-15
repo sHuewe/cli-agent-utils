@@ -6,7 +6,7 @@ result = "steps.batch.output"
 # max_fragment_items is enforced by cli-agent before batching, not the LLM.
 [[steps]]
 id = "batch"
-output = "okf-batched/state-v2/global/batch-registry-v2.json"
+output = "okf-batched/state-v3/global/batch-registry-v2.json"
 overwrite_output = false
 [steps.json_operation]
 kind = "batch_arrays"
@@ -18,4 +18,4 @@ target_fragment_bytes = 2500
 max_batch_bytes = 8000
 [steps.json_inputs.summaries]
 iterate = "input.previous_batches[]"
-path = "okf-batched/state-v2/global/reduce3-${each.id}.json"
+path = "okf-batched/state-v3/global/reduce3-${each.id}.json"
