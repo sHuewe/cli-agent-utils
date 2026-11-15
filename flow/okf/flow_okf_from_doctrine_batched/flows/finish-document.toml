@@ -1,6 +1,6 @@
 version = 1
 inputs = ["source", "scan_tasks", "okf_root"]
-result = "steps.manifest_inventory.output"
+result = "steps.final_manifest_inventory.output"
 
 # This operation checks all section scans, including full normative and
 # descriptive sweeps, before allowing planning. It is deterministic.
@@ -168,3 +168,29 @@ manifest_inventory = "${steps.manifest_inventory.output}"
 folder_indexes = "${steps.folder_indexes.output.iterations}"
 folders = "${steps.group.output.folders}"
 
+
+# Make navigation failures visible to GLOBAL topic reductions, not just to
+# local flow logs. This is a short status-only model call.
+[[steps]]
+id = "navigation_manifest"
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_navigation_manifest.md"
+output = "okf-batched/state-v2/docs/${input.source.slug}/manifests/navigation.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+source = "${input.source}"
+coverage = "${steps.coverage.output}"
+module_index = "${steps.module_index.output}"
+folder_indexes = "${steps.folder_indexes.output.iterations}"
+
+[[steps]]
+id = "final_manifest_inventory"
+output = "okf-batched/state-v2/docs/${input.source.slug}/final-manifest-inventory.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "inventory"
+directory = "okf-batched/state-v2/docs/${input.source.slug}/manifests"
+recursive = false
+extensions = [".json"]
+max_entries = 1000
