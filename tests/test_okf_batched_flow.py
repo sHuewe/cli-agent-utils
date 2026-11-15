@@ -94,3 +94,27 @@ def test_new_state_is_isolated_from_v1_and_original_okf():
             continue  # Golden state's paths are intentionally shared here.
         assert "okf-batched/state/" not in text
         assert "flow_okf_from_doctrine_seperated/state" not in text
+
+
+def test_registry_validator_reads_declared_subflow_input_not_json_inputs():
+    """Runner contract: source_input selects flow_input, not json_inputs.
+
+    global-topics forwards each complete registry batch as the named
+    registry-shard subflow input. The JSON operation reads that source
+    directly and uses json_inputs.registry only for the proposed output.
+    """
+    global_steps = _steps(NEW / "flows" / "global-topics.toml")
+    caller = global_steps["registry"]
+    assert caller["input"]["batch"] == "${item}"
+    assert caller["foreach"] == "steps.batch_registry.output.batches"
+
+    shard = _load(NEW / "flows" / "registry-shard.toml")
+    assert "batch" in shard["inputs"]
+    validator = _steps(NEW / "flows" / "registry-shard.toml")["validate"]
+    assert validator["json_operation"]["kind"] == "json_validate_partition"
+    assert validator["json_operation"]["source_input"] == "batch"
+    assert validator["json_operation"]["input"] == "registry"
+    assert set(validator["json_inputs"]) == {"registry"}
+    assert validator["json_inputs"]["registry"]["path"].endswith(
+        "/registry-${input.batch.id}.json"
+    )
