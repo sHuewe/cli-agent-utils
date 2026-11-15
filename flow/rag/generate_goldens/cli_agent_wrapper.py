@@ -50,6 +50,11 @@ def _knowledge_config(value: dict | None, cls: type, field: str):
     unknown = set(value) - allowed
     if unknown:
         raise ValueError(f"Unknown {field} keys: {sorted(unknown)}")
+    if any(isinstance(item, str) and "REPLACE_WITH_" in item for item in value.values()):
+        raise ValueError(
+            f"{field} still contains example placeholders. "
+            "Set real values in the wrapper kwargs or use None to disable it."
+        )
     return cls(**value)
 
 
@@ -81,8 +86,8 @@ class CliAgentWrapper:
         *,
         workspace: str = ".",
         config_file: str | None = None,
-        okf: dict | None = None,
-        rag: dict | None = None,
+        okf: dict | None = EXAMPLE_OKF,
+        rag: dict | None = EXAMPLE_RAG,
         system_prompt: str | None = None,
         approve_tools: list[str] | tuple[str, ...] = (),
         include_tool_arguments: bool = False,
@@ -90,8 +95,9 @@ class CliAgentWrapper:
     ) -> None:
         self.workspace = Path(workspace).expanduser().resolve()
         self.config_file = Path(config_file).expanduser() if config_file else None
-        self.okf = okf
-        self.rag = rag
+        # Copy the templates so no instance can mutate another's settings.
+        self.okf = dict(okf) if isinstance(okf, dict) else okf
+        self.rag = dict(rag) if isinstance(rag, dict) else rag
         self.system_prompt = system_prompt
         self.approve_tools = frozenset(approve_tools)
         self.include_tool_arguments = include_tool_arguments
