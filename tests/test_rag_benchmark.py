@@ -474,3 +474,71 @@ def test_cli_agent_wrapper_supports_custom_workspace(tmp_path, monkeypatch):
     configured = tmp_path / "agent-files"
     configured.mkdir()
     assert CliAgentWrapper(workspace=str(configured)).workspace == configured
+
+
+
+def test_sibling_wrapper_dataclass_import_and_failed_import_cleanup(tmp_path, monkeypatch):
+    """Decorators using sys.modules see the module during exec_module()."""
+    import hashlib
+
+    env = wrapper_namespace()
+    monkeypatch.setitem(env, "NOTEBOOK_DIR", tmp_path)
+    path = tmp_path / "dataclass_wrapper.py"
+    path.write_text(
+        "from __future__ import annotations\n"
+        "from dataclasses import dataclass\n"
+        "@dataclass\n"
+        "class DataclassWrapper:\n"
+        "    endpoint: str = 'local'\n"
+        "    async def start(self): pass\n"
+        "    async def answer(self, question: str): return question\n"
+        "    async def close(self): pass\n",
+        encoding="utf-8",
+    )
+    entrypoint = {"entrypoint": "dataclass_wrapper:DataclassWrapper"}
+    wrapper = env["create_wrapper"](entrypoint)
+    assert wrapper.endpoint == "local"
+    assert env["create_wrapper"](entrypoint).__class__ is type(wrapper)
+
+    sibling_name = (
+        "_benchmark_sibling_dataclass_wrapper_"
+        + hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:16]
+    )
+    assert sibling_name in sys.modules
+    monkeypatch.delitem(sys.modules, sibling_name)
+
+    bad_path = tmp_path / "broken_wrapper.py"
+    bad_path.write_text("raise RuntimeError('failed to import')\n", encoding="utf-8")
+    bad_name = (
+        "_benchmark_sibling_broken_wrapper_"
+        + hashlib.sha256(str(bad_path.resolve()).encode("utf-8")).hexdigest()[:16]
+    )
+    with pytest.raises(RuntimeError, match="failed to import"):
+        env["create_wrapper"]({"entrypoint": "broken_wrapper:Wrapper"})
+    assert bad_name not in sys.modules
+
+
+def test_cache_identity_separates_relative_kernel_workspaces(tmp_path, monkeypatch):
+    """Identical Golden/agent settings must not reuse a different cwd's cache."""
+    ns = {}
+    exec(compile(notebook_code()[0], "<benchmark-config>", "exec"), ns)
+    cache_cell = next(cell for cell in notebook_code()
+                      if "def agent_fingerprint(" in cell)
+    function = next(node for node in ast.parse(cache_cell).body
+                    if isinstance(node, ast.FunctionDef)
+                    and node.name == "agent_fingerprint")
+    exec(compile(ast.Module(body=[function], type_ignores=[]),
+                 "<benchmark-cache>", "exec"), ns)
+    settings = {
+        "entrypoint": "cli_agent_wrapper:CliAgentWrapper",
+        "kwargs": {"workspace": "."},
+        "revision": "same",
+    }
+    root = tmp_path / "root"
+    nested = root / "flow" / "rag" / "generate_goldens"
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(root)
+    first = ns["agent_fingerprint"]("cli-agent", settings)
+    monkeypatch.chdir(nested)
+    second = ns["agent_fingerprint"]("cli-agent", settings)
+    assert first != second
