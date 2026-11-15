@@ -85,7 +85,27 @@ verwendet denselben Wrapper für weitere Fragen und garantiert ein
 `close()` am Ende. Nach einem Fehler oder Timeout wird der beschädigte
 Wrapper geschlossen und vor der nächsten Frage neu aufgebaut.
 
-Auch cli-agent ist jetzt ein **normaler Import** wie alle anderen Teams:
+Auch cli-agent ist jetzt ein **normaler Import** wie alle anderen Teams.
+
+**Knowledge-Konfiguration:** Der Konstruktor akzeptiert `okf` und `rag`
+als Dictionaries. Im Wrapper stehen bewusst **Platzhalter** in
+`EXAMPLE_OKF` und `EXAMPLE_RAG`. Ohne eigene Angaben werden diese
+Templates verwendet; vor einem echten Benchmark müssen sie durch
+gültige Werte ersetzt werden. Alternativ deaktiviert `None` das
+jeweilige Subsystem, unabhängig von Einträgen in der Projektdatei.
+Für SQLite-RAG (mode=`okf`) ist ein OKF-Repository erforderlich;
+Chroma verwendet mode=`chroma`.
+
+Die **Admin-Policy** ist jetzt direkt in `cli_agent_wrapper.py` definiert:
+`ADMIN_MODEL_ALLOWED_HOSTS`, `ADMIN_MCP_ALLOWED_HOSTS`,
+`ADMIN_WEB_ALLOWED_HOSTS`, `ADMIN_MODEL_CREDENTIALS`,
+`ADMIN_TRUSTED_SERVERS` und `ADMIN_WEB_PROVIDERS`. Die
+Administrator-Systemdatei wird nicht geladen. Die Hostnamen sind
+absichtlich Platzhalter: Passe sie an die gewünschten Endpunkte an,
+bevor du den Wrapper ausführst. Zugangsdaten gehören weiterhin in
+Umgebungsvariablen, nicht in den Quellcode.
+
+Beispiel mit expliziter OKF- und RAG-Konfiguration:
 
 ```python
 "cli-agent": {
@@ -93,9 +113,16 @@ Auch cli-agent ist jetzt ein **normaler Import** wie alle anderen Teams:
     "revision": "sdk-baseline-v1",
     "kwargs": {
         "workspace": ".",  # optional; default is "."
+        "okf": {"repository": "/REPLACE_WITH_OKF_REPOSITORY"},
+        "rag": {
+            "mode": "okf",
+            "database": "REPLACE_WITH_VECTOR_DATABASE",
+            "provider": "ollama",
+            "model": "REPLACE_WITH_EMBEDDING_MODEL",
+            "base_url": "http://REPLACE_WITH_EMBEDDING_HOST.example:11434",
+        },
         "include_tool_arguments": True,
         # Optional: "config_file": "config.toml",
-        # Optional: "admin_config_file": "admin.toml",
         # Optional: "system_prompt": "Answer factually...",
         # Optional: "approve_tools": ["vector__knowledge_search"],
         # Optional: "redact_keys": ["business_private_field"],
