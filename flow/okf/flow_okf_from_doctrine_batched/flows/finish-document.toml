@@ -142,6 +142,17 @@ extensions = [".json"]
 max_entries = 1000
 
 [[steps]]
+id = "folder_indexes"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/index-folder.toml"
+foreach = "steps.group.output.folders"
+iteration_id = "${item.id}"
+[steps.input]
+source = "${input.source}"
+folder = "${item}"
+okf_root = "${input.okf_root}"
+coverage = "${steps.coverage.output}"
+
+[[steps]]
 id = "module_index"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/06_module_index.md"
 output = "okf-batched/state-v2/docs/${input.source.slug}/module-index.json"
@@ -154,4 +165,6 @@ source = "${input.source}"
 okf_root = "${input.okf_root}"
 coverage = "${steps.coverage.output}"
 manifest_inventory = "${steps.manifest_inventory.output}"
+folder_indexes = "${steps.folder_indexes.output.iterations}"
+folders = "${steps.group.output.folders}"
 

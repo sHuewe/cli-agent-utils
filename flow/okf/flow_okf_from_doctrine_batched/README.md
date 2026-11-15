@@ -19,7 +19,7 @@ cli-agent-flow validate flow/okf/flow_okf_from_doctrine_batched/flow.toml --work
 cli-agent-flow run flow/okf/flow_okf_from_doctrine_batched/flow.toml --workspace .
 ```
 
-The output repository defaults to `okf-batched-generated/`. New intermediate
+The output repository defaults to `okf-batched-generated-v2/`. New intermediate
 checkpoints reside at `okf-batched/state-v2/`; this isolates the revised
 document pipeline from `okf-batched/state/` and from the older separated flow.
 
@@ -78,7 +78,7 @@ silently discarded, not that an LLM discovers every possible synonym.
 - Candidate discovery and three independent reduction rounds use loss-aware
   `batch_arrays` fragmentation.
 - The final registry uses `max_fragment_items=5`, `batch_size=1` and
-  bounded JSON bytes. This cap counts COMPLETE group/warning entries; none
+  bounded JSON bytes. Earlier reduction rounds limit complete array entries to six per fragment. This cap counts COMPLETE group/warning entries; none
   are truncated or silently omitted to satisfy a prompt limit.
 - Registry proposals cite every source group by positional
   `iNNNN-gNNNN` reference. `validate_theme_registry` rejects missing,

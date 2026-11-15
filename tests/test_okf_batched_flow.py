@@ -58,6 +58,8 @@ def test_all_document_scans_complete_before_document_consolidation():
     assert plan["build_concepts"]["foreach"] == "steps.group.output.concepts"
     assert _steps(NEW / "flows" / "verify-document.toml")["coverage"]["json_operation"]["kind"] == "verify_coverage"
     assert "coverage_manifest" in plan and "manifest_inventory" in plan
+    assert plan["folder_indexes"]["foreach"] == "steps.group.output.folders"
+    assert _steps(NEW / "flows" / "index-folder.toml")["inventory"]["filesystem_operation"]["kind"] == "inventory"
 
 
 def test_sharded_global_registry_count_and_coverage_are_explicit():
