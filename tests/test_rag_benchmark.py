@@ -594,6 +594,11 @@ def test_cli_agent_knowledge_placeholder_defaults_and_disabled_settings():
     class FakeRag:
         database: str
         mode: str = "okf"
+        provider: str = "ollama"
+        model: str = "embeddinggemma"
+        base_url: str = "http://localhost:11434"
+        search_limit: int = 5
+        required: bool = True
 
     defaults = CliAgentWrapper()
     assert defaults.okf == EXAMPLE_OKF
