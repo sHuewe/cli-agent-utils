@@ -72,7 +72,7 @@ def test_wrapper_protocol_and_factory_has_no_deepeval_dependency():
     assert "async def close(self) -> None:" in code
     assert "def create_wrapper(spec) -> AgentWrapper:" in code
     assert "inspect.isclass(wrapper_class)" in code
-    assert "wrapper = factory(**spec.get(" + '"kwargs", {})' + ")" in code
+    assert 'wrapper = wrapper_class(**spec.get("kwargs", {}))' in code
     # Notebook must be fully generic; SDK integration lives in sibling file.
     assert "from cli_agent" not in code
     assert "CliAgentWrapper" not in next(
