@@ -1,0 +1,53 @@
+version = 1
+inputs = ["source_slug", "batch_id"]
+# If no errors occur, repair/recheck are skipped; fallback retains the
+# original batch verbatim. Both variants share the same validated schema.
+result = "steps.recheck.output.value"
+result_fallback = "steps.validate.output.value"
+
+[[steps]]
+id = "validate"
+output = "okf-batched/state-v3/docs/${input.source_slug}/validation-${input.batch_id}.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "json_validate_allowed_values"
+input = "candidate"
+allowed_path = "/folders/*/id"
+values_path = "/groups/*/folder_id"
+null_policy = "when_allowed_empty"
+on_invalid = "report"
+[steps.json_inputs.candidate]
+path = "okf-batched/state-v3/docs/${input.source_slug}/consolidation-${input.batch_id}.json"
+[steps.json_inputs.allowed]
+path = "okf-batched/state-v3/docs/${input.source_slug}/taxonomy.json"
+
+[[steps]]
+id = "repair"
+when = { ref = "steps.validate.output.status", eq = "needs_attention" }
+prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/03b_repair_folders.md"
+output = "okf-batched/state-v3/docs/${input.source_slug}/consolidation-repaired-${input.batch_id}.json"
+overwrite_output = false
+response_format = "json"
+workspace_access = "none"
+json_restart_attempts = 1
+[steps.vars]
+validation = "${steps.validate.output}"
+
+# Invalid repairs fail locally, before proceeding to another batch or the
+# expensive whole-document assembler. This is intentionally fail-closed.
+[[steps]]
+id = "recheck"
+when = { ref = "steps.validate.output.status", eq = "needs_attention" }
+output = "okf-batched/state-v3/docs/${input.source_slug}/revalidation-${input.batch_id}.json"
+overwrite_output = false
+[steps.json_operation]
+kind = "json_validate_allowed_values"
+input = "candidate"
+allowed_path = "/folders/*/id"
+values_path = "/groups/*/folder_id"
+null_policy = "when_allowed_empty"
+on_invalid = "raise"
+[steps.json_inputs.candidate]
+path = "okf-batched/state-v3/docs/${input.source_slug}/consolidation-repaired-${input.batch_id}.json"
+[steps.json_inputs.allowed]
+path = "okf-batched/state-v3/docs/${input.source_slug}/taxonomy.json"

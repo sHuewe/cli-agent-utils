@@ -50,6 +50,18 @@ response_format = "json"
 [steps.vars]
 batch = "${item}"
 
+# Retain the original consolidate step, file paths and checkpoints. Validate
+# each completed batch deterministically; call the LLM only for invalid
+# folder assignments and revalidate corrected results before assembly.
+[[steps]]
+id = "validated_batches"
+flow = "flow/okf/flow_okf_from_doctrine_batched/flows/validate-consolidation.toml"
+foreach = "steps.consolidate.output.iterations"
+iteration_id = "${item.id}"
+[steps.input]
+source_slug = "${input.source.slug}"
+batch_id = "${item.id}"
+
 # Validates exact one-to-one membership of every original topic candidate.
 [[steps]]
 id = "consolidated"
@@ -58,7 +70,7 @@ overwrite_output = false
 [steps.json_operation]
 kind = "assemble_doctrine_consolidation"
 input = "outline"
-results_step = "consolidate"
+results_step = "validated_batches"
 batches_step = "consolidation_batches"
 [steps.json_inputs.outline]
 path = "okf-batched/state-v3/docs/${input.source.slug}/outline.json"
