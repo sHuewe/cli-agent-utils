@@ -88,3 +88,33 @@ def test_nonconforming_verify_status_from_older_runs_is_not_rejected_by_schema()
     # The content QC flow, not a checkpoint schema change, must address those.
     schema = json.loads((SCHEMA_DIR / "concept-verify.schema.json").read_text())
     assert "enum" not in schema["properties"]["status"]
+
+
+def test_runtime_schema_enums_enforce_exact_concept_identity():
+    concept = steps("flows/build-concept.toml")
+    expected_id = {"ref": "input.concept_id_options"}
+    expected_path = {"ref": "input.concept_path_options"}
+    for name in ("build", "verify", "repair"):
+        enums = concept[name]["output_schema_enums"]
+        assert enums["/properties/concept_id"] == expected_id["ref"]
+        assert enums["/properties/path"] == expected_path["ref"]
+    manifest = concept["manifest"]["output_schema_enums"]
+    assert manifest["/properties/source_slug"] == "input.source_slug_options"
+    assert manifest["/properties/source_path"] == "input.source_path_options"
+    assert manifest["/properties/concepts/items/properties/path"] == (
+        "input.concept_path_options"
+    )
+    assert manifest["/properties/concepts/items/properties/source_slug"] == (
+        "input.source_slug_options"
+    )
+    assert manifest["/properties/concepts/items/properties/source_path"] == (
+        "input.source_path_options"
+    )
+
+    caller = steps("flows/finish-document.toml")["build_concepts"]["input"]
+    assert caller["concept_id_options"] == ["${item.id}"]
+    assert caller["concept_path_options"] == ["${item.path}"]
+    assert caller["source_slug_options"] == ["${input.source.slug}"]
+    assert caller["source_path_options"] == ["${input.source.path}"]
+    child_inputs = tomllib.loads((BASE / "flows/build-concept.toml").read_text())["inputs"]
+    assert set(caller) == set(child_inputs)
