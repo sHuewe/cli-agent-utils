@@ -4,6 +4,7 @@ result = "steps.validate.output"
 
 [[steps]]
 id = "registry"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/registry.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/08_registry.md"
 output = "okf-batched/state-v3/global/registry-${input.batch.id}.json"
 overwrite_output = false

@@ -4,6 +4,7 @@ result = "steps.manifest.output"
 
 [[steps]]
 id = "build"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/concept-build.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/08_build_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "okf-batched/state-v3/docs/${input.source.slug}/concept-${input.concept.id}-build.json"
@@ -17,6 +18,7 @@ okf_root = "${input.okf_root}"
 
 [[steps]]
 id = "verify"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/concept-verify.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/09_verify_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "okf-batched/state-v3/docs/${input.source.slug}/concept-${input.concept.id}-verify.json"
@@ -30,6 +32,7 @@ okf_root = "${input.okf_root}"
 
 [[steps]]
 id = "repair"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/concept-repair.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine/prompts/10_repair_concept.md"
 add_file_context = ["flow/okf/okf-format.md"]
 output = "okf-batched/state-v3/docs/${input.source.slug}/concept-${input.concept.id}-repair.json"
@@ -45,6 +48,7 @@ okf_root = "${input.okf_root}"
 # A very short per-CONCEPT semantic profile for bounded global matching.
 [[steps]]
 id = "manifest"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/concept-manifest.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/04_concept_manifest.md"
 output = "okf-batched/state-v3/docs/${input.source.slug}/manifests/concept-${input.concept.id}.json"
 overwrite_output = false

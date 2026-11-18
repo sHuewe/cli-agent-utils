@@ -17,6 +17,7 @@ always_sections = true
 
 [[steps]]
 id = "scan"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/scan.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/01_scan.md"
 foreach = "steps.sections.output.sections"
 iteration_id = "${item.id}"
@@ -44,6 +45,7 @@ path = "okf-batched/state-v3/docs/${input.source.slug}/sections.json"
 
 [[steps]]
 id = "section_outlines"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/outline.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/01b_outline_section.md"
 foreach = "steps.outline_tasks.output.tasks"
 iteration_id = "${item.id}"

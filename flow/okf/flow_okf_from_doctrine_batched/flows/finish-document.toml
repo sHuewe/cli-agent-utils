@@ -14,6 +14,7 @@ path = "okf-batched/state-v3/docs/${input.source.slug}/outline.json"
 
 [[steps]]
 id = "taxonomy"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/taxonomy.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/02_taxonomy.md"
 output = "okf-batched/state-v3/docs/${input.source.slug}/taxonomy.json"
 overwrite_output = false
@@ -40,6 +41,7 @@ path = "okf-batched/state-v3/docs/${input.source.slug}/taxonomy.json"
 
 [[steps]]
 id = "consolidate"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/consolidation.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/03_consolidate.md"
 foreach = "steps.consolidation_batches.output.batches"
 iteration_id = "${item.id}"
