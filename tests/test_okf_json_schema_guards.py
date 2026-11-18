@@ -118,3 +118,14 @@ def test_runtime_schema_enums_enforce_exact_concept_identity():
     assert caller["source_path_options"] == ["${input.source.path}"]
     child_inputs = tomllib.loads((BASE / "flows/build-concept.toml").read_text())["inputs"]
     assert set(caller) == set(child_inputs)
+
+
+def test_each_batched_model_step_has_json_schema_without_changing_output_paths():
+    for flow in sorted((BASE / "flows").glob("*.toml")):
+        for step in steps(str(flow.relative_to(BASE))).values():
+            if "prompt_file" in step:
+                assert step.get("output_schema", "").startswith(
+                    "flow/okf/flow_okf_from_doctrine_batched/schemas/"
+                ), (flow, step["id"])
+                assert step.get("response_format") == "json"
+                assert not step.get("overwrite_output", False)
