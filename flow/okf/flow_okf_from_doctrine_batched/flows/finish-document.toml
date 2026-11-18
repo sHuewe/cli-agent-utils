@@ -143,6 +143,10 @@ iteration_id = "${item.id}"
 source = "${input.source}"
 concept = "${item}"
 okf_root = "${input.okf_root}"
+concept_id_options = ["${item.id}"]
+concept_path_options = ["${item.path}"]
+source_slug_options = ["${input.source.slug}"]
+source_path_options = ["${input.source.path}"]
 
 [[steps]]
 id = "coverage"
