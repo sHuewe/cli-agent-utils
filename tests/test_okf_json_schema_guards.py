@@ -8,6 +8,8 @@ from pathlib import Path
 import json
 import tomllib
 
+from jsonschema import Draft202012Validator
+
 ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / "flow" / "okf" / "flow_okf_from_doctrine_batched"
 SCHEMA_DIR = BASE / "schemas"
@@ -29,6 +31,7 @@ def test_schema_files_resolve_and_are_bounded_json_draft_202012():
             assert file.stat().st_size <= 65536
             schema = json.loads(file.read_text(encoding="utf-8"))
             assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+            Draft202012Validator.check_schema(schema)
             assert schema["type"] == "object"
             assert "required" in schema
             assert step.get("overwrite_output", False) is False
@@ -134,3 +137,39 @@ def test_each_batched_model_step_has_json_schema_without_changing_output_paths()
                 ), (flow, step["id"])
                 assert step.get("response_format") == "json"
                 assert not step.get("overwrite_output", False)
+
+
+def test_known_legacy_and_repaired_consolidation_payloads_are_compatible():
+    # Old cached consolidation responses sometimes contain invalid/missing
+    # folder IDs. Those must flow into validation/repair, not be rejected
+    # during checkpoint loading by an overly strict new schema.
+    old = json.loads((SCHEMA_DIR / "consolidation.schema.json").read_text())
+    repaired = json.loads((SCHEMA_DIR / "consolidation-repaired.schema.json").read_text())
+    legacy = {
+        "status": "ok",
+        "groups": [{
+            "member_ids": ["s001-t001"],
+            "title": "Existing concept",
+            "description": "Existing summary",
+            "folder_id": {"wrong": "shape"},
+        }],
+        "warnings": [],
+    }
+    Draft202012Validator(old).validate(legacy)
+    assert list(Draft202012Validator(repaired).iter_errors(legacy))
+    missing = {"status": "ok", "groups": [{
+        "member_ids": ["s001-t001"],
+        "title": "Existing concept",
+        "description": "Existing summary",
+    }]}
+    Draft202012Validator(old).validate(missing)
+    assert list(Draft202012Validator(repaired).iter_errors(missing))
+    corrected = {**missing, "groups": [{**missing["groups"][0], "folder_id": "rules"}]}
+    Draft202012Validator(repaired).validate(corrected)
+
+
+def test_previous_nonstandard_verify_status_is_valid_old_checkpoint():
+    schema = json.loads((SCHEMA_DIR / "concept-verify.schema.json").read_text())
+    old = {"status": "needs_attention", "concept_id": "s056-t001",
+           "path": "doctrines/a/s056-t001.md", "documented_item_ids": []}
+    Draft202012Validator(schema).validate(old)
