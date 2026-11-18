@@ -1,5 +1,5 @@
 version = 1
-inputs = ["source", "concept", "okf_root"]
+inputs = ["source", "concept", "okf_root", "concept_id_options", "concept_path_options", "source_slug_options", "source_path_options"]
 result = "steps.manifest.output"
 
 [[steps]]
@@ -16,6 +16,10 @@ approve_tools = ["os__make_directory", "os__write_file"]
 concept = "${input.concept}"
 okf_root = "${input.okf_root}"
 
+[steps.output_schema_enums]
+"/properties/concept_id" = "input.concept_id_options"
+"/properties/path" = "input.concept_path_options"
+
 [[steps]]
 id = "verify"
 output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/concept-verify.schema.json"
@@ -29,6 +33,10 @@ response_format = "json"
 concept = "${input.concept}"
 build = "${steps.build.output}"
 okf_root = "${input.okf_root}"
+
+[steps.output_schema_enums]
+"/properties/concept_id" = "input.concept_id_options"
+"/properties/path" = "input.concept_path_options"
 
 [[steps]]
 id = "repair"
@@ -46,6 +54,11 @@ verification = "${steps.verify.output}"
 okf_root = "${input.okf_root}"
 
 # A very short per-CONCEPT semantic profile for bounded global matching.
+
+[steps.output_schema_enums]
+"/properties/concept_id" = "input.concept_id_options"
+"/properties/path" = "input.concept_path_options"
+
 [[steps]]
 id = "manifest"
 output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/concept-manifest.schema.json"
@@ -58,4 +71,11 @@ response_format = "json"
 source = "${input.source}"
 concept = "${input.concept}"
 repair = "${steps.repair.output}"
+
+[steps.output_schema_enums]
+"/properties/source_slug" = "input.source_slug_options"
+"/properties/source_path" = "input.source_path_options"
+"/properties/concepts/items/properties/source_slug" = "input.source_slug_options"
+"/properties/concepts/items/properties/source_path" = "input.source_path_options"
+"/properties/concepts/items/properties/path" = "input.concept_path_options"
 
