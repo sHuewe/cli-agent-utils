@@ -27,18 +27,12 @@
             "type": "string",
             "minLength": 1
           },
-          "folder_id": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
+          "folder_id": {}
         },
         "required": [
           "member_ids",
           "title",
-          "description",
-          "folder_id"
+          "description"
         ]
       }
     },
