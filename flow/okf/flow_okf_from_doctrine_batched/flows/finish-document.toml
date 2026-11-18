@@ -159,6 +159,7 @@ concepts = "${steps.group.output.concepts}"
 # concept manifests; incomplete source coverage is never invisible.
 [[steps]]
 id = "coverage_manifest"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/coverage-manifest.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/05_coverage_manifest.md"
 output = "okf-batched/state-v3/docs/${input.source.slug}/manifests/coverage.json"
 overwrite_output = false
@@ -192,6 +193,7 @@ coverage = "${steps.coverage.output}"
 
 [[steps]]
 id = "module_index"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/module-index.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/06_module_index.md"
 output = "okf-batched/state-v3/docs/${input.source.slug}/module-index.json"
 overwrite_output = false
@@ -211,6 +213,7 @@ folders = "${steps.group.output.folders}"
 # local flow logs. This is a short status-only model call.
 [[steps]]
 id = "navigation_manifest"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/coverage-manifest.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_navigation_manifest.md"
 output = "okf-batched/state-v3/docs/${input.source.slug}/manifests/navigation.json"
 overwrite_output = false

@@ -125,6 +125,7 @@ okf_root = "${input.okf_root}"
 
 [[steps]]
 id = "root_index"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/root-index.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/11_root_index.md"
 output = "okf-batched/state-v3/global/root-index.json"
 overwrite_output = false
