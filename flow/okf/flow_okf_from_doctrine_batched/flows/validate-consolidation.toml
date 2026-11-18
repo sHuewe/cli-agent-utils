@@ -23,7 +23,7 @@ path = "okf-batched/state-v3/docs/${input.source_slug}/taxonomy.json"
 
 [[steps]]
 id = "repair"
-output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/consolidation.schema.json"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/consolidation-repaired.schema.json"
 when = { ref = "steps.validate.output.status", eq = "needs_attention" }
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/03b_repair_folders.md"
 output = "okf-batched/state-v3/docs/${input.source_slug}/consolidation-repaired-${input.batch_id}.json"
