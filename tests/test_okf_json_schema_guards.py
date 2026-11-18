@@ -61,15 +61,20 @@ def test_existing_golden_and_okf_checkpoint_identities_are_preserved():
     )
 
 
-def test_consolidation_and_repair_share_the_same_nonempty_structure_contract():
+def test_original_consolidation_can_reach_repair_but_repaired_output_is_strict():
     original = steps("flows/finish-document.toml")["consolidate"]
     repair = steps("flows/validate-consolidation.toml")["repair"]
-    assert original["output_schema"] == repair["output_schema"]
-    schema = json.loads((ROOT / repair["output_schema"]).read_text(encoding="utf-8"))
-    groups = schema["properties"]["groups"]
-    assert groups["type"] == "array"
-    assert "folder_id" in groups["items"]["required"]
-    assert "null" in groups["items"]["properties"]["folder_id"]["type"]
+    assert original["output_schema"] != repair["output_schema"]
+    source_schema = json.loads((ROOT / original["output_schema"]).read_text(encoding="utf-8"))
+    repair_schema = json.loads((ROOT / repair["output_schema"]).read_text(encoding="utf-8"))
+    before = source_schema["properties"]["groups"]["items"]
+    after = repair_schema["properties"]["groups"]["items"]
+    # Invalid existing source folder references must remain available to the
+    # conditional correction step, not rejected at checkpoint preflight.
+    assert "folder_id" not in before["required"]
+    assert before["properties"]["folder_id"] == {}
+    assert "folder_id" in after["required"]
+    assert "null" in after["properties"]["folder_id"]["type"]
     assert steps("flows/validate-consolidation.toml")["recheck"][
         "json_operation"
     ]["on_invalid"] == "raise"
