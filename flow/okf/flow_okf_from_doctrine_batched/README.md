@@ -75,6 +75,38 @@ Every valid theme gets its own writing and verification steps. Per-shard
 status reports retain unsuccessful registry, theme or navigation results.
 No unbounded final LLM aggregation is required.
 
+## Deterministic per-batch membership check and repair
+
+Requires [cli-agent PR #316](https://github.com/sHuewe/cli-agent/pull/316)
+in addition to the previously merged generic Flow operations.
+
+The **existing** `consolidate` step, its iteration IDs and
+`consolidation-cNNNN.json` files are kept unchanged, so completed model calls
+remain cached. A new `validated_batches` subflow checks the result of each
+batch against the authoritative `taxonomy.json` using the generic
+`json_validate_allowed_values` operation. It compares:
+
+- `allowed_path = "/folders/*/id"` from the taxonomy.
+- `values_path = "/groups/*/folder_id"` from the original batch JSON.
+
+When folders are defined, every group must use an allowed folder ID; when
+the allowed list is empty, `folder_id: null` is permitted.
+
+A valid batch passes through without a model call. An invalid batch produces
+a report with precise errors and the original JSON object. Only that batch
+is sent to the small `03b_repair_folders.md` LLM prompt, which must change
+**only** invalid folder references. The repaired JSON is checked a second
+time with `on_invalid = "raise"`, then passed to the original
+`assemble_doctrine_consolidation`. Missing or still-invalid references
+stop the flow at the offending batch rather than failing at the end of
+the entire document. All checkpoints of prior stages are retained.
+
+For an existing corpus, the additional validation and conditional repair
+results are written into separate `validation-cNNNN.json`,
+`consolidation-repaired-cNNNN.json` and `revalidation-cNNNN.json` files
+under the document's existing `okf-batched/state-v3/docs/<slug>/` directory.
+Existing scan and consolidation JSON checkpoints are not overwritten.
+
 ## Limits and invalidation
 
 - Source/document edits and prompt/model changes require explicit checkpoint
