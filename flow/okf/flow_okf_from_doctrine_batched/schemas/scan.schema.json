@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "minLength": 2
+    },
+    "source_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "section_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "start_line": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "end_line": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "candidate_concepts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "topic_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "topic_key"
+        ]
+      }
+    },
+    "knowledge_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "topic_key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string"
+          },
+          "normative": {
+            "type": "boolean"
+          },
+          "evidence_ranges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "doctrine": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "start_line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "end_line": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "doctrine",
+                "start_line",
+                "end_line"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "topic_key"
+        ]
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "status",
+    "source_path",
+    "section_id",
+    "start_line",
+    "end_line",
+    "candidate_concepts",
+    "knowledge_items"
+  ]
+}

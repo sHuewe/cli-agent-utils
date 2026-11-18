@@ -4,6 +4,7 @@ result = "steps.verify.output"
 
 [[steps]]
 id = "write"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/theme-write.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/09_theme.md"
 output = "okf-batched/state-v3/global/theme-${input.theme.id}-write.json"
 overwrite_output = false
@@ -16,6 +17,7 @@ okf_root = "${input.okf_root}"
 
 [[steps]]
 id = "verify"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/theme-verify.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/10_verify_theme.md"
 output = "okf-batched/state-v3/global/theme-${input.theme.id}-verify.json"
 overwrite_output = false

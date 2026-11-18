@@ -14,6 +14,7 @@ path = "okf-batched/state-v3/docs/${input.source.slug}/outline.json"
 
 [[steps]]
 id = "taxonomy"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/taxonomy.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/02_taxonomy.md"
 output = "okf-batched/state-v3/docs/${input.source.slug}/taxonomy.json"
 overwrite_output = false
@@ -40,6 +41,7 @@ path = "okf-batched/state-v3/docs/${input.source.slug}/taxonomy.json"
 
 [[steps]]
 id = "consolidate"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/consolidation.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/03_consolidate.md"
 foreach = "steps.consolidation_batches.output.batches"
 iteration_id = "${item.id}"
@@ -141,6 +143,10 @@ iteration_id = "${item.id}"
 source = "${input.source}"
 concept = "${item}"
 okf_root = "${input.okf_root}"
+concept_id_options = ["${item.id}"]
+concept_path_options = ["${item.path}"]
+source_slug_options = ["${input.source.slug}"]
+source_path_options = ["${input.source.path}"]
 
 [[steps]]
 id = "coverage"
@@ -153,6 +159,7 @@ concepts = "${steps.group.output.concepts}"
 # concept manifests; incomplete source coverage is never invisible.
 [[steps]]
 id = "coverage_manifest"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/coverage-manifest.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/05_coverage_manifest.md"
 output = "okf-batched/state-v3/docs/${input.source.slug}/manifests/coverage.json"
 overwrite_output = false
@@ -186,6 +193,7 @@ coverage = "${steps.coverage.output}"
 
 [[steps]]
 id = "module_index"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/module-index.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/06_module_index.md"
 output = "okf-batched/state-v3/docs/${input.source.slug}/module-index.json"
 overwrite_output = false
@@ -205,6 +213,7 @@ folders = "${steps.group.output.folders}"
 # local flow logs. This is a short status-only model call.
 [[steps]]
 id = "navigation_manifest"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/coverage-manifest.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_navigation_manifest.md"
 output = "okf-batched/state-v3/docs/${input.source.slug}/manifests/navigation.json"
 overwrite_output = false

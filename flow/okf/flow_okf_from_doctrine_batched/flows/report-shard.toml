@@ -4,6 +4,7 @@ result = "steps.result.output"
 
 [[steps]]
 id = "result"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/final-audit.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/13_final_audit.md"
 output = "okf-batched/state-v3/global/final-report-${input.batch_id}.json"
 overwrite_output = false

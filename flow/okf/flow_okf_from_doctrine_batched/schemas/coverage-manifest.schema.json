@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "status",
+    "source_path",
+    "source_slug",
+    "concepts",
+    "warnings"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "minLength": 2
+    },
+    "source_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_slug": {
+      "type": "string",
+      "minLength": 1
+    },
+    "concepts": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

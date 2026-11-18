@@ -20,6 +20,7 @@ path = "${each.path}"
 
 [[steps]]
 id = "candidates"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/global-groups.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
 foreach = "steps.profile_batches.output.batches"
 iteration_id = "${item.id}"
@@ -41,6 +42,7 @@ next_stage = "reduce1"
 
 [[steps]]
 id = "reduce1"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/global-groups.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
 foreach = "steps.batch_reduce1.output.batches"
 iteration_id = "${item.id}"
@@ -62,6 +64,7 @@ next_stage = "reduce2"
 
 [[steps]]
 id = "reduce2"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/global-groups.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
 foreach = "steps.batch_reduce2.output.batches"
 iteration_id = "${item.id}"
@@ -83,6 +86,7 @@ next_stage = "reduce3"
 
 [[steps]]
 id = "reduce3"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/global-groups.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/07_global.md"
 foreach = "steps.batch_reduce3.output.batches"
 iteration_id = "${item.id}"
@@ -121,6 +125,7 @@ okf_root = "${input.okf_root}"
 
 [[steps]]
 id = "root_index"
+output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/root-index.schema.json"
 prompt_file = "flow/okf/flow_okf_from_doctrine_batched/prompts/11_root_index.md"
 output = "okf-batched/state-v3/global/root-index.json"
 overwrite_output = false

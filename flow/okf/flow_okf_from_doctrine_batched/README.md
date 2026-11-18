@@ -75,6 +75,40 @@ Every valid theme gets its own writing and verification steps. Per-shard
 status reports retain unsuccessful registry, theme or navigation results.
 No unbounded final LLM aggregation is required.
 
+## Native JSON Schema contracts (checkpoint-compatible)
+
+The OKF pipeline now uses the optional JSON Schema output contracts added
+in [cli-agent PR #317](https://github.com/sHuewe/cli-agent/pull/317).
+Each model-producing step points to a small workspace-local Draft 2020-12
+schema under `schemas/`. The runner includes the schema in the model's
+final-answer requirements and validates JSON **before** creating a new model
+output checkpoint. Invalid fresh responses can use the existing in-context
+JSON correction and configured `json_restart_attempts` mechanisms.
+
+For per-concept build, verify, repair and manifest generation, dynamic schema
+enum bindings additionally enforce the **exact** planned `concept_id`,
+relative concept `path`, source slug and source path. These values are
+forwarded as single-element arrays from existing parent Flow inputs; they are
+not inferred by the LLM. The existing deterministic folder-ID membership
+validator is retained because it handles both the nonempty taxonomy case
+and an explicitly empty taxonomy permitting a null folder ID.
+
+**Resume compatibility**: All prior model step IDs, prompt files, iteration
+IDs, output paths and `overwrite_output` settings remain unchanged. All
+existing `consolidation-cNNNN.json`, per-concept and Golden checkpoints
+stay in place. The runner now checks **reused** JSON model checkpoints against
+their declared schemas (and effective dynamic enums), too. Schemas are
+deliberately tolerant of previously accepted additional properties and
+historical nonstandard status strings. If an old checkpoint is genuinely
+incompatible, execution stops with a schema error; it is **never silently
+deleted, overwritten or regenerated**. Inspect and selectively repair such
+a checkpoint before resuming. No state directory reset is intended.
+
+JSON Schemas validate response shape and identity, **not source semantics,
+coverage completeness, file writes, or whether an LLM actually used
+`os__read_file`**. The existing deterministic coverage/partition/assignment
+checks and reading-based content verification remain necessary.
+
 ## Deterministic per-batch membership check and repair
 
 Requires [cli-agent PR #316](https://github.com/sHuewe/cli-agent/pull/316)

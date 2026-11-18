@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "status",
+    "batch_id"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "minLength": 2
+    },
+    "batch_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "registry_status": {
+      "type": "string"
+    },
+    "checked_themes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
