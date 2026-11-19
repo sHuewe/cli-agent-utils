@@ -318,6 +318,9 @@ def test_ignore_index_filters_only_index_related_findings(tmp_path):
         "concept_id": "s006-t001",
         "path": "okf-batched-generated-v3/" + b,
     }), encoding="utf-8")
+    (docs / "concept-s006-t001-verify.json").write_text(json.dumps({
+        "concept_id": "s006-t001", "path": b,
+    }), encoding="utf-8")
     (docs / "manifests/concept-s006-t001.json").write_text(json.dumps({
         "concepts": [{"path": b}],
     }), encoding="utf-8")
