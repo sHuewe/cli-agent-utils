@@ -339,7 +339,7 @@ def test_ignore_index_filters_only_index_related_findings(tmp_path):
     assert sum(f["reason"] == "cross_write" and f["concept_id"] == "s006-t001"
                for f in raw["findings"]) == 2
     assert "s006-t001" not in filtered["affected"].get("example", [])
-    assert "s003-t001" in filtered["affected"]["example"]
+    assert filtered["affected"] == {}
 
 
 def test_ignore_index_preserves_other_findings_on_same_concept(tmp_path):
