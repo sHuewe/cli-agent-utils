@@ -87,17 +87,6 @@ overwrite_output = true
 kind = "assert_file"
 path = "${input.okf_root}/${input.concept.path}"
 
-# Independently assert the *planned* file exists, even when all previous
-# model JSON checkpoints are reused. This step intentionally overwrites only
-# its own tiny status checkpoint on every resume.
-[[steps]]
-id = "assert_concept_file"
-output = "okf-batched/state-v3/docs/${input.source.slug}/concept-${input.concept.id}-file-check.json"
-overwrite_output = true
-[steps.filesystem_operation]
-kind = "assert_file"
-path = "${input.okf_root}/${input.concept.path}"
-
 [[steps]]
 id = "manifest"
 output_schema = "flow/okf/flow_okf_from_doctrine_batched/schemas/concept-manifest.schema.json"
