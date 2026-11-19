@@ -148,3 +148,70 @@ def test_cross_document_wrong_write_marks_both_owner_and_writer(tmp_path):
     assert moved
     assert not foreign_file.exists()
     assert (docs / "concept-s007-t001-build.json").exists()
+
+
+
+def test_quarantine_rejects_symlinked_manifest_parent_before_any_move(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    external = tmp_path.parent / (tmp_path.name + "-external-manifests")
+    external.mkdir()
+    (external / "concept-s003-t001.json").write_text('{"outside": true}')
+    manifest_dir = docs / "manifests"
+    for item in manifest_dir.iterdir():
+        item.unlink()
+    manifest_dir.rmdir()
+    try:
+        manifest_dir.symlink_to(external, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Directory symlinks are unavailable")
+
+    with pytest.raises(ValueError, match="Symlink or"):
+        audit_module.quarantine(
+            tmp_path, "okf-batched-generated-v3", report,
+            {"example": {"s003-t001", "s006-t001"}},
+        )
+    assert (external / "concept-s003-t001.json").is_file()
+    assert (docs / "concept-s003-t001-build.json").is_file()
+    assert (root / a).is_file()
+    assert not (tmp_path / "okf-batched/recovery-v3").exists()
+
+
+def test_quarantine_rejects_symlinked_recovery_ancestor_before_any_move(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    external = tmp_path.parent / (tmp_path.name + "-external-recovery")
+    external.mkdir()
+    recovery = tmp_path / "okf-batched/recovery-v3"
+    recovery.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        recovery.symlink_to(external, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Directory symlinks are unavailable")
+
+    with pytest.raises(ValueError, match="Symlink or"):
+        audit_module.quarantine(
+            tmp_path, "okf-batched-generated-v3", report,
+            {"example": {"s003-t001", "s006-t001"}},
+        )
+    assert not list(external.iterdir())
+    assert (docs / "concept-s003-t001-build.json").is_file()
+    assert (root / a).is_file()
+
+
+def test_audit_rejects_symlinked_manifest_parent(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    external = tmp_path.parent / (tmp_path.name + "-audit-manifests")
+    external.mkdir()
+    (external / "concept-s003-t001.json").write_text('{"concepts": []}')
+    manifest_dir = docs / "manifests"
+    for item in manifest_dir.iterdir():
+        item.unlink()
+    manifest_dir.rmdir()
+    try:
+        manifest_dir.symlink_to(external, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("Directory symlinks are unavailable")
+    with pytest.raises(ValueError, match="Symlink or"):
+        audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    assert (external / "concept-s003-t001.json").is_file()
