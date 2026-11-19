@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import tomllib
 
@@ -48,6 +48,39 @@ def _load(path: Path, *, workspace: Path) -> dict:
     if not isinstance(doc, dict):
         raise ValueError(f"Expected JSON object: {path}")
     return doc
+
+
+def _normalized_reported_concept_path(raw_path: str, output_root: str) -> str | None:
+    """Map an untrusted reported path to a safe output-root-relative key.
+
+    Accept both supported report spellings (with or without the output-root
+    prefix), collapsing redundant separators, dot segments and in-root '..'.
+    Never let a parent traversal escape the selected output root. The result
+    is for matching planned owners only, not for filesystem operations.
+    """
+    if not isinstance(raw_path, str) or not raw_path or "\\\\" in raw_path:
+        return None
+    reported = PurePosixPath(raw_path)
+    if reported.is_absolute():
+        return None
+    parts = reported.parts
+    prefix = PurePosixPath(output_root).parts
+    if parts[:len(prefix)] == prefix:
+        parts = parts[len(prefix):]
+    elif not parts or parts[0] != "doctrines":
+        return None
+
+    normalized: list[str] = []
+    for part in parts:
+        if part == "..":
+            if not normalized:
+                return None
+            normalized.pop()
+        else:
+            normalized.append(part)
+    if not normalized or normalized[0] != "doctrines":
+        return None
+    return "/".join(normalized)
 
 
 def _inside(root: Path, relative: str) -> Path:
@@ -110,9 +143,8 @@ def audit(workspace: Path, output_root: str) -> dict:
         affected.setdefault(slug, set()).add(cid)
 
     def mark_owner(writer_slug: str, writer_id: str, raw_path: str, step: str) -> None:
-        canonical = (raw_path[len(output_root) + 1:]
-                     if raw_path.startswith(output_root + "/") else raw_path)
-        owner = corpus_owners.get(canonical)
+        canonical = _normalized_reported_concept_path(raw_path, output_root)
+        owner = corpus_owners.get(canonical) if canonical is not None else None
         if owner is not None and owner != (writer_slug, writer_id):
             issue_for(owner[0], owner[1], "potentially_overwritten",
                       f"{writer_slug}/{writer_id}/{step} references this concept's path")
