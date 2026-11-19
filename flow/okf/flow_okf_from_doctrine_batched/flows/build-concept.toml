@@ -12,6 +12,9 @@ overwrite_output = false
 workspace_access = "write"
 response_format = "json"
 approve_tools = ["os__make_directory", "os__write_file"]
+[steps.tool_policy]
+allowed_tools = ["os__read_file", "os__write_file", "os__make_directory"]
+write_paths = ["${input.okf_root}/${input.concept.path}"]
 [steps.vars]
 concept = "${input.concept}"
 okf_root = "${input.okf_root}"
@@ -19,6 +22,16 @@ okf_root = "${input.okf_root}"
 [steps.output_schema_enums]
 "/properties/concept_id" = "input.concept_id_options"
 "/properties/path" = "input.concept_result_path_options"
+
+# Deterministically require the planned markdown file, not merely
+# a self-reported path in build JSON.
+[[steps]]
+id = "assert_build"
+output = "okf-batched/state-v3/docs/${input.source.slug}/concept-${input.concept.id}-assert-build.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "assert_file"
+path = "${input.okf_root}/${input.concept.path}"
 
 [[steps]]
 id = "verify"
@@ -29,6 +42,8 @@ output = "okf-batched/state-v3/docs/${input.source.slug}/concept-${input.concept
 overwrite_output = false
 workspace_access = "read"
 response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
 [steps.vars]
 concept = "${input.concept}"
 build = "${steps.build.output}"
@@ -48,6 +63,9 @@ overwrite_output = false
 workspace_access = "write"
 response_format = "json"
 approve_tools = ["os__write_file"]
+[steps.tool_policy]
+allowed_tools = ["os__read_file", "os__write_file"]
+write_paths = ["${input.okf_root}/${input.concept.path}"]
 [steps.vars]
 concept = "${input.concept}"
 verification = "${steps.verify.output}"
@@ -58,6 +76,16 @@ okf_root = "${input.okf_root}"
 [steps.output_schema_enums]
 "/properties/concept_id" = "input.concept_id_options"
 "/properties/path" = "input.concept_result_path_options"
+
+# Recheck the actual target after repair. Deliberately overwrite the
+# assertion state on every resume, even if all LLM checkpoints are reused.
+[[steps]]
+id = "assert_repair"
+output = "okf-batched/state-v3/docs/${input.source.slug}/concept-${input.concept.id}-assert-repair.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "assert_file"
+path = "${input.okf_root}/${input.concept.path}"
 
 [[steps]]
 id = "manifest"
