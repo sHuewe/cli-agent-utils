@@ -209,8 +209,9 @@ checks for missing generated Markdown and marks cross-written target
 owners as potentially overwritten.
 
 If historical repair results frequently claim changes to navigation
-`index.md` files, add `--ignore-index` to the audit command to omit
-findings caused solely by these reported index paths:
+`index.md` files (including the root `okf-batched-generated-v3/index.md`),
+add `--ignore-index` to omit findings caused solely by valid reported
+index paths within the configured OKF output root:
 
 ```powershell
 py .\\flow\\okf\\flow_okf_from_doctrine_batched\\audit_concepts.py --workspace . --ignore-index
