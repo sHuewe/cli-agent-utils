@@ -233,7 +233,12 @@ py .\flow\okf\flow_okf_from_doctrine_batched\audit_concepts.py --workspace . --a
 ```
 
 The selection must include all affected IDs for a cross-concept incident (such as both `s003-t001` and `s006-t001`); otherwise the script refuses to proceed. Replace `SOURCE_SLUG` with the document directory name reported by the audit.\n\nThe source slug must match the audit report; the example IDs must be reviewed and adjusted. Both IDs involved in a cross-concept incident are required.\n\nThis is a **quarantine**, not a deletion. It refuses conflicting
-recovery destinations. All other per-concept checkpoints, group plans
+recovery destinations. A historical malformed concept directory such as
+`s013-t006.md/s013-t006.md` can also be quarantined as a unit, but only
+if the outer `.md` directory contains exactly one regular file with
+the same basename. Symlinks, unrelated files and complex directory
+contents fail closed before any moves; inspect such cases manually.
+All other per-concept checkpoints, group plans
 and initial document analysis remain unchanged. The relocated
 checkpoints are absent for the next resume, so the affected concepts
 are generated again using the scoped writes.
