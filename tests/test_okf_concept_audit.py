@@ -412,3 +412,84 @@ def test_ignore_index_cli_parses_flag_without_writes(tmp_path, capsys):
     assert "Dry run" in captured
     assert "index.md" not in captured
     assert "concept-s006-t001-build.json" in {p.name for p in docs.iterdir()}
+
+
+
+@pytest.mark.parametrize("reported", [
+    "okf-batched-generated-v3/index.md",
+    "okf-batched-generated-v3/./index.md",
+    "okf-batched-generated-v3/navigation/../index.md",
+    "okf-batched-generated-v3/custom/navigation/index.md",
+    "okf-batched-generated-v3/doctrines/example/planning/index.md",
+    "doctrines/example/planning/index.md",
+])
+def test_ignore_index_recognizes_root_and_nested_output_indexes(reported):
+    assert audit_module._is_index_reported_path(reported, "okf-batched-generated-v3")
+
+
+@pytest.mark.parametrize("reported", [
+    "index.md",
+    "../okf-batched-generated-v3/index.md",
+    "okf-batched-generated-v3/../index.md",
+    "okf-batched-generated-v3/../../outside/index.md",
+    "other-generated/index.md",
+    "/absolute/index.md",
+    "okf-batched-generated-v3\\index.md",
+    "doctrines/../../index.md",
+])
+def test_ignore_index_does_not_filter_paths_outside_output_root(reported):
+    assert not audit_module._is_index_reported_path(reported, "okf-batched-generated-v3")
+
+
+def test_ignore_root_index_does_not_hide_other_concept_errors(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    (root / b).write_text("# built", encoding="utf-8")
+    (docs / "concept-s006-t001-build.json").write_text(json.dumps({
+        "concept_id": "s006-t001", "path": b,
+    }), encoding="utf-8")
+    (docs / "concept-s006-t001-verify.json").write_text(json.dumps({
+        "concept_id": "s006-t001", "path": b,
+    }), encoding="utf-8")
+    (docs / "manifests/concept-s006-t001.json").write_text(json.dumps({
+        "concepts": [{"path": b}],
+    }), encoding="utf-8")
+    (docs / "concept-s006-t001-repair.json").write_text(json.dumps({
+        "concept_id": "s006-t001",
+        "path": "okf-batched-generated-v3/index.md",
+        "changed_paths": [
+            "okf-batched-generated-v3/index.md",
+            "okf-batched-generated-v3/" + a,
+        ],
+    }), encoding="utf-8")
+    unfiltered = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    filtered = audit_module.audit(tmp_path, "okf-batched-generated-v3", ignore_index=True)
+    assert any(
+        f["concept_id"] == "s006-t001" and "index.md" in f["detail"]
+        for f in unfiltered["findings"]
+    )
+    assert not any("index.md" in f["detail"] for f in filtered["findings"])
+    assert any(
+        f["reason"] == "cross_write" and f["concept_id"] == "s006-t001"
+        for f in filtered["findings"]
+    )
+    assert any(
+        e["writer_concept"] == "s006-t001" and e["target_concept"] == "s003-t001"
+        for e in filtered["cross_writes"]
+    )
+
+
+def test_ignore_root_index_only_clears_index_only_concept(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    (root / b).write_text("# built", encoding="utf-8")
+    for step in ("build", "verify", "repair"):
+        (docs / f"concept-s006-t001-{step}.json").write_text(json.dumps({
+            "concept_id": "s006-t001",
+            "path": b,
+            "changed_paths": ["okf-batched-generated-v3/index.md"]
+            if step == "repair" else [],
+        }), encoding="utf-8")
+    (docs / "manifests/concept-s006-t001.json").write_text(json.dumps({
+        "concepts": [{"path": b}]
+    }), encoding="utf-8")
+    report = audit_module.audit(tmp_path, "okf-batched-generated-v3", ignore_index=True)
+    assert report["affected"] == {}
