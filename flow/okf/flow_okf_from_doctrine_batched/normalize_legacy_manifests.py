@@ -48,10 +48,14 @@ def plan_updates(workspace: Path, root: str) -> list[tuple[Path, bytes, bytes]]:
             continue
         group_path = document_dir / "group.json"
         manifests_dir = document_dir / "manifests"
-        if not group_path.is_file() or not manifests_dir.is_dir():
-            continue
         if manifests_dir.is_symlink():
             raise ValueError(f"Refusing symlink manifest directory: {manifests_dir}")
+        if not manifests_dir.is_dir():
+            continue
+        if not group_path.is_file():
+            if list(manifests_dir.glob("concept-*.json")):
+                raise ValueError(f"Missing authoritative group.json for manifests: {group_path}")
+            continue
 
         group = _read_json(group_path)
         concepts = group.get("concepts")
@@ -127,6 +131,12 @@ def run(argv: list[str] | None = None) -> int:
         print(f'{"NORMALIZE" if args.apply else "WOULD NORMALIZE"} {path.relative_to(workspace)}')
 
     if args.apply:
+        # Refuse conflicting backups before modifying any document in this
+        # corpus, avoiding partial application due to an existing backup.
+        for path, _, _ in changes:
+            backup = path.with_name(path.name + ".bak-pre-root-normalize")
+            if backup.exists() or backup.is_symlink():
+                raise FileExistsError(f"Migration backup already exists: {backup}")
         for path, original, changed in changes:
             backup = path.with_name(path.name + ".bak-pre-root-normalize")
             # No overwrite of previous migration backups: do not silently
