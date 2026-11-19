@@ -1,5 +1,5 @@
 version = 1
-inputs = ["source", "concept", "okf_root", "concept_id_options", "concept_path_options", "source_slug_options", "source_path_options"]
+inputs = ["source", "concept", "okf_root", "concept_id_options", "concept_path_options", "concept_result_path_options", "source_slug_options", "source_path_options"]
 result = "steps.manifest.output"
 
 [[steps]]
@@ -18,7 +18,7 @@ okf_root = "${input.okf_root}"
 
 [steps.output_schema_enums]
 "/properties/concept_id" = "input.concept_id_options"
-"/properties/path" = "input.concept_path_options"
+"/properties/path" = "input.concept_result_path_options"
 
 [[steps]]
 id = "verify"
@@ -36,7 +36,7 @@ okf_root = "${input.okf_root}"
 
 [steps.output_schema_enums]
 "/properties/concept_id" = "input.concept_id_options"
-"/properties/path" = "input.concept_path_options"
+"/properties/path" = "input.concept_result_path_options"
 
 [[steps]]
 id = "repair"
@@ -57,7 +57,7 @@ okf_root = "${input.okf_root}"
 
 [steps.output_schema_enums]
 "/properties/concept_id" = "input.concept_id_options"
-"/properties/path" = "input.concept_path_options"
+"/properties/path" = "input.concept_result_path_options"
 
 [[steps]]
 id = "manifest"
