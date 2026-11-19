@@ -239,3 +239,70 @@ def test_quarantine_rejects_file_as_recovery_directory_before_any_move(tmp_path)
     assert (docs / "manifests/concept-s003-t001.json").is_file()
     assert (root / a).is_file()
     assert not (tmp_path / "okf-batched/recovery-v3/state/example/concept-s003-t001-build.json").exists()
+
+
+
+@pytest.mark.parametrize("reported", [
+    "okf-batched-generated-v3/doctrines/example/planning/./s003-t001.md",
+    "okf-batched-generated-v3/doctrines/example/planning//s003-t001.md",
+    "doctrines/example/planning/other/../s003-t001.md",
+])
+def test_aliased_repair_write_marks_target_owner_and_requires_paired_selection(tmp_path, reported):
+    docs, root, a, b, c = data(tmp_path)
+    (docs / "concept-s006-t001-repair.json").write_text(json.dumps({
+        "concept_id": "s006-t001",
+        "path": "okf-batched-generated-v3/" + b,
+        "changed_paths": [reported],
+        "status": "repaired",
+    }), encoding="utf-8")
+    report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    assert {"s003-t001", "s006-t001"} <= set(report["affected"]["example"])
+    assert any(
+        edge["writer_concept"] == "s006-t001"
+        and edge["target_concept"] == "s003-t001"
+        for edge in report["cross_writes"]
+    )
+    with pytest.raises(ValueError, match="Select both"):
+        audit_module.quarantine(
+            tmp_path, "okf-batched-generated-v3", report,
+            {"example": {"s006-t001"}},
+        )
+    assert (root / a).is_file()
+    assert (docs / "concept-s003-t001-build.json").is_file()
+
+
+def test_aliased_build_path_marks_foreign_document_owner(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    other = tmp_path / "okf-batched/state-v3/docs/other"
+    other.mkdir(parents=True)
+    foreign = "doctrines/other/planning/s001-t001.md"
+    (root / foreign).parent.mkdir(parents=True)
+    (root / foreign).write_text("# target", encoding="utf-8")
+    (other / "group.json").write_text(json.dumps({
+        "concepts": [{"id": "s001-t001", "path": foreign}]
+    }), encoding="utf-8")
+    (docs / "concept-s006-t001-build.json").write_text(json.dumps({
+        "concept_id": "s006-t001",
+        "path": "okf-batched-generated-v3/doctrines/other/./planning/s001-t001.md",
+        "status": "created",
+    }), encoding="utf-8")
+    report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    assert "s001-t001" in report["affected"]["other"]
+    assert any(
+        edge["writer_document"] == "example"
+        and edge["target_document"] == "other"
+        and edge["target_concept"] == "s001-t001"
+        for edge in report["cross_writes"]
+    )
+
+
+@pytest.mark.parametrize("reported", [
+    "/tmp/doctrines/example/planning/s003-t001.md",
+    "../doctrines/example/planning/s003-t001.md",
+    "okf-batched-generated-v3/../../doctrines/example/planning/s003-t001.md",
+    "doctrines\\example\\planning\\s003-t001.md",
+])
+def test_normalized_reported_path_rejects_unsafe_spelling(reported):
+    assert audit_module._normalized_reported_concept_path(
+        reported, "okf-batched-generated-v3",
+    ) is None
