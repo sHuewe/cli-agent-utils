@@ -318,6 +318,9 @@ def test_ignore_index_filters_only_index_related_findings(tmp_path):
         "concept_id": "s006-t001",
         "path": "okf-batched-generated-v3/" + b,
     }), encoding="utf-8")
+    (docs / "manifests/concept-s006-t001.json").write_text(json.dumps({
+        "concepts": [{"path": b}],
+    }), encoding="utf-8")
     (docs / "concept-s006-t001-repair.json").write_text(json.dumps({
         "concept_id": "s006-t001",
         "path": b,
@@ -384,8 +387,7 @@ def test_ignore_index_does_not_hide_unsafe_path_or_wrong_id(tmp_path):
     assert {"wrong_id", "cross_write"} <= reasons
 
 
-def test_ignore_index_cli_parses_flag_without_writes(tmp_path, monkeypatch, capsys):
-    from pathlib import Path
+def test_ignore_index_cli_parses_flag_without_writes(tmp_path, capsys):
     workspace = tmp_path
     config = workspace / "flow/okf/flow_okf_from_doctrine_batched/flow.toml"
     config.parent.mkdir(parents=True)
@@ -398,6 +400,9 @@ def test_ignore_index_cli_parses_flag_without_writes(tmp_path, monkeypatch, caps
     (docs / "concept-s006-t001-repair.json").write_text(json.dumps({
         "concept_id": "s006-t001", "path": b,
         "changed_paths": ["doctrines/example/planning/index.md"],
+    }))
+    (docs / "manifests/concept-s006-t001.json").write_text(json.dumps({
+        "concepts": [{"path": b}],
     }))
     assert audit_module.main(["--workspace", str(workspace), "--ignore-index"]) == 0
     captured = capsys.readouterr().out
