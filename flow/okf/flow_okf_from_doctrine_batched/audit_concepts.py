@@ -58,7 +58,7 @@ def _normalized_reported_concept_path(raw_path: str, output_root: str) -> str | 
     Never let a parent traversal escape the selected output root. The result
     is for matching planned owners only, not for filesystem operations.
     """
-    if not isinstance(raw_path, str) or not raw_path or "\\\\" in raw_path:
+    if not isinstance(raw_path, str) or not raw_path or "\\" in raw_path:
         return None
     reported = PurePosixPath(raw_path)
     if reported.is_absolute():
