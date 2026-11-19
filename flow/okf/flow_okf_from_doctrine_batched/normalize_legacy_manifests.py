@@ -26,12 +26,12 @@ def _read_json(path: Path) -> dict:
 def _safe_root(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("OKF root must be a string.")
-    value = value.replace("\\", "/").strip("/")
+    value = value.replace("\\", "/")
+    if value.startswith("/") or ":" in value.split("/")[0]:
+        raise ValueError("OKF root must be workspace-relative.")
     pieces = value.split("/")
     if not value or any(piece in ("", ".", "..") for piece in pieces):
         raise ValueError("Invalid OKF root.")
-    if value.startswith("/") or ":" in pieces[0]:
-        raise ValueError("OKF root must be workspace-relative.")
     return value
 
 
