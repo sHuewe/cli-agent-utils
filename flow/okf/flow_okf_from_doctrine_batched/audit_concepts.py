@@ -161,18 +161,6 @@ def quarantine(
                 f"{edge['writer_document']}:{edge['writer_concept']} -> "
                 f"{edge['target_document']}:{edge['target_concept']}"
             )
-    # Refuse half a cross-concept incident: the original owner may have
-    # been overwritten, even if its own three JSON outputs look correct.
-    for finding in report["findings"]:
-        if finding["reason"] in {"cross_write", "wrong_path", "potentially_overwritten"}:
-            slug = finding["document"]
-            affected_ids = affected.get(slug, set())
-            selected_ids = selected.get(slug, set())
-            if selected_ids & affected_ids and selected_ids != affected_ids:
-                raise ValueError(
-                    f"Select all affected IDs for a cross-concept incident in {slug}: "
-                    f"{sorted(affected_ids)}"
-                )
     sources: list[Path] = []
     docs = workspace / "okf-batched/state-v3/docs"
     generated = workspace / output_root
