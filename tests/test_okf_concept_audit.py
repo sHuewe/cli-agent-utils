@@ -434,7 +434,7 @@ def test_ignore_index_recognizes_root_and_nested_output_indexes(reported):
     "okf-batched-generated-v3/../../outside/index.md",
     "other-generated/index.md",
     "/absolute/index.md",
-    "okf-batched-generated-v3\\index.md",
+    r"okf-batched-generated-v3\\index.md",
     "doctrines/../../index.md",
 ])
 def test_ignore_index_does_not_filter_paths_outside_output_root(reported):
