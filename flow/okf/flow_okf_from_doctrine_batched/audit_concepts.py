@@ -233,6 +233,27 @@ def audit(workspace: Path, output_root: str, *, ignore_index: bool = False) -> d
             ]}
 
 
+def _validate_misplaced_concept_directory(workspace: Path, path: Path) -> None:
+    """Preflight a malformed concept .md directory before quarantining it.
+
+    An old writer sometimes created concept.md/concept.md instead of
+    concept.md. Move the *outer* directory to recovery so the next run can
+    create the planned file. Reject unrelated contents rather than moving a
+    directory that might hold another concept or navigation artifact.
+    """
+    if path.suffix.lower() != ".md" or not path.is_dir():
+        raise ValueError(f"Expected a regular artifact file: {path}")
+    children = list(path.iterdir())
+    if len(children) != 1 or children[0].name != path.name:
+        raise ValueError(
+            f"Unexpected contents in malformed concept directory: {path}"
+        )
+    nested_file = children[0]
+    _require_safe_path(workspace, nested_file)
+    if not nested_file.is_file():
+        raise ValueError(f"Expected regular nested concept file: {nested_file}")
+
+
 def quarantine(
     workspace: Path, output_root: str, report: dict,
     selected: dict[str, set[str]],
@@ -283,7 +304,10 @@ def quarantine(
     for path in sources:
         _require_safe_path(workspace, path)
         if path.exists() and not path.is_file():
-            raise ValueError(f"Expected a regular artifact file: {path}")
+            if path.is_relative_to(generated):
+                _validate_misplaced_concept_directory(workspace, path)
+            else:
+                raise ValueError(f"Expected a regular artifact file: {path}")
     distinct = sorted({path for path in sources if path.exists()})
     base = workspace / "okf-batched/recovery-v3"
     _require_safe_path(workspace, base)

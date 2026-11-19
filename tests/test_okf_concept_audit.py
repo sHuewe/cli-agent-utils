@@ -493,3 +493,71 @@ def test_ignore_root_index_only_clears_index_only_concept(tmp_path):
     }), encoding="utf-8")
     report = audit_module.audit(tmp_path, "okf-batched-generated-v3", ignore_index=True)
     assert report["affected"] == {}
+
+
+
+def test_quarantine_moves_malformed_nested_concept_directory(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    wrong_directory = root / b
+    wrong_directory.mkdir()
+    (wrong_directory / wrong_directory.name).write_text(
+        "# misplaced concept", encoding="utf-8"
+    )
+    report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    assert "s006-t001" in report["affected"]["example"]
+    moved = audit_module.quarantine(
+        tmp_path, "okf-batched-generated-v3", report,
+        {"example": {"s003-t001", "s006-t001"}},
+    )
+    assert moved
+    backup = tmp_path / "okf-batched/recovery-v3/generated" / b
+    assert backup.is_dir()
+    assert (backup / wrong_directory.name).read_text(encoding="utf-8") == "# misplaced concept"
+    assert not wrong_directory.exists()
+    assert not (docs / "concept-s006-t001-build.json").exists()
+    assert (docs / "concept-s007-t001-build.json").exists()
+    assert (root / c).is_file()
+
+
+@pytest.mark.parametrize("extra", ["another.md", "index.md", "child_directory"])
+def test_quarantine_rejects_unexpected_nested_concept_contents(tmp_path, extra):
+    docs, root, a, b, c = data(tmp_path)
+    malformed = root / b
+    malformed.mkdir()
+    (malformed / malformed.name).write_text("# misplaced", encoding="utf-8")
+    if extra == "child_directory":
+        (malformed / extra).mkdir()
+    else:
+        (malformed / extra).write_text("unrelated", encoding="utf-8")
+    report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    with pytest.raises(ValueError, match="Unexpected contents"):
+        audit_module.quarantine(
+            tmp_path, "okf-batched-generated-v3", report,
+            {"example": {"s003-t001", "s006-t001"}},
+        )
+    assert (docs / "concept-s006-t001-build.json").is_file()
+    assert (root / a).is_file()
+    assert (malformed / malformed.name).is_file()
+    assert not (tmp_path / "okf-batched/recovery-v3").exists()
+
+
+def test_quarantine_rejects_symlink_inside_malformed_concept_directory(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    malformed = root / b
+    malformed.mkdir()
+    external = tmp_path.parent / (tmp_path.name + "-misplaced-concept-external.md")
+    external.write_text("external", encoding="utf-8")
+    try:
+        (malformed / malformed.name).symlink_to(external)
+    except (OSError, NotImplementedError):
+        pytest.skip("File symlinks are unavailable")
+    report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    with pytest.raises(ValueError, match="Symlink or"):
+        audit_module.quarantine(
+            tmp_path, "okf-batched-generated-v3", report,
+            {"example": {"s003-t001", "s006-t001"}},
+        )
+    assert external.read_text(encoding="utf-8") == "external"
+    assert (docs / "concept-s006-t001-build.json").is_file()
+    assert (root / a).is_file()
+    assert not (tmp_path / "okf-batched/recovery-v3").exists()
