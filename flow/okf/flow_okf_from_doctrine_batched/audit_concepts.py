@@ -84,11 +84,32 @@ def _normalized_reported_concept_path(raw_path: str, output_root: str) -> str | 
 
 
 def _is_index_reported_path(raw_path: object, output_root: str) -> bool:
-    """Recognize safe, normalized index.md paths reported by old checkpoints."""
-    if not isinstance(raw_path, str):
+    """Recognize index.md inside the output root, including its root index.
+
+    A bare index.md or paths escaping the output root are not ignored. Keep
+    this separate from concept ownership, which only accepts doctrines/.
+    """
+    if not isinstance(raw_path, str) or not raw_path or "\\" in raw_path:
         return False
-    relative = _normalized_reported_concept_path(raw_path, output_root)
-    return relative is not None and PurePosixPath(relative).name.casefold() == "index.md"
+    path = PurePosixPath(raw_path)
+    if path.is_absolute():
+        return False
+    parts = path.parts
+    prefix = PurePosixPath(output_root).parts
+    if parts[:len(prefix)] == prefix:
+        parts = parts[len(prefix):]
+    elif not parts or parts[0] != "doctrines":
+        return False
+
+    normalized: list[str] = []
+    for part in parts:
+        if part == "..":
+            if not normalized:
+                return False
+            normalized.pop()
+        else:
+            normalized.append(part)
+    return bool(normalized) and normalized[-1].casefold() == "index.md"
 
 
 def _inside(root: Path, relative: str) -> Path:
