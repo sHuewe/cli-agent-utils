@@ -214,10 +214,10 @@ dependent coverage/navigation checkpoints into
 `okf-batched/recovery-v3/`:
 
 ```powershell
-py .\flow\okf\flow_okf_from_doctrine_batched\audit_concepts.py --workspace . --apply --select "SOURCE_SLUG:s003-t001" --select "SOURCE_SLUG:s006-t001"
+py .\flow\okf\flow_okf_from_doctrine_batched\audit_concepts.py --workspace . --apply --select "<SOURCE_SLUG>:s003-t001" --select "<SOURCE_SLUG>:s006-t001" --select "SOURCE_SLUG:s003-t001" --select "SOURCE_SLUG:s006-t001"
 ```
 
-The selection must include all affected IDs for a cross-concept incident (such as both `s003-t001` and `s006-t001`); otherwise the script refuses to proceed. Replace `SOURCE_SLUG` with the document directory name reported by the audit.\n\nThis is a **quarantine**, not a deletion. It refuses conflicting
+The selection must include all affected IDs for a cross-concept incident (such as both `s003-t001` and `s006-t001`); otherwise the script refuses to proceed. Replace `SOURCE_SLUG` with the document directory name reported by the audit.\n\nThe source slug must match the audit report; the example IDs must be reviewed and adjusted. Both IDs involved in a cross-concept incident are required.\n\nThis is a **quarantine**, not a deletion. It refuses conflicting
 recovery destinations. All other per-concept checkpoints, group plans
 and initial document analysis remain unchanged. The relocated
 checkpoints are absent for the next resume, so the affected concepts
