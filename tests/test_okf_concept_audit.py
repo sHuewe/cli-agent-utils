@@ -96,3 +96,55 @@ def test_quarantine_refuses_to_ignore_the_overwritten_owner(tmp_path):
         )
     assert (docs / "concept-s006-t001-build.json").exists()
     assert (root / a).exists()
+
+
+def test_cross_document_wrong_write_marks_both_owner_and_writer(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    other = tmp_path / "okf-batched/state-v3/docs/other"
+    other.mkdir(parents=True)
+    foreign = "doctrines/other/planning/s001-t001.md"
+    foreign_file = root / foreign
+    foreign_file.parent.mkdir(parents=True)
+    foreign_file.write_text("# foreign content")
+    (other / "group.json").write_text(json.dumps({
+        "concepts": [{"id": "s001-t001", "path": foreign}]
+    }))
+    (other / "concept-s001-t001-build.json").write_text(json.dumps({
+        "concept_id": "s001-t001",
+        "path": "okf-batched-generated-v3/" + foreign,
+        "status": "created",
+    }))
+    (docs / "concept-s006-t001-build.json").write_text(json.dumps({
+        "concept_id": "s006-t001",
+        "path": "okf-batched-generated-v3/" + foreign,
+        "status": "created",
+    }))
+    (docs / "concept-s006-t001-repair.json").write_text(json.dumps({
+        "concept_id": "s006-t001",
+        "path": "okf-batched-generated-v3/" + b,
+        "changed_paths": ["okf-batched-generated-v3/" + foreign],
+        "status": "repaired",
+    }))
+    report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    assert "s001-t001" in report["affected"]["other"]
+    assert "s006-t001" in report["affected"]["example"]
+    assert any(
+        row["writer_document"] == "example"
+        and row["target_document"] == "other"
+        and row["target_concept"] == "s001-t001"
+        for row in report["cross_writes"]
+    )
+    with pytest.raises(ValueError, match="Select both"):
+        audit_module.quarantine(
+            tmp_path, "okf-batched-generated-v3", report,
+            {"example": {"s003-t001", "s006-t001"}},
+        )
+    assert foreign_file.is_file()
+    assert (other / "concept-s001-t001-build.json").is_file()
+    moved = audit_module.quarantine(
+        tmp_path, "okf-batched-generated-v3", report,
+        {"example": {"s003-t001", "s006-t001"}, "other": {"s001-t001"}},
+    )
+    assert moved
+    assert not foreign_file.exists()
+    assert (docs / "concept-s007-t001-build.json").exists()
