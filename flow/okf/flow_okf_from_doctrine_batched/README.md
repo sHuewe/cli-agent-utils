@@ -141,6 +141,46 @@ results are written into separate `validation-cNNNN.json`,
 under the document's existing `okf-batched/state-v3/docs/<slug>/` directory.
 Existing scan and consolidation JSON checkpoints are not overwritten.
 
+## Legacy root-prefixed concept manifests
+
+Some concept manifests written before strict JSON Schema output bindings store
+`concepts[*].path` with the configured OKF root prefixed, e.g.
+`okf-batched-generated-v3/doctrines/<slug>/<concept>.md`, instead of the
+canonical `doctrines/<slug>/<concept>.md`. These JSON checkpoints are structurally
+valid but will now fail the canonical manifest path enum.
+
+**Do not delete the concept build/verify/repair checkpoints or loosen the
+canonical manifest schema.** The global topic reduction expects relative
+paths without the OKF output root.
+
+Stop the flow and back up your full state directory first. From the
+repository workspace, inspect a dry run:
+
+```powershell
+python flow/okf/flow_okf_from_doctrine_batched/normalize_legacy_manifests.py --workspace .
+```
+
+To apply the *exact* plan-based path correction after reviewing the preview:
+
+```powershell
+python flow/okf/flow_okf_from_doctrine_batched/normalize_legacy_manifests.py --workspace . --apply
+```
+
+The script derives the OKF root from the existing flow's
+`[vars].okf_root` (or `--okf-root` if explicitly supplied). It reads
+`group.json` from each document state as the authoritative mapping of
+concept IDs to canonical paths. For a manifest, it accepts only that exact
+canonical path or the same path prefixed by that one configured OKF root;
+anything else fails closed before changes begin. It rewrites **only**
+`concepts[0].path`, preserving all other JSON values, and creates a
+`.json.bak-pre-root-normalize` copy next to each modified file. No
+other checkpoint files, Markdown sources or generated concept files are
+modified. Re-running is idempotent.
+
+Run the main OKF flow **after** the migration (not concurrently). Existing
+checkpoints remain available for normal reuse. Since only the manifest path
+changes, the old generated Markdown is untouched.
+
 ## Limits and invalidation
 
 - Source/document edits and prompt/model changes require explicit checkpoint
