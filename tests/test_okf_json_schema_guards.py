@@ -101,7 +101,7 @@ def test_nonconforming_verify_status_from_older_runs_is_not_rejected_by_schema()
 def test_runtime_schema_enums_enforce_exact_concept_identity():
     concept = steps("flows/build-concept.toml")
     expected_id = {"ref": "input.concept_id_options"}
-    expected_path = {"ref": "input.concept_path_options"}
+    expected_path = {"ref": "input.concept_result_path_options"}
     for name in ("build", "verify", "repair"):
         enums = concept[name]["output_schema_enums"]
         assert enums["/properties/concept_id"] == expected_id["ref"]
@@ -122,6 +122,9 @@ def test_runtime_schema_enums_enforce_exact_concept_identity():
     caller = steps("flows/finish-document.toml")["build_concepts"]["input"]
     assert caller["concept_id_options"] == ["${item.id}"]
     assert caller["concept_path_options"] == ["${item.path}"]
+    assert caller["concept_result_path_options"] == [
+        "${item.path}", "${input.okf_root}/${item.path}"
+    ]
     assert caller["source_slug_options"] == ["${input.source.slug}"]
     assert caller["source_path_options"] == ["${input.source.path}"]
     child_inputs = tomllib.loads((BASE / "flows/build-concept.toml").read_text())["inputs"]
@@ -173,3 +176,45 @@ def test_previous_nonstandard_verify_status_is_valid_old_checkpoint():
     old = {"status": "needs_attention", "concept_id": "s056-t001",
            "path": "doctrines/a/s056-t001.md", "documented_item_ids": []}
     Draft202012Validator(schema).validate(old)
+
+
+def test_legacy_root_prefixed_concept_output_uses_exact_concrete_enum():
+    """Previously persisted model results may include the configured OKF root."""
+    from jsonschema import Draft202012Validator
+
+    child = steps("flows/build-concept.toml")
+    parent = steps("flows/finish-document.toml")["build_concepts"]["input"]
+    canonical = "doctrines/md-2026/cell-role-and-authority/s001-t001.md"
+    root = "okf-batched-generated-v3"
+    options = [canonical, f"{root}/{canonical}"]
+    assert parent["concept_result_path_options"] == [
+        "${item.path}", "${input.okf_root}/${item.path}"
+    ]
+    assert parent["concept_path_options"] == ["${item.path}"]
+
+    for name in ("build", "verify", "repair"):
+        step = child[name]
+        assert step["output_schema_enums"]["/properties/path"] == (
+            "input.concept_result_path_options"
+        )
+        schema = json.loads((ROOT / step["output_schema"]).read_text())
+        schema["properties"]["path"]["enum"] = options
+        required = {
+            "build": {"status": "created", "documented_item_ids": []},
+            "verify": {"status": "ok", "documented_item_ids": []},
+            "repair": {"status": "ok", "documented_item_ids": []},
+        }[name]
+        for path in options:
+            Draft202012Validator(schema).validate({
+                "concept_id": "s001-t001", "path": path, **required
+            })
+        assert list(Draft202012Validator(schema).iter_errors({
+            "concept_id": "s001-t001", "path": "other-root/" + canonical,
+            **required
+        }))
+
+    # Manifest must always use the canonical relative path, not a root prefix.
+    manifest = child["manifest"]["output_schema_enums"]
+    assert manifest["/properties/concepts/items/properties/path"] == (
+        "input.concept_path_options"
+    )
