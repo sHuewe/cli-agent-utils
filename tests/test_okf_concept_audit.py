@@ -215,3 +215,27 @@ def test_audit_rejects_symlinked_manifest_parent(tmp_path):
     with pytest.raises(ValueError, match="Symlink or"):
         audit_module.audit(tmp_path, "okf-batched-generated-v3")
     assert (external / "concept-s003-t001.json").is_file()
+
+
+
+def test_quarantine_rejects_file_as_recovery_directory_before_any_move(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    # The concept JSON checkpoints have earlier target paths than the
+    # manifest. A file in this directory must fail during preflight, not
+    # after some of those earlier checkpoints have already moved.
+    blocker = tmp_path / "okf-batched/recovery-v3/state/example/manifests"
+    blocker.parent.mkdir(parents=True, exist_ok=True)
+    blocker.write_text("do not replace", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Non-directory artifact path ancestor"):
+        audit_module.quarantine(
+            tmp_path, "okf-batched-generated-v3", report,
+            {"example": {"s003-t001", "s006-t001"}},
+        )
+    assert blocker.read_text(encoding="utf-8") == "do not replace"
+    assert (docs / "concept-s003-t001-build.json").is_file()
+    assert (docs / "concept-s006-t001-verify.json").is_file()
+    assert (docs / "manifests/concept-s003-t001.json").is_file()
+    assert (root / a).is_file()
+    assert not (tmp_path / "okf-batched/recovery-v3/state/example/concept-s003-t001-build.json").exists()
