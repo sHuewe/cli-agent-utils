@@ -181,6 +181,54 @@ Run the main OKF flow **after** the migration (not concurrently). Existing
 checkpoints remain available for normal reuse. Since only the manifest path
 changes, the old generated Markdown is untouched.
 
+## Scoped concept writes and deterministic state recovery
+
+Requires the Flow step tool-policy support from
+[cli-agent](https://github.com/sHuewe/cli-agent) (separate feature PR).
+Build and repair now offer ONLY `os__read_file`, `os__write_file`
+(and `os__make_directory` for build). The OS server enforces a
+single exact write target: `<okf_root>/<concept.path>`. The build
+step may create only the target's parent directory. The verify step
+only receives `os__read_file`. Other tools are not advertised and
+are rejected even if the model attempts an unadvertised call.
+The existing model step IDs, output paths, and JSON checkpoints are
+unchanged.
+
+Historical runs may already have written a different concept's
+file. A JSON-schema-valid response alone cannot prove the generated
+Markdown is correct. Stop the Flow and **back up the workspace** before
+auditing existing state:
+
+```powershell
+py .\flow\okf\flow_okf_from_doctrine_batched\audit_concepts.py --workspace .
+```
+
+The dry-run report compares the planned group concept IDs/paths with
+build, verify, repair, manifest and repair.changed_paths values,
+checks for missing generated Markdown and marks cross-written target
+owners as potentially overwritten.
+
+After inspecting the report, optionally move ONLY affected concept
+checkpoints, affected canonical Markdown files and document-level
+dependent coverage/navigation checkpoints into
+`okf-batched/recovery-v3/`:
+
+```powershell
+py .\flow\okf\flow_okf_from_doctrine_batched\audit_concepts.py --workspace . --apply
+```
+
+This is a **quarantine**, not a deletion. It refuses conflicting
+recovery destinations. All other per-concept checkpoints, group plans
+and initial document analysis remain unchanged. The relocated
+checkpoints are absent for the next resume, so the affected concepts
+are generated again using the scoped writes.
+
+**Important:** The audit checks structural evidence and path consistency,
+not semantic correctness. A concept that was overwritten but never
+reported its writes in JSON may require an additional semantic audit.
+If global theme reduction has already completed, invalidate dependent
+global artifacts separately before publishing them.
+
 ## Limits and invalidation
 
 - Source/document edits and prompt/model changes require explicit checkpoint
