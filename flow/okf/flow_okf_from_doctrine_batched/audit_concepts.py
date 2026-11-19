@@ -24,14 +24,22 @@ def _require_safe_path(workspace: Path, path: Path) -> None:
             or root.resolve(strict=False) != root
             or candidate.resolve(strict=False) != candidate):
         raise ValueError(f"Symlink or path outside workspace: {path}")
+    if not root.is_dir():
+        raise ValueError(f"Workspace is not a directory: {root}")
     current = root
-    for part in candidate.relative_to(root).parts:
+    parts = candidate.relative_to(root).parts
+    for index, part in enumerate(parts):
         current = current / part
         if current.is_symlink() or (
             callable(getattr(current, "is_junction", None))
             and current.is_junction()
         ):
             raise ValueError(f"Symlink or junction not allowed: {current}")
+        # All existing ancestors of source and destination paths must be
+        # directories. Otherwise mkdir() could fail after earlier artifacts
+        # have already been moved, leaving a partially applied quarantine.
+        if index < len(parts) - 1 and current.exists() and not current.is_dir():
+            raise ValueError(f"Non-directory artifact path ancestor: {current}")
 
 
 def _load(path: Path, *, workspace: Path) -> dict:
