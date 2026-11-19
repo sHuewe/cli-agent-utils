@@ -28,7 +28,9 @@ def _inside(root: Path, relative: str) -> Path:
     if candidate.is_absolute() or ".." in candidate.parts or candidate.parts[0] != "doctrines":
         raise ValueError(f"Unsafe or unexpected concept path: {relative!r}")
     path = root.joinpath(*candidate.parts)
-    if path.is_symlink() or path.resolve(strict=False).is_relative_to(root.resolve()) is False:
+    if (path.is_symlink()
+            or path.resolve(strict=False) != path.absolute()
+            or not path.resolve(strict=False).is_relative_to(root.resolve())):
         raise ValueError(f"Symlink or invalid artifact path: {path}")
     return path
 
@@ -122,12 +124,34 @@ def audit(workspace: Path, output_root: str) -> dict:
             "affected": {key: sorted(value) for key, value in sorted(affected.items())}}
 
 
-def quarantine(workspace: Path, output_root: str, report: dict) -> list[str]:
-    """Move only affected concepts and their dependent document navigation state."""
+def quarantine(
+    workspace: Path, output_root: str, report: dict,
+    selected: dict[str, set[str]],
+) -> list[str]:
+    """Move explicitly selected invalid concepts and their downstream state."""
+    affected = {slug: set(ids) for slug, ids in report["affected"].items()}
+    if not selected or any(not ids for ids in selected.values()):
+        raise ValueError("Explicit nonempty concept selection required.")
+    for slug, ids in selected.items():
+        unknown = ids - affected.get(slug, set())
+        if unknown:
+            raise ValueError(f"Concepts are not flagged by the audit: {slug}:{sorted(unknown)}")
+    # Refuse half a cross-concept incident: the original owner may have
+    # been overwritten, even if its own three JSON outputs look correct.
+    for finding in report["findings"]:
+        if finding["reason"] in {"cross_write", "wrong_path", "potentially_overwritten"}:
+            slug = finding["document"]
+            affected_ids = affected.get(slug, set())
+            selected_ids = selected.get(slug, set())
+            if selected_ids & affected_ids and selected_ids != affected_ids:
+                raise ValueError(
+                    f"Select all affected IDs for a cross-concept incident in {slug}: "
+                    f"{sorted(affected_ids)}"
+                )
     sources: list[Path] = []
     docs = workspace / "okf-batched/state-v3/docs"
     generated = workspace / output_root
-    for slug, ids in report["affected"].items():
+    for slug, ids in selected.items():
         folder = docs / slug
         group = _load(folder / "group.json")
         planned = {item["id"]: item["path"] for item in group["concepts"]}
@@ -172,7 +196,10 @@ def quarantine(workspace: Path, output_root: str, report: dict) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, default=Path("."))
-    parser.add_argument("--apply", action="store_true", help="Quarantine affected checkpoints and Markdown")
+    parser.add_argument("--apply", action="store_true", help="Quarantine only explicitly selected checkpoints")
+    parser.add_argument("--select", action="append", default=[],
+                        metavar="SOURCE_SLUG:CONCEPT_ID",
+                        help="Select a flagged concept for quarantine (repeatable).")
     args = parser.parse_args(argv)
     workspace = args.workspace.resolve()
     config = workspace / "flow/okf/flow_okf_from_doctrine_batched/flow.toml"
@@ -184,10 +211,18 @@ def main(argv: list[str] | None = None) -> int:
     report = audit(workspace, root)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if args.apply:
-        moved = quarantine(workspace, root, report)
+        selected: dict[str, set[str]] = {}
+        if not args.select:
+            parser.error("--apply requires at least one --select SOURCE_SLUG:CONCEPT_ID.")
+        for spec in args.select:
+            slug, sep, cid = spec.rpartition(":")
+            if not sep or not slug or not cid or "/" in slug or ".." in slug or "/" in cid or ".." in cid:
+                parser.error(f"Invalid --select: {spec!r}")
+            selected.setdefault(slug, set()).add(cid)
+        moved = quarantine(workspace, root, report, selected)
         print(f"Quarantined {len(moved)} files in okf-batched/recovery-v3.")
     else:
-        print("Dry run: no files were changed. Use --apply only after reviewing findings.")
+        print("Dry run: no files were changed. Review findings before --apply with explicit --select.")
     return 0
 
 
