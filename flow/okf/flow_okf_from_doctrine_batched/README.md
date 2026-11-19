@@ -208,6 +208,20 @@ build, verify, repair, manifest and repair.changed_paths values,
 checks for missing generated Markdown and marks cross-written target
 owners as potentially overwritten.
 
+If historical repair results frequently claim changes to navigation
+`index.md` files, add `--ignore-index` to the audit command to omit
+findings caused solely by these reported index paths:
+
+```powershell
+py .\\flow\\okf\\flow_okf_from_doctrine_batched\\audit_concepts.py --workspace . --ignore-index
+```
+
+This is an **audit filtering option only**: it does not modify or protect
+`index.md`, does not suppress unrelated problems on the same concept,
+and is not proof that historical index writes were harmless. If applying
+quarantine based on this filtered report, also pass `--ignore-index`
+alongside `--apply` and the explicit `--select` arguments.
+
 After inspecting the report, optionally move ONLY affected concept
 checkpoints, affected canonical Markdown files and document-level
 dependent coverage/navigation checkpoints into

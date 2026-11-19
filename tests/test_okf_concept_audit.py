@@ -306,3 +306,109 @@ def test_normalized_reported_path_rejects_unsafe_spelling(reported):
     assert audit_module._normalized_reported_concept_path(
         reported, "okf-batched-generated-v3",
     ) is None
+
+
+
+def test_ignore_index_filters_only_index_related_findings(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    # Keep a previously valid concept intact; only its self-reported
+    # navigation write should be suppressible.
+    (root / b).write_text("# valid", encoding="utf-8")
+    (docs / "concept-s006-t001-build.json").write_text(json.dumps({
+        "concept_id": "s006-t001",
+        "path": "okf-batched-generated-v3/" + b,
+    }), encoding="utf-8")
+    (docs / "concept-s006-t001-verify.json").write_text(json.dumps({
+        "concept_id": "s006-t001", "path": b,
+    }), encoding="utf-8")
+    (docs / "manifests/concept-s006-t001.json").write_text(json.dumps({
+        "concepts": [{"path": b}],
+    }), encoding="utf-8")
+    (docs / "concept-s006-t001-repair.json").write_text(json.dumps({
+        "concept_id": "s006-t001",
+        "path": b,
+        "changed_paths": [
+            "okf-batched-generated-v3/doctrines/example/planning/index.md",
+            "doctrines/example/planning/./index.md",
+        ],
+    }), encoding="utf-8")
+    raw = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    filtered = audit_module.audit(
+        tmp_path, "okf-batched-generated-v3", ignore_index=True,
+    )
+    assert sum(f["reason"] == "cross_write" and f["concept_id"] == "s006-t001"
+               for f in raw["findings"]) == 2
+    assert "s006-t001" not in filtered["affected"].get("example", [])
+    assert filtered["affected"] == {}
+
+
+def test_ignore_index_preserves_other_findings_on_same_concept(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    (docs / "concept-s006-t001-repair.json").write_text(json.dumps({
+        "concept_id": "s006-t001",
+        "path": "doctrines/example/planning/index.md",
+        "changed_paths": [
+            "doctrines/example/planning/index.md",
+            "okf-batched-generated-v3/" + a,
+        ],
+    }), encoding="utf-8")
+    report = audit_module.audit(
+        tmp_path, "okf-batched-generated-v3", ignore_index=True,
+    )
+    assert not any(
+        "index.md" in item["detail"] for item in report["findings"]
+    )
+    assert any(
+        item["reason"] == "cross_write" and item["concept_id"] == "s006-t001"
+        for item in report["findings"]
+    )
+    assert any(
+        edge["writer_concept"] == "s006-t001"
+        and edge["target_concept"] == "s003-t001"
+        for edge in report["cross_writes"]
+    )
+
+
+def test_ignore_index_does_not_hide_unsafe_path_or_wrong_id(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    (root / b).write_text("# valid", encoding="utf-8")
+    (docs / "concept-s006-t001-build.json").write_text(json.dumps({
+        "concept_id": "incorrect",
+        "path": b,
+    }), encoding="utf-8")
+    (docs / "concept-s006-t001-repair.json").write_text(json.dumps({
+        "concept_id": "s006-t001",
+        "path": b,
+        "changed_paths": ["../../outside/index.md"],
+    }), encoding="utf-8")
+    report = audit_module.audit(
+        tmp_path, "okf-batched-generated-v3", ignore_index=True,
+    )
+    reasons = {
+        f["reason"] for f in report["findings"] if f["concept_id"] == "s006-t001"
+    }
+    assert {"wrong_id", "cross_write"} <= reasons
+
+
+def test_ignore_index_cli_parses_flag_without_writes(tmp_path, capsys):
+    workspace = tmp_path
+    config = workspace / "flow/okf/flow_okf_from_doctrine_batched/flow.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text('[vars]\nokf_root = "okf-batched-generated-v3"\n', encoding="utf-8")
+    docs, root, a, b, c = data(workspace)
+    (root / b).write_text("# valid", encoding="utf-8")
+    (docs / "concept-s006-t001-build.json").write_text(json.dumps({
+        "concept_id": "s006-t001", "path": b,
+    }))
+    (docs / "concept-s006-t001-repair.json").write_text(json.dumps({
+        "concept_id": "s006-t001", "path": b,
+        "changed_paths": ["doctrines/example/planning/index.md"],
+    }))
+    (docs / "manifests/concept-s006-t001.json").write_text(json.dumps({
+        "concepts": [{"path": b}],
+    }))
+    assert audit_module.main(["--workspace", str(workspace), "--ignore-index"]) == 0
+    captured = capsys.readouterr().out
+    assert "Dry run" in captured
+    assert "index.md" not in captured
+    assert "concept-s006-t001-build.json" in {p.name for p in docs.iterdir()}

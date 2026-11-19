@@ -83,6 +83,14 @@ def _normalized_reported_concept_path(raw_path: str, output_root: str) -> str | 
     return "/".join(normalized)
 
 
+def _is_index_reported_path(raw_path: object, output_root: str) -> bool:
+    """Recognize safe, normalized index.md paths reported by old checkpoints."""
+    if not isinstance(raw_path, str):
+        return False
+    relative = _normalized_reported_concept_path(raw_path, output_root)
+    return relative is not None and PurePosixPath(relative).name.casefold() == "index.md"
+
+
 def _inside(root: Path, relative: str) -> Path:
     if not isinstance(relative, str) or not relative or "\\" in relative:
         raise ValueError(f"Invalid artifact path: {relative!r}")
@@ -97,7 +105,7 @@ def _inside(root: Path, relative: str) -> Path:
     return path
 
 
-def audit(workspace: Path, output_root: str) -> dict:
+def audit(workspace: Path, output_root: str, *, ignore_index: bool = False) -> dict:
     state = workspace / "okf-batched/state-v3/docs"
     _require_safe_path(workspace, state)
     if not state.is_dir() or state.is_symlink():
@@ -179,13 +187,15 @@ def audit(workspace: Path, output_root: str) -> dict:
                     if data.get("concept_id") != cid:
                         issue(cid, "wrong_id", f"{step}: {data.get('concept_id')!r}")
 
-                if actual not in (expected, f"{output_root}/{expected}"):
+                if (actual not in (expected, f"{output_root}/{expected}")
+                        and not (ignore_index and _is_index_reported_path(actual, output_root))):
                     issue(cid, "wrong_path", f"{step}: {actual!r} (expected {expected!r})")
                     if isinstance(actual, str):
                         mark_owner(doc_dir.name, cid, actual, step)
 
                 for reported in data.get("changed_paths", ()) if step == "repair" else ():
-                    if reported not in (expected, f"{output_root}/{expected}"):
+                    if (reported not in (expected, f"{output_root}/{expected}")
+                            and not (ignore_index and _is_index_reported_path(reported, output_root))):
                         issue(cid, "cross_write", f"{step} changed {reported!r}")
                         if isinstance(reported, str):
                             mark_owner(doc_dir.name, cid, reported, "repair.changed_paths")
@@ -281,6 +291,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, default=Path("."))
     parser.add_argument("--apply", action="store_true", help="Quarantine only explicitly selected checkpoints")
+    parser.add_argument(
+        "--ignore-index", action="store_true",
+        help="Ignore findings caused by reported index.md paths (not other concept errors).",
+    )
     parser.add_argument("--select", action="append", default=[],
                         metavar="SOURCE_SLUG:CONCEPT_ID",
                         help="Select a flagged concept for quarantine (repeatable).")
@@ -292,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
     if (not isinstance(root, str) or not root or Path(root).is_absolute()
             or "\\" in root or ".." in Path(root).parts):
         raise ValueError("Unsafe OKF output root.")
-    report = audit(workspace, root)
+    report = audit(workspace, root, ignore_index=args.ignore_index)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if args.apply:
         selected: dict[str, set[str]] = {}
