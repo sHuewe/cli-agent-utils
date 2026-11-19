@@ -89,7 +89,7 @@ def test_preflight_conflict_preserves_every_original(tmp_path):
 def test_quarantine_refuses_to_ignore_the_overwritten_owner(tmp_path):
     docs, root, a, b, c = data(tmp_path)
     report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
-    with pytest.raises(ValueError, match="Select all affected"):
+    with pytest.raises(ValueError, match="Select both the writer"):
         audit_module.quarantine(
             tmp_path, "okf-batched-generated-v3", report,
             {"example": {"s006-t001"}}
