@@ -181,6 +181,36 @@ Run the main OKF flow **after** the migration (not concurrently). Existing
 checkpoints remain available for normal reuse. Since only the manifest path
 changes, the old generated Markdown is untouched.
 
+## Legacy verify findings with empty item IDs
+
+Older `concept-*-verify.json` checkpoints can contain
+`findings[*].item_id: ""`. The current concept verify JSON Schema permits
+an omitted `item_id` but forbids empty strings. To keep other verified work,
+stop the Flow and back up `okf-batched/state-v3/`. Preview the narrowly
+scoped normalization from the workspace root:
+
+```powershell
+py .\\flow\\okf\\flow_okf_from_doctrine_batched\\normalize_legacy_verify_findings.py --workspace .
+```
+
+After reviewing the changes, apply them:
+
+```powershell
+py .\\flow\\okf\\flow_okf_from_doctrine_batched\\normalize_legacy_verify_findings.py --workspace . --apply
+```
+
+The script requires the Python `jsonschema` package. It inspects every
+`concept-*-verify.json` in the existing document state and removes **only**
+`item_id` keys whose value is exactly `""` from the `findings` array.
+It validates every changed checkpoint against the current
+`schemas/concept-verify.schema.json` before writing any files. Other schema
+violations abort the migration rather than being silently fixed. On apply,
+each original JSON file is preserved next to the checkpoint with suffix
+`.bak-pre-empty-item-id-normalize`, and updates are written using a temporary
+file followed by an atomic replacement. Existing backups block applying any
+changes. Rerunning after successful migration is a no-op. The procedure
+does not touch concept Markdown, build/repair checkpoints or source doctrines.
+
 ## Scoped concept writes and deterministic state recovery
 
 Requires the Flow step tool-policy support from
