@@ -12,9 +12,30 @@ import shutil
 import tomllib
 
 
-def _load(path: Path) -> dict:
-    if path.is_symlink():
-        raise ValueError(f"Symlink not allowed: {path}")
+def _require_safe_path(workspace: Path, path: Path) -> None:
+    """Reject paths escaping the workspace or traversing symlinks/junctions.
+
+    Check missing destination ancestors as well as existing sources. This
+    validation is performed for the complete recovery plan before any move.
+    """
+    root = workspace.absolute()
+    candidate = path.absolute()
+    if (".." in path.parts or not candidate.is_relative_to(root)
+            or root.resolve(strict=False) != root
+            or candidate.resolve(strict=False) != candidate):
+        raise ValueError(f"Symlink or path outside workspace: {path}")
+    current = root
+    for part in candidate.relative_to(root).parts:
+        current = current / part
+        if current.is_symlink() or (
+            callable(getattr(current, "is_junction", None))
+            and current.is_junction()
+        ):
+            raise ValueError(f"Symlink or junction not allowed: {current}")
+
+
+def _load(path: Path, *, workspace: Path) -> dict:
+    _require_safe_path(workspace, path)
     doc = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(doc, dict):
         raise ValueError(f"Expected JSON object: {path}")
@@ -37,6 +58,7 @@ def _inside(root: Path, relative: str) -> Path:
 
 def audit(workspace: Path, output_root: str) -> dict:
     state = workspace / "okf-batched/state-v3/docs"
+    _require_safe_path(workspace, state)
     if not state.is_dir() or state.is_symlink():
         raise ValueError(f"Invalid document state directory: {state}")
     root = workspace / output_root
@@ -54,7 +76,7 @@ def audit(workspace: Path, output_root: str) -> dict:
         plan_path = doc_dir / "group.json"
         if not plan_path.is_file():
             continue
-        group = _load(plan_path)
+        group = _load(plan_path, workspace=workspace)
         concept_list = group.get("concepts")
         if not isinstance(concept_list, list):
             raise ValueError(f"Invalid concepts in {plan_path}")
@@ -98,10 +120,10 @@ def audit(workspace: Path, output_root: str) -> dict:
             for step in ("build", "verify", "repair"):
                 file = doc_dir / f"concept-{cid}-{step}.json"
                 if file.exists():
-                    checkpoints[step] = _load(file)
+                    checkpoints[step] = _load(file, workspace=workspace)
             manifest = doc_dir / "manifests" / f"concept-{cid}.json"
             if manifest.is_file():
-                checkpoints["manifest"] = _load(manifest)
+                checkpoints["manifest"] = _load(manifest, workspace=workspace)
 
             if not checkpoints:
                 continue
@@ -166,7 +188,7 @@ def quarantine(
     generated = workspace / output_root
     for slug, ids in selected.items():
         folder = docs / slug
-        group = _load(folder / "group.json")
+        group = _load(folder / "group.json", workspace=workspace)
         planned = {item["id"]: item["path"] for item in group["concepts"]}
         for cid in ids:
             if cid not in planned:
@@ -184,8 +206,16 @@ def quarantine(
         sources.extend(folder.glob("folder-*-index.json"))
         sources.extend(folder.glob("folder-*-inventory.json"))
 
+    # Validate *all* proposed sources, even missing optional checkpoints.
+    # In particular, an ancestor such as docs/a/manifests must not redirect
+    # reads or moves outside the workspace.
+    for path in sources:
+        _require_safe_path(workspace, path)
+        if path.exists() and not path.is_file():
+            raise ValueError(f"Expected a regular artifact file: {path}")
     distinct = sorted({path for path in sources if path.exists()})
     base = workspace / "okf-batched/recovery-v3"
+    _require_safe_path(workspace, base)
     targets: list[tuple[Path, Path]] = []
     for path in distinct:
         if path.is_symlink():
@@ -196,6 +226,7 @@ def quarantine(
             target = base / "generated" / path.relative_to(generated)
         else:
             raise ValueError(f"Unexpected artifact outside scoped recovery: {path}")
+        _require_safe_path(workspace, target)
         if target.exists() or target.is_symlink():
             raise FileExistsError(f"Recovery file already exists: {target}")
         targets.append((path, target))
