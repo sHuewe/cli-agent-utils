@@ -44,6 +44,10 @@ def audit(workspace: Path, output_root: str) -> dict:
     affected: dict[str, set[str]] = {}
     scanned = 0
 
+    # First collect EVERY planned concept in the corpus. This makes an
+    # erroneous write into another source document visible to its owner.
+    corpus_plans: list[tuple[Path, dict[str, str]]] = []
+    corpus_owners: dict[str, tuple[str, str]] = {}
     for doc_dir in sorted(state.iterdir()):
         if not doc_dir.is_dir() or doc_dir.is_symlink():
             continue
@@ -54,8 +58,7 @@ def audit(workspace: Path, output_root: str) -> dict:
         concept_list = group.get("concepts")
         if not isinstance(concept_list, list):
             raise ValueError(f"Invalid concepts in {plan_path}")
-        concepts = {}
-        path_owner = {}
+        concepts: dict[str, str] = {}
         for obj in concept_list:
             if not isinstance(obj, dict) or not isinstance(obj.get("id"), str):
                 raise ValueError(f"Invalid concept in {plan_path}")
@@ -63,15 +66,31 @@ def audit(workspace: Path, output_root: str) -> dict:
             if cid in concepts or not cid or "/" in cid or "\\" in cid:
                 raise ValueError(f"Duplicate or invalid planned ID in {plan_path}")
             _inside(root, relative)
-            if relative in path_owner:
-                raise ValueError(f"Duplicate planned path in {plan_path}")
+            if relative in corpus_owners:
+                raise ValueError(f"Duplicate planned concept path across corpus: {relative}")
             concepts[cid] = relative
-            path_owner[relative] = cid
+            corpus_owners[relative] = (doc_dir.name, cid)
+        corpus_plans.append((doc_dir, concepts))
 
+    cross_writes: set[tuple[str, str, str, str]] = set()
+
+    def issue_for(slug: str, cid: str, reason: str, detail: str) -> None:
+        findings.append({"document": slug, "concept_id": cid,
+                         "reason": reason, "detail": detail})
+        affected.setdefault(slug, set()).add(cid)
+
+    def mark_owner(writer_slug: str, writer_id: str, raw_path: str, step: str) -> None:
+        canonical = (raw_path[len(output_root) + 1:]
+                     if raw_path.startswith(output_root + "/") else raw_path)
+        owner = corpus_owners.get(canonical)
+        if owner is not None and owner != (writer_slug, writer_id):
+            issue_for(owner[0], owner[1], "potentially_overwritten",
+                      f"{writer_slug}/{writer_id}/{step} references this concept's path")
+            cross_writes.add((writer_slug, writer_id, owner[0], owner[1]))
+
+    for doc_dir, concepts in corpus_plans:
         def issue(cid: str, reason: str, detail: str) -> None:
-            findings.append({"document": doc_dir.name, "concept_id": cid,
-                             "reason": reason, "detail": detail})
-            affected.setdefault(doc_dir.name, set()).add(cid)
+            issue_for(doc_dir.name, cid, reason, detail)
 
         for cid, expected in concepts.items():
             scanned += 1
@@ -101,27 +120,24 @@ def audit(workspace: Path, output_root: str) -> dict:
                 if actual not in (expected, f"{output_root}/{expected}"):
                     issue(cid, "wrong_path", f"{step}: {actual!r} (expected {expected!r})")
                     if isinstance(actual, str):
-                        unprefixed = actual[len(output_root)+1:] if actual.startswith(output_root + "/") else actual
-                        owner = path_owner.get(unprefixed)
-                        if owner is not None and owner != cid:
-                            issue(owner, "potentially_overwritten",
-                                  f"{cid}/{step} references this concept's path")
+                        mark_owner(doc_dir.name, cid, actual, step)
 
                 for reported in data.get("changed_paths", ()) if step == "repair" else ():
                     if reported not in (expected, f"{output_root}/{expected}"):
                         issue(cid, "cross_write", f"{step} changed {reported!r}")
                         if isinstance(reported, str):
-                            unprefixed = reported[len(output_root)+1:] if reported.startswith(output_root + "/") else reported
-                            owner = path_owner.get(unprefixed)
-                            if owner is not None and owner != cid:
-                                issue(owner, "potentially_overwritten",
-                                      f"{cid}/repair reports changed_path")
+                            mark_owner(doc_dir.name, cid, reported, "repair.changed_paths")
 
             if "build" in checkpoints and not _inside(root, expected).is_file():
                 issue(cid, "missing_markdown", expected)
 
     return {"scanned_concepts": scanned, "findings": findings,
-            "affected": {key: sorted(value) for key, value in sorted(affected.items())}}
+            "affected": {key: sorted(value) for key, value in sorted(affected.items())},
+            "cross_writes": [
+                {"writer_document": src_doc, "writer_concept": src_id,
+                 "target_document": dst_doc, "target_concept": dst_id}
+                for src_doc, src_id, dst_doc, dst_id in sorted(cross_writes)
+            ]}
 
 
 def quarantine(
@@ -136,6 +152,15 @@ def quarantine(
         unknown = ids - affected.get(slug, set())
         if unknown:
             raise ValueError(f"Concepts are not flagged by the audit: {slug}:{sorted(unknown)}")
+    for edge in report.get("cross_writes", []):
+        writer_selected = edge["writer_concept"] in selected.get(edge["writer_document"], set())
+        target_selected = edge["target_concept"] in selected.get(edge["target_document"], set())
+        if writer_selected != target_selected:
+            raise ValueError(
+                "Select both the writer and affected target of a cross-document write: "
+                f"{edge['writer_document']}:{edge['writer_concept']} -> "
+                f"{edge['target_document']}:{edge['target_concept']}"
+            )
     # Refuse half a cross-concept incident: the original owner may have
     # been overwritten, even if its own three JSON outputs look correct.
     for finding in report["findings"]:
