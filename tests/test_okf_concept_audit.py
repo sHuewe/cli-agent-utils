@@ -62,7 +62,7 @@ def test_detects_foreign_path_and_missing_target_without_touching_other_concepts
 def test_selective_quarantine_backups_affected_only(tmp_path):
     docs, root, a, b, c = data(tmp_path)
     report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
-    moved = audit_module.quarantine(tmp_path, "okf-batched-generated-v3", report)
+    moved = audit_module.quarantine(tmp_path, "okf-batched-generated-v3", report, {"example": {"s003-t001", "s006-t001"}})
     assert moved
     assert not (docs / "concept-s006-t001-build.json").exists()
     assert not (docs / "concept-s003-t001-repair.json").exists()
@@ -80,7 +80,19 @@ def test_preflight_conflict_preserves_every_original(tmp_path):
     target.parent.mkdir(parents=True)
     target.write_text("existing", encoding="utf-8")
     with pytest.raises(FileExistsError):
-        audit_module.quarantine(tmp_path, "okf-batched-generated-v3", report)
+        audit_module.quarantine(tmp_path, "okf-batched-generated-v3", report, {"example": {"s003-t001", "s006-t001"}})
     assert (root / a).is_file()
     assert (docs / "concept-s006-t001-build.json").is_file()
     assert target.read_text() == "existing"
+
+
+def test_quarantine_refuses_to_ignore_the_overwritten_owner(tmp_path):
+    docs, root, a, b, c = data(tmp_path)
+    report = audit_module.audit(tmp_path, "okf-batched-generated-v3")
+    with pytest.raises(ValueError, match="Select all affected"):
+        audit_module.quarantine(
+            tmp_path, "okf-batched-generated-v3", report,
+            {"example": {"s006-t001"}}
+        )
+    assert (docs / "concept-s006-t001-build.json").exists()
+    assert (root / a).exists()
