@@ -91,7 +91,7 @@ def test_apply_preserves_knowledge_and_is_idempotent(tmp_path):
 @pytest.mark.parametrize("changes", [
     {"document_id": "other"},
     {"folder_id": "other"},
-    {"chunk_id": "s002"},
+    {"chunk_id": "s001"},  # Conflicts with the s002 scan checkpoint
     {"start_line": 2},
     {"source_path": "md/other.md"},
 ])
