@@ -16,6 +16,20 @@ ranges. Every knowledge item MUST reference exactly ONE of the section's
 candidate topics by topic_key. Group related assertions under 1-8 focused
 topics; never drop an assertion to respect the topic limit.
 
+TEXT-ONLY SCOPE: This step scans the Markdown text, not visual content.
+Non-text images, image-only plates and diagrams whose contents are not
+represented as readable Markdown text are evaluated separately; do not
+attempt to infer their contents from captions or surrounding text. Record
+their presence and any missing visual detail in warnings with an available
+line reference, but do NOT mark a text sweep failed or set needs_attention
+solely because their visual contents cannot be read. Extract and preserve
+ALL readable text, including image captions, headings, references, embedded
+alt text, and surrounding descriptions. If all available textual assertions
+have been extracted and the required source range was read completely,
+return status=ok and both scan_checks sweeps=completed, even when visual
+content is deferred to a separate step. Do not claim the images were
+analyzed or that their depicted information was extracted.
+
 Output a SHORT JSON OBJECT (not an array):
 {
  "status":"ok|needs_attention",
@@ -50,10 +64,12 @@ Do not reuse keys across sections. Knowledge item IDs MUST start with
 exact task.id + ":" and be unique within the section.
 All evidence must be inside this task's original inclusive line range.
 Neither topic_keys nor IDs are source evidence. Avoid duplicate knowledge
-items. No arbitrary knowledge-item count limit: if complete extraction
-cannot fit the model output or source read fails, set needs_attention,
-mark corresponding sweep(s) failed and explain omitted scope in warnings.
-Do not pretend an incomplete read or extraction was successful.
+items. No arbitrary knowledge-item count limit: if complete TEXT extraction
+cannot fit the model output, a source read fails, or readable text is
+otherwise omitted, set needs_attention, mark corresponding sweep(s) failed
+and explain omitted textual scope in warnings. Inaccessible visual
+content alone is not a text extraction failure. Do not pretend an
+incomplete text read or extraction was successful.
 If truly no substantive knowledge exists, candidate_concepts=[],
 knowledge_items=[], both sweeps completed, with an explanatory warning;
 the document-wide assembler will require at least one meaningful topic.
