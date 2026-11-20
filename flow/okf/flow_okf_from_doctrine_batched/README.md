@@ -74,6 +74,22 @@ resume. For a previously blocked image-only scan, back up and move only
 its affected `scan-sNNN.json` out of the active state before restarting,
 so the model can regenerate it under the updated prompt.
 
+## Unused candidate aliases during source assignment
+
+Section-level outlines may contain candidate topics without corresponding
+`knowledge_items`, such as legacy placeholder topics. The semantic
+consolidation retains those candidates, but the `assign` JSON join now
+permits unused **mapping aliases** (`require_all_aliases = false`). The
+generic join still fails on missing mappings for **any actual Knowledge
+Item**, duplicate source IDs, duplicate alias declarations or missing
+source records. This allows a full scan to advance without creating
+unsupported knowledge from unused candidates. Later concept grouping
+skips canonical topics with no assigned Knowledge Items.
+
+Existing scan, outline, consolidation and validation checkpoints need not
+be regenerated. Restart the Flow after updating this config; the failed
+`assign` step can recompute from those checkpoints.
+
 ## Global thematic pipeline
 
 Compact manifests enter several bounded reduction rounds. Registry inputs
