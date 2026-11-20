@@ -32,6 +32,38 @@ Golden profiles serve as existing complementary analyses; they cannot
 guarantee exhaustive normative/descriptive knowledge. The new OKF-specific
 section sweep therefore keeps independent checkpoints.
 
+## Legacy scan route metadata
+
+Older `scan-sNNN.json` checkpoints can lack `document_id`, `folder_id` or
+`chunk_id` even though the scan prompt requests them. Such checkpoints
+can be accepted by the old schema and later fail at `group_items` with
+`route.document_id must be a nonempty string`.
+
+Stop the Flow and back up `okf-batched/state-v3/`, then run the narrow
+normalizer in the workspace root (use the real document slug pattern):
+
+```powershell
+py .\flow\okf\flow_okf_from_doctrine_batched\normalize_legacy_scan_route_ids.py --workspace . --document "DOCUMENT_SLUG"
+```
+
+Inspect the dry run, then apply:
+
+```powershell
+py .\flow\okf\flow_okf_from_doctrine_batched\normalize_legacy_scan_route_ids.py --workspace . --document "DOCUMENT_SLUG" --apply
+```
+
+The script uses the matching `sections.json` to validate `section_id`,
+`source_path`, `start_line` and `end_line`; the documented state-directory
+slug supplies `document_id` and `folder_id`; the planned section supplies
+`chunk_id`. It fills **only missing/blank identity values** and rejects
+conflicting existing values, unrelated schema errors, unsafe paths and
+preexisting backups. Every update saves an original copy beside the file
+(`.bak-pre-route-ids`). Existing scan content, items, outlines, consolidation
+and assignment checkpoints are retained. `jsonschema` is required.
+
+New scan outputs must include all three route identity fields because
+`schemas/scan.schema.json` now requires them.
+
 ## Local document pipeline
 
 1. Generic `markdown_sections(always_sections=true)` builds uniform,

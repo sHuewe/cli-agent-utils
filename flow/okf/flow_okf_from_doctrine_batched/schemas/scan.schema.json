@@ -101,6 +101,18 @@
       "items": {
         "type": "string"
       }
+    },
+    "document_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "folder_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "chunk_id": {
+      "type": "string",
+      "minLength": 1
     }
   },
   "required": [
@@ -110,6 +122,9 @@
     "start_line",
     "end_line",
     "candidate_concepts",
-    "knowledge_items"
+    "knowledge_items",
+    "document_id",
+    "folder_id",
+    "chunk_id"
   ]
 }
