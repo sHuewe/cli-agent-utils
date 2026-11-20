@@ -95,7 +95,10 @@ mapping_path = "/concepts/*"
 mapping_id_path = "/id"
 mapping_alias_path = "/merged_from/*"
 id_prefix = "${input.source.slug}:"
-require_all_aliases = true
+# Some semantic candidates have no source knowledge_items (e.g. a legacy
+# placeholder). Every actual item must still resolve to exactly one topic;
+# only unused candidate aliases may remain without a source item.
+require_all_aliases = false
 [steps.json_inputs.items]
 iterate = "input.scans.iterations[]"
 path = "okf-batched/state-v3/docs/${input.source.slug}/scan-${each.id}.json"

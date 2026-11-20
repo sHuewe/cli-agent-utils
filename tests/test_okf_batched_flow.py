@@ -56,7 +56,8 @@ def test_all_document_scans_complete_before_document_consolidation():
     assert plan["consolidate"]["foreach"] == "steps.consolidation_batches.output.batches"
     assert plan["consolidated"]["json_operation"]["kind"] == "assemble_doctrine_consolidation"
     assert plan["assign"]["json_operation"]["kind"] == "json_join_aliases"
-    assert plan["assign"]["json_operation"]["require_all_aliases"] is True
+    # Empty semantic candidates need not have source items; actual items still require a mapping.
+    assert plan["assign"]["json_operation"]["require_all_aliases"] is False
     assert plan["topics"]["json_operation"]["kind"] == "json_project"
     assert plan["group"]["json_operation"]["kind"] == "group_items"
     assert plan["group"]["json_operation"]["max_concept_bytes"] == 12000
