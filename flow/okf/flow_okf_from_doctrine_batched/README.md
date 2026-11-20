@@ -60,6 +60,20 @@ No new LLM step receives the entire original doctrine in one prompt.
 Semantic grouping is still best effort: unrelated comparison batches may
 contain overlapping topics.
 
+The bounded section scan is **text-only**. Image-only diagrams and symbol
+plates are outside its extraction scope and must be described as deferred
+visual content in `warnings`, not treated as failed text sweeps when all
+readable Markdown is completely extracted. A failed source read, truncated
+output or omitted readable text still requires `needs_attention` and
+blocks `outline_tasks`. This prompt adjustment does not add an image
+processing step to this flow; visual coverage must be supplied by the
+separate image-analysis workflow.
+
+Existing `scan-sNNN.json` checkpoints remain unchanged and are reused on
+resume. For a previously blocked image-only scan, back up and move only
+its affected `scan-sNNN.json` out of the active state before restarting,
+so the model can regenerate it under the updated prompt.
+
 ## Global thematic pipeline
 
 Compact manifests enter several bounded reduction rounds. Registry inputs
