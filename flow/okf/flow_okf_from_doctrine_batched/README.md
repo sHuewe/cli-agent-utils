@@ -43,13 +43,13 @@ Stop the Flow and back up `okf-batched/state-v3/`, then run the narrow
 normalizer in the workspace root (use the real document slug pattern):
 
 ```powershell
-py .\flow\okf\flow_okf_from_doctrine_batched\normalize_legacy_scan_route_ids.py --workspace . --document "*russian-way-of-war*"
+py .\flow\okf\flow_okf_from_doctrine_batched\normalize_legacy_scan_route_ids.py --workspace . --document "DOCUMENT_SLUG"
 ```
 
 Inspect the dry run, then apply:
 
 ```powershell
-py .\flow\okf\flow_okf_from_doctrine_batched\normalize_legacy_scan_route_ids.py --workspace . --document "*russian-way-of-war*" --apply
+py .\flow\okf\flow_okf_from_doctrine_batched\normalize_legacy_scan_route_ids.py --workspace . --document "DOCUMENT_SLUG" --apply
 ```
 
 The script uses the matching `sections.json` to validate `section_id`,
