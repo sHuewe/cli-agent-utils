@@ -89,10 +89,29 @@ def checksum(data: bytes) -> str:
 
 def assert_parent(path: str, document_slug: str) -> None:
     parts = path.split("/")
-    if len(parts) not in (3, 4) or parts[0:2] != ["doctrines", document_slug] or not parts[-1].endswith(".md"):
+    if (len(parts) not in (3, 4) or parts[0:2] != ["doctrines", document_slug]
+            or not parts[-1].endswith(".md") or parts[-1].casefold() == "index.md"):
         raise ValueError(f"Unexpected doctrine concept path: {path!r}")
     if any(not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", x) for x in parts[1:-1]):
         raise ValueError(f"Invalid doctrine/semantic folder: {path!r}")
+
+
+def validate_evidence(
+    ranges: object, *, source_path: str, line_count: int, context: str,
+) -> None:
+    """Require source-bound line evidence for each imported Knowledge Item."""
+    if not isinstance(ranges, list) or not ranges:
+        raise ValueError(f"Missing source evidence for {context}")
+    for entry in ranges:
+        if not isinstance(entry, dict):
+            raise ValueError(f"Malformed source evidence for {context}")
+        declared = [entry[k] for k in ("doctrine", "source_path") if k in entry]
+        if not declared or any(value != source_path for value in declared):
+            raise ValueError(f"Evidence references a different source for {context}")
+        start,end=entry.get("start_line"),entry.get("end_line")
+        if (type(start) is not int or type(end) is not int
+                or not 1 <= start <= end <= line_count):
+            raise ValueError(f"Evidence range outside the source for {context}")
 
 
 def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str]) -> str:
@@ -186,6 +205,9 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
             raise ValueError(f"Unexpected source document path for {slug}: {source_path!r}")
         source = safe_path(workspace, source_path)
         source_bytes = source.read_bytes()
+        source_line_count = len(source_bytes.decode("utf-8").splitlines())
+        if source_line_count < 1:
+            raise ValueError(f"Empty source document: {source_path}")
         src_output = f"sources/{slug}{source.suffix.lower()}"
         if src_output in outputs:
             raise ValueError("Duplicate source output")
@@ -229,7 +251,16 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
                 kid = item.get("id") if isinstance(item,dict) else None
                 if not isinstance(kid,str) or not kid or kid in ki_ids:
                     raise ValueError(f"Duplicate/invalid Knowledge Item ID: {kid}")
+                validate_evidence(
+                    item.get("evidence_ranges"), source_path=source_path,
+                    line_count=source_line_count, context=f"{cid}/{kid}",
+                )
                 ki_ids.add(kid); listed_items.add(kid); item_ids.append(kid)
+            if concept.get("evidence_ranges"):
+                validate_evidence(
+                    concept["evidence_ranges"], source_path=source_path,
+                    line_count=source_line_count, context=f"concept {cid}",
+                )
             repair = read_json(doc_dir / f"concept-{cid}-repair.json")
             documented = repair.get("documented_item_ids")
             if (repair.get("status") not in ("ok","repaired") or repair.get("concept_id") != cid
