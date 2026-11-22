@@ -13,7 +13,8 @@ improvement is justified. You may choose:
 
 - "keep": no changes. Return parts=[].
 - "rewrite": exactly one fully rewritten Markdown concept in parts; preserve
-  original knowledge items. Use the existing title unless necessary.
+  original knowledge items. The **title MUST remain the existing title** so
+  its stable descriptive path continues to resolve.
 - "split": 2–8 complete self-contained Markdown concepts in parts when a
   concept really combines distinct topics. Divide every supplied Knowledge
   Item ID exactly once across the parts; no omissions or duplicates.
