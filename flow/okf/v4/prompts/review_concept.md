@@ -18,7 +18,8 @@ improvement is justified. You may choose:
 - "split": 2–8 complete self-contained Markdown concepts in parts when a
   concept really combines distinct topics. Divide every supplied Knowledge
   Item ID exactly once across the parts; no omissions or duplicates.
-  Choose a meaningful title and matching YAML frontmatter for each part.
+  The **first** part must keep the existing concept title and ID/path;
+  subsequent parts get new meaningful titles and matching YAML frontmatter.
 
 For every replacement part, return these keys:
 title, markdown, knowledge_item_ids, summary, tags.
