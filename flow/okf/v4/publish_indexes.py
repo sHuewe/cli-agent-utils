@@ -87,40 +87,40 @@ def render(catalog: dict, tasks: list[dict], summaries: dict[str, dict]) -> tupl
         rows.append("")
         artifacts[path] = ("\n".join(rows)).encode("utf-8")
 
-    # Each concept appears exactly once in its owning folder index.
+    # Nested semantic folders receive their own indexes; root-level
+    # doctrine concepts are linked from the doctrine index itself.
     folders: dict[str, list[dict]] = {}
     for c in concepts:
-        folder = posixpath.dirname(c["path"])
-        folders.setdefault(folder, []).append(c)
-    for folder, members in sorted(folders.items()):
-        ix = folder+"/index.md"
+        folder=posixpath.dirname(c["path"])
+        folders.setdefault(folder,[]).append(c)
+    for folder,members in sorted(folders.items()):
+        ix=folder+"/index.md"
         if ix in {c["path"] for c in concepts}:
             raise ValueError(f"Concept path collides with index: {ix}")
-        index(ix, folder.split("/")[-1].replace("-", " ").title(),
+        if len(folder.split("/"))==2:
+            continue
+        index(ix,folder.split("/")[-1].replace("-"," ").title(),
               [(c["path"],c["title"],summaries[c["id"]]["summary"])
-               for c in sorted(members,key=lambda x:x["title"].casefold())])
+               for c in sorted(members,key=lambda c:c["title"].casefold())])
 
-    # Doctrine index links directly to folders or root-level concepts via the
-    # appropriate folder index. Each doctrine must contain at least one concept.
-    doc_entries = []
+    doc_entries=[]
     for doc in sorted(documents,key=lambda d:d["id"]):
-        slug = doc["id"]
-        own = [f for f in folders if f == f"doctrines/{slug}" or f.startswith(f"doctrines/{slug}/")]
-        if not own:
+        slug=doc["id"]
+        root=f"doctrines/{slug}"
+        children=sorted(f for f in folders if f.startswith(root+"/"))
+        own=folders.get(root,[])
+        if not own and not children:
             raise ValueError(f"Doctrine has no concepts: {slug}")
-        page = f"doctrines/{slug}/index.md"
-        if page in artifacts:
-            # Flat doctrine already got its index in the folder pass; reuse it.
-            # A flat layout has no other semantic folder by contract.
-            if len(own) != 1 or own[0] != f"doctrines/{slug}":
-                raise ValueError(f"Conflicting flat and nested doctrine layout: {slug}")
-        else:
-            index(page, slug.replace("-", " ").title(),
-                  [(folder+"/index.md",folder.split("/")[-1].replace("-", " ").title(),
-                    f"{len(folders[folder])} Konzepte")
-                   for folder in sorted(own)])
-        doc_entries.append((page,slug.replace("-", " ").title(),
-                            f"{sum(len(folders[f]) for f in own)} Konzepte"))
+        entries=[(c["path"],c["title"],summaries[c["id"]]["summary"])
+                 for c in sorted(own,key=lambda c:c["title"].casefold())]
+        entries.extend((folder+"/index.md",
+                        folder.split("/")[-1].replace("-"," ").title(),
+                        f"{len(folders[folder])} Konzepte")
+                       for folder in children)
+        index(root+"/index.md",slug.replace("-"," ").title(),entries)
+        count=len(own)+sum(len(folders[f]) for f in children)
+        doc_entries.append((root+"/index.md",slug.replace("-"," ").title(),
+                            f"{count} Konzepte"))
     index("doctrines/index.md","Doktrinen",doc_entries)
 
     # LLM tags are semantic labels only. Membership and all paths are generated
@@ -168,7 +168,13 @@ def render(catalog: dict, tasks: list[dict], summaries: dict[str, dict]) -> tupl
     if not expected_concepts.issubset(reachable):
         raise ValueError("Not every concept is reachable from root index.")
     for folder, members in folders.items():
-        if set(links[folder+"/index.md"]) != {c["path"] for c in members}:
+        actual=set(links[folder+"/index.md"])
+        required={c["path"] for c in members}
+        if len(folder.split("/"))==2:
+            required.update(
+                f+"/index.md" for f in folders if f.startswith(folder+"/")
+            )
+        if actual != required:
             raise ValueError(f"Folder index is not complete: {folder}")
     artifact_inventory={"schema":"okf.inventory.v1","status":"complete","concepts":inventory}
     artifacts["inventory.json"]=(json.dumps(artifact_inventory,ensure_ascii=False,indent=2)+"\n").encode("utf-8")
