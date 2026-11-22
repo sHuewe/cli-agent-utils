@@ -1,6 +1,6 @@
 version = 1
 exclude_paths = ["flow"]
-result = "steps.finalize_b.output"
+result = "steps.complete_b.output"
 
 # A is immutable. Python verifies its exact file contract before any LLM work.
 [[steps]]
@@ -82,11 +82,48 @@ group = "${item}"
 # Validate all merge decisions and recheck exact source-item conservation.
 # B produces revised concepts and a complete catalog, but *no indexes*.
 [[steps]]
-id = "finalize_b"
-output = "okf-v4/state-b/finalize-result.json"
+id = "apply_merges"
+output = "okf-v4/state-b/merge-result.json"
 overwrite_output = true
 [steps.python_script]
-path = "flow/okf/v4/finalize_b.py"
+path = "flow/okf/v4/apply_merges.py"
 timeout_seconds = 600
 [steps.json_inputs.groups]
 path = "okf-v4/state-b/merge-candidates.json"
+
+# A second inventory pass describes the ACTUAL revised/merged files, never
+# the initial A draft. The source hash enters each summary checkpoint key.
+[[steps]]
+id = "final_inventory_tasks"
+output = "okf-v4/state-b/final-inventory-tasks.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/prepare_final_inventory.py"
+timeout_seconds = 300
+
+[[steps]]
+id = "summarize_final"
+foreach = "steps.final_inventory_tasks.output.concepts"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/summarize_concept.md"
+output_schema = "flow/okf/v4/schemas/concept-summary.schema.json"
+output = "okf-v4/state-b/final/summaries/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
+[steps.vars]
+concept = "${item}"
+
+# Only this step certifies B as finished. It checks exact provenance,
+# read-only A integrity, and the refreshed full final inventory.
+[[steps]]
+id = "complete_b"
+output = "okf-v4/state-b/complete-result.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/complete_b.py"
+timeout_seconds = 600
+[steps.json_inputs.tasks]
+path = "okf-v4/state-b/final-inventory-tasks.json"
