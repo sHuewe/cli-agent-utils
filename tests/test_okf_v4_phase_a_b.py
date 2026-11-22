@@ -235,3 +235,21 @@ def test_theme_membership_deduplicates_equivalent_transliteration(tmp_path):
     assert report["theme_count"]==1
     index=(tmp_path/"okf-v4/published/themen/fuehrung.md").read_text()
     assert index.count("zusammenarbeit-und-aufgaben.md")==1
+
+
+def test_llm_summary_markdown_does_not_add_untracked_links(tmp_path):
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    tasks=prepare(tmp_path,"okf-v4/phase-a")
+    item=tasks["concepts"][0]
+    put_json(tmp_path/f"okf-v4/state-b/summaries/{item['key']}.json",{
+        "id":item["id"],
+        "summary":"Erläutert fachliche Verantwortung und [untrusted](evil.md) im Kontext.",
+        "tags":["Organisation"],
+    })
+    publish(tmp_path,phase_a="okf-v4/phase-a",
+            state_root="okf-v4/state-b",destination="okf-v4/published",
+            tasks=tasks)
+    index=(tmp_path/"okf-v4/published/doctrines/example/organization/index.md").read_text()
+    assert r"\[untrusted\]" in index
+    assert "[untrusted](evil.md)" not in index
