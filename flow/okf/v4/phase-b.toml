@@ -1,9 +1,8 @@
 version = 1
 exclude_paths = ["flow"]
-result = "steps.publish_indexes.output"
+result = "steps.finalize_b.output"
 
-# Phase B consumes an immutable Phase-A snapshot. No LLM recreates concepts.
-# The Python inventory task builder validates all allowed Phase-A files.
+# A is immutable. Python verifies its exact file contract before any LLM work.
 [[steps]]
 id = "inventory_tasks"
 output = "okf-v4/state-b/inventory-tasks.json"
@@ -12,9 +11,7 @@ overwrite_output = true
 path = "flow/okf/v4/prepare_inventory.py"
 timeout_seconds = 300
 
-# Each concept is read individually by the LLM. Summaries and classification
-# labels must come from actual concept content, not filenames or legacy
-# manifests. Checkpoints remain per concept to avoid repeating completed calls.
+# Every concept gets a real LLM summary (never derived from its filename).
 [[steps]]
 id = "summarize"
 foreach = "steps.inventory_tasks.output.concepts"
@@ -30,15 +27,66 @@ allowed_tools = ["os__read_file"]
 [steps.vars]
 concept = "${item}"
 
-# The publisher verifies all LLM summaries, copies only Phase-A concept
-# Markdown, writes all indices and tests full root->concept reachability.
-# It is idempotent; overwrite_output revalidates filesystem side effects.
+# Quality proposals are JSON-only, and the LLM has read-only access.
+# keep / rewrite / split are checked and applied by Python.
 [[steps]]
-id = "publish_indexes"
-output = "okf-v4/state-b/publish-result.json"
+id = "quality_review"
+foreach = "steps.inventory_tasks.output.concepts"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/review_concept.md"
+output_schema = "flow/okf/v4/schemas/concept-review.schema.json"
+output = "okf-v4/state-b/reviews/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
+[steps.vars]
+concept = "${item}"
+
+[[steps]]
+id = "apply_quality"
+output = "okf-v4/state-b/quality-result.json"
 overwrite_output = true
 [steps.python_script]
-path = "flow/okf/v4/publish_indexes.py"
+path = "flow/okf/v4/apply_quality.py"
 timeout_seconds = 600
 [steps.json_inputs.tasks]
 path = "okf-v4/state-b/inventory-tasks.json"
+
+# Identify candidate redundant concepts from LLM summary labels and
+# their bounded semantic neighborhood; no full corpus in one LLM prompt.
+[[steps]]
+id = "merge_candidates"
+output = "okf-v4/state-b/merge-candidates.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/prepare_merges.py"
+timeout_seconds = 300
+
+[[steps]]
+id = "merge_review"
+foreach = "steps.merge_candidates.output.groups"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/review_merge.md"
+output_schema = "flow/okf/v4/schemas/merge-review.schema.json"
+output = "okf-v4/state-b/merges/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
+[steps.vars]
+group = "${item}"
+
+# Validate all merge decisions and recheck exact source-item conservation.
+# B produces revised concepts and a complete catalog, but *no indexes*.
+[[steps]]
+id = "finalize_b"
+output = "okf-v4/state-b/finalize-result.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/finalize_b.py"
+timeout_seconds = 600
+[steps.json_inputs.groups]
+path = "okf-v4/state-b/merge-candidates.json"
