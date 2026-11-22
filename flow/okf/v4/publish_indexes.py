@@ -48,7 +48,10 @@ def _relative(current: str, target: str) -> str:
 
 
 def _escape_label(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]").replace("\n", " ").strip()
+    # Treat LLM-produced summaries and tags strictly as plain text in
+    # generated Markdown, not as permission to inject extra navigation.
+    collapsed = " ".join(value.split()).replace("\\", "\\\\")
+    return re.sub(r"([\x60*_\\[\\]<>!|])", r"\\\1", collapsed)
 
 
 def render(catalog: dict, tasks: list[dict], summaries: dict[str, dict]) -> tuple[dict[str, bytes], dict]:
@@ -73,12 +76,12 @@ def render(catalog: dict, tasks: list[dict], summaries: dict[str, dict]) -> tupl
     def index(path: str, header: str, entries: list[tuple[str,str,str]]) -> None:
         if path in artifacts:
             raise ValueError(f"Index collision: {path}")
-        rows = [f"# {header}", ""]
+        rows = [f"# {_escape_label(header)}", ""]
         links[path] = []
         for target, title, description in entries:
             links[path].append(target)
             rows.append(f"- [{_escape_label(title)}]({_relative(path,target)})"
-                        + (f" – {description}" if description else ""))
+                        + (f" – {_escape_label(description)}" if description else ""))
         if not entries:
             rows.append("_Keine Einträge._")
         rows.append("")
