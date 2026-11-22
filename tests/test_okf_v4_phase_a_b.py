@@ -17,6 +17,13 @@ from migrate_v3 import migrate
 from phase_a_contract import checked_phase_a
 from prepare_inventory import prepare
 from publish_indexes import publish
+from refine_b import apply_quality
+from prepare_merges import prepare as prepare_merges
+from apply_merges import merge
+from prepare_final_inventory import prepare as prepare_final_inventory
+from complete_b import complete
+from prepare_links import prepare as prepare_links
+from phase_b_contract import checked_b
 
 
 def put_json(path: Path, data: dict) -> None:
@@ -127,21 +134,64 @@ def test_same_legacy_concept_id_from_other_doctrine_is_allowed(tmp_path):
     }
 
 
-def test_llm_inventory_and_deterministic_navigation_are_complete(tmp_path):
+def finished_b(workspace: Path, *, review_mode: str = "keep") -> dict:
+    tasks=prepare(workspace,"okf-v4/phase-a")
+    for item in tasks["concepts"]:
+        put_json(workspace/f"okf-v4/state-b/summaries/{item['key']}.json",{
+            "id":item["id"],
+            "summary":"Das Konzept beschreibt die Zuordnung und Koordination von Aufgaben.",
+            "tags":["Koordination"],
+        })
+        put_json(workspace/f"okf-v4/state-b/reviews/{item['key']}.json",{
+            "id":item["id"],"action":"keep",
+            "reason":"Die Aussagen sind klar voneinander abgegrenzt.",
+            "parts":[],
+        })
+    result=apply_quality(workspace,phase_a="okf-v4/phase-a",
+                         state="okf-v4/state-b",tasks=tasks,
+                         destination="okf-v4/b-reviewed")
+    assert result["reviewed_concepts"]==len(tasks["concepts"])
+    groups=prepare_merges(workspace)
+    for group in groups["groups"]:
+        put_json(workspace/f"okf-v4/state-b/merges/{group['key']}.json",{
+            "group_key":group["key"],"action":"skip",
+            "reason":"Die Konzeptinhalte sind voneinander verschieden.",
+            "member_ids":[],"title":"","markdown":"","summary":"","tags":[],
+        })
+    merge(workspace,groups=groups)
+    final_tasks=prepare_final_inventory(workspace)
+    for task in final_tasks["concepts"]:
+        put_json(workspace/f"okf-v4/state-b/final/summaries/{task['key']}.json",{
+            "id":task["id"],
+            "summary":"Das final geprüfte Konzept beschreibt die Zuordnung von Aufgaben.",
+            "tags":["Koordination"],
+        })
+    complete(workspace,tasks=final_tasks)
+    checked_b(workspace,root="okf-v4/phase-b",stage="B")
+    return final_tasks
+
+
+def finished_c(workspace: Path) -> dict:
+    tasks=prepare_links(workspace)
+    for item in tasks["concepts"]:
+        put_json(workspace/f"okf-v4/state-c/links/{item['key']}.json",{
+            "source_id":item["id"],
+            "related_ids":[c["id"] for c in item["candidates"][:1]],
+        })
+    return publish(workspace,phase_b="okf-v4/phase-b",
+                   state_root="okf-v4/state-c",
+                   destination="okf-v4/published",tasks=tasks)
+
+
+def test_b_is_content_quality_only_and_c_builds_complete_navigation(tmp_path):
     fixture(tmp_path)
     fixture(tmp_path,"second")
     migrate_applied(tmp_path)
-    tasks=prepare(tmp_path,"okf-v4/phase-a")
-    assert tasks["count"]==2
-    for item in tasks["concepts"]:
-        put_json(tmp_path/f"okf-v4/state-b/summaries/{item['key']}.json",{
-            "id":item["id"],
-            "summary":"Das Konzept beschreibt die Koordination und die Zuordnung von Aufgaben.",
-            "tags":["Koordination"],
-        })
-    report=publish(tmp_path,phase_a="okf-v4/phase-a",
-                   state_root="okf-v4/state-b",destination="okf-v4/published",
-                   tasks=tasks)
+    finished_b(tmp_path)
+    b_root=tmp_path/"okf-v4/phase-b"
+    assert not list(b_root.rglob("index.md"))
+    assert not (b_root/"themen").exists()
+    report=finished_c(tmp_path)
     assert report["reachable_concepts"]==2
     published=tmp_path/"okf-v4/published"
     assert (published/"index.md").is_file()
@@ -152,41 +202,52 @@ def test_llm_inventory_and_deterministic_navigation_are_complete(tmp_path):
         assert (published/f"doctrines/{slug}/index.md").is_file()
         index=(published/f"doctrines/{slug}/organization/index.md").read_text()
         assert "zusammenarbeit-und-aufgaben.md" in index
-        assert "Das Konzept beschreibt" in index
+        assert "final geprüfte Konzept" in index
     assert not (published/"sources").exists()
     assert not (published/"phase-a.json").exists()
     assert len(json.loads((published/"inventory.json").read_text())["concepts"])==2
+    assert report["semantic_links"]==2
+    # C links are generated only in the copied published concepts.
+    published_concept=published/"doctrines/example/organization/zusammenarbeit-und-aufgaben.md"
+    assert "Verwandte Konzepte" in published_concept.read_text()
+    b_concept=b_root/"doctrines/example/organization/zusammenarbeit-und-aufgaben.md"
+    assert "Verwandte Konzepte" not in b_concept.read_text()
 
 
-def test_missing_or_wrong_llm_summary_fails_without_publishing(tmp_path):
+def test_missing_llm_summary_aborts_b_before_any_index_creation(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)
     tasks=prepare(tmp_path,"okf-v4/phase-a")
-    with pytest.raises(ValueError,match="missing|Required file"):
-        publish(tmp_path,phase_a="okf-v4/phase-a",state_root="okf-v4/state-b",
-                destination="okf-v4/published",tasks=tasks)
     item=tasks["concepts"][0]
-    put_json(tmp_path/f"okf-v4/state-b/summaries/{item['key']}.json",{
-        "id":"other:bad","summary":"Unrelated long enough summary text.",
-        "tags":["Other"]})
-    with pytest.raises(ValueError,match="mismatched"):
-        publish(tmp_path,phase_a="okf-v4/phase-a",state_root="okf-v4/state-b",
-                destination="okf-v4/published",tasks=tasks)
+    put_json(tmp_path/f"okf-v4/state-b/reviews/{item['key']}.json",{
+        "id":item["id"],"action":"keep","reason":"Valid concept.","parts":[],
+    })
+    with pytest.raises(ValueError,match="Required file"):
+        apply_quality(tmp_path,phase_a="okf-v4/phase-a",state="okf-v4/state-b",
+                      tasks=tasks,destination="okf-v4/b-reviewed")
+    assert not (tmp_path/"okf-v4/phase-b").exists()
     assert not (tmp_path/"okf-v4/published").exists()
 
 
-def test_flow_is_concept_scoped_and_indexes_are_python_only():
+def test_flows_separate_quality_and_publishing():
     import tomllib
-    config=tomllib.loads((V4/"phase-b.toml").read_text(encoding="utf-8"))
-    steps={s["id"]:s for s in config["steps"]}
-    assert list(steps)==["inventory_tasks","summarize","publish_indexes"]
-    assert steps["summarize"]["foreach"]=="steps.inventory_tasks.output.concepts"
-    assert steps["summarize"]["workspace_access"]=="read"
-    assert steps["summarize"]["output_schema"].endswith("concept-summary.schema.json")
-    assert steps["publish_indexes"]["python_script"]["path"].endswith("publish_indexes.py")
-    assert steps["publish_indexes"]["overwrite_output"] is True
-    assert steps["publish_indexes"]["json_inputs"]["tasks"]["path"]==steps["inventory_tasks"]["output"]
-
+    b=tomllib.loads((V4/"phase-b.toml").read_text(encoding="utf-8"))
+    c=tomllib.loads((V4/"phase-c.toml").read_text(encoding="utf-8"))
+    bsteps={step["id"]:step for step in b["steps"]}
+    csteps={step["id"]:step for step in c["steps"]}
+    assert list(bsteps)==[
+        "inventory_tasks","summarize","quality_review","apply_quality",
+        "merge_candidates","merge_review","apply_merges",
+        "final_inventory_tasks","summarize_final","complete_b",
+    ]
+    assert list(csteps)==["link_candidates","relate","publish_indexes"]
+    assert b["result"]=="steps.complete_b.output"
+    assert c["result"]=="steps.publish_indexes.output"
+    assert bsteps["quality_review"]["foreach"]=="steps.inventory_tasks.output.concepts"
+    assert bsteps["quality_review"]["workspace_access"]=="read"
+    assert csteps["relate"]["workspace_access"]=="none"
+    assert csteps["publish_indexes"]["python_script"]["path"].endswith("publish_indexes.py")
+    assert csteps["publish_indexes"]["overwrite_output"] is True
 
 
 def test_migration_rejects_repair_path_mismatch(tmp_path):
@@ -223,38 +284,39 @@ def test_migration_rejects_destination_nested_in_v3_input(tmp_path):
 def test_theme_membership_deduplicates_equivalent_transliteration(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    tasks=prepare(tmp_path,"okf-v4/phase-a")
-    item=tasks["concepts"][0]
-    put_json(tmp_path/f"okf-v4/state-b/summaries/{item['key']}.json",{
-        "id":item["id"],
+    finished_b(tmp_path)
+    # Final B inventory is authoritative. Two tags may normalize to the
+    # same thematic filename, without duplicating concept membership.
+    b=tmp_path/"okf-v4/phase-b"
+    # Instead of mutating a certified B snapshot, assert the renderer itself.
+    from publish_indexes import render
+    _,catalog,_=checked_b(tmp_path,root="okf-v4/phase-b",stage="B")
+    concept=catalog["concepts"][0]
+    summaries={concept["id"]:{
         "summary":"Das Konzept beschreibt die Koordination verschiedener Aufgaben.",
         "tags":["Führung","Fuehrung"],
-    })
-    report=publish(tmp_path,phase_a="okf-v4/phase-a",
-                   state_root="okf-v4/state-b",destination="okf-v4/published",
-                   tasks=tasks)
+    }}
+    artifacts,report=render(catalog,[],summaries)
     assert report["theme_count"]==1
-    index=(tmp_path/"okf-v4/published/themen/fuehrung.md").read_text()
-    assert index.count("zusammenarbeit-und-aufgaben.md")==1
+    assert artifacts["themen/fuehrung.md"].decode().count(
+        "zusammenarbeit-und-aufgaben.md"
+    )==1
 
 
 def test_llm_summary_markdown_does_not_add_untracked_links(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    tasks=prepare(tmp_path,"okf-v4/phase-a")
-    item=tasks["concepts"][0]
-    put_json(tmp_path/f"okf-v4/state-b/summaries/{item['key']}.json",{
-        "id":item["id"],
+    finished_b(tmp_path)
+    from publish_indexes import render
+    _,catalog,_=checked_b(tmp_path,root="okf-v4/phase-b",stage="B")
+    concept=catalog["concepts"][0]
+    artifacts,_=render(catalog,[],{concept["id"]:{
         "summary":"Erläutert fachliche Verantwortung und [untrusted](evil.md) im Kontext.",
         "tags":["Organisation"],
-    })
-    publish(tmp_path,phase_a="okf-v4/phase-a",
-            state_root="okf-v4/state-b",destination="okf-v4/published",
-            tasks=tasks)
-    index=(tmp_path/"okf-v4/published/doctrines/example/organization/index.md").read_text()
+    }})
+    index=artifacts["doctrines/example/organization/index.md"].decode()
     assert r"\[untrusted\]" in index
     assert "[untrusted](evil.md)" not in index
-
 
 
 def test_migration_rejects_legacy_index_as_planned_concept(tmp_path):
