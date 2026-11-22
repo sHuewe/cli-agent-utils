@@ -1,6 +1,6 @@
 version = 1
 exclude_paths = ["flow"]
-result = "steps.global_topics.output"
+result = "steps.publish_named.output"
 
 [vars]
 doctrine_path = "doctrines"
@@ -62,3 +62,16 @@ flow = "flow/okf/flow_okf_from_doctrine_batched/flows/global-topics.toml"
 module_results = "${steps.build_modules.output.iterations}"
 okf_root = "${var.okf_root}"
 
+
+# Publish a separate, human-readable OKF tree after all doctrine indices,
+# themes and root navigation are complete. Never mutate generated concept
+# files or the model's checkpoint-bound group/manifests on resume.
+[[steps]]
+id = "publish_named"
+output = "okf-batched/state-v3/global/named-publication.json"
+overwrite_output = true
+[steps.filesystem_operation]
+kind = "publish_named_okf"
+source_root = "${var.okf_root}"
+destination_root = "okf-batched-published-v3"
+state_root = "okf-batched/state-v3/docs"
