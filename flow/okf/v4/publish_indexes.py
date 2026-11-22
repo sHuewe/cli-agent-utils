@@ -1,13 +1,12 @@
-"""Publish complete, deterministic V4 navigation from LLM concept summaries.
+"""Phase C: link and publish a certified Phase-B corpus deterministically.
 
-No LLM writes Markdown indexes. Validate every Phase-A concept, each LLM
-summary and all generated links before atomically swapping published output.
-The immutable Phase-A artifact is never changed.
+Only final reviewed B concepts are copied; no model writes Markdown or
+indexes directly. Validate all semantic IDs, internal links and root
+navigation before atomically swapping the separately published output.
 """
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,29 +17,6 @@ import sys
 import tempfile
 
 from migrate_v3 import safe_path, slugify
-from phase_a_contract import checked_phase_a
-
-
-def _summary(workspace: Path, state_root: str, item: dict) -> dict:
-    path = safe_path(workspace, state_root + "/summaries/" + item["key"] + ".json")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict) or data.get("id") != item["id"]:
-        raise ValueError(f"Missing/mismatched LLM summary: {item['id']}")
-    summary = data.get("summary")
-    if not isinstance(summary, str) or not 20 <= len(summary.strip()) <= 600:
-        raise ValueError(f"Invalid LLM summary for {item['id']}")
-    tags = data.get("tags")
-    if not isinstance(tags,list) or len(tags) > 5:
-        raise ValueError(f"Invalid LLM tags for {item['id']}")
-    cleaned = []
-    for tag in tags:
-        if not isinstance(tag,str) or not 2 <= len(tag.strip()) <= 80:
-            raise ValueError(f"Invalid LLM tag for {item['id']}")
-        tag = tag.strip()
-        slugify(tag)
-        if tag.casefold() not in {t.casefold() for t in cleaned}:
-            cleaned.append(tag)
-    return {"id": item["id"], "summary":summary.strip(), "tags":cleaned}
 
 
 def _relative(current: str, target: str) -> str:
@@ -59,7 +35,7 @@ def render(catalog: dict, tasks: list[dict], summaries: dict[str, dict]) -> tupl
     documents = catalog["documents"]
     identity = {c["id"]: c for c in concepts}
     if len(identity) != len(concepts) or set(identity) != set(summaries):
-        raise ValueError("Inventory does not exactly cover Phase-A concept IDs.")
+        raise ValueError("Final B inventory does not exactly cover concept IDs.")
     artifacts: dict[str, bytes] = {}
     links: dict[str, list[str]] = {}
     inventory = []
@@ -148,8 +124,8 @@ def render(catalog: dict, tasks: list[dict], summaries: dict[str, dict]) -> tupl
         ("themen/index.md","Themen",f"{len(themes)} thematische Gruppen"),
     ])
 
-    # Source and source snapshots never enter the published tree. Only
-    # Phase-A concepts, derived indexes, and the semantic inventory are allowed.
+    # Source snapshots never enter the published tree. Only final reviewed
+    # B concepts, generated indexes, and the semantic inventory are allowed.
     expected_concepts={c["path"] for c in concepts}
     all_paths=set(artifacts)|expected_concepts|{"inventory.json"}
     for page, targets in links.items():
