@@ -217,3 +217,21 @@ def test_migration_rejects_destination_nested_in_v3_input(tmp_path):
         migrate(tmp_path,source_root="okf-batched-generated-v3",
                 state_root="okf-batched/state-v3/docs",
                 destination="okf-batched-generated-v3/phase-a",apply=False)
+
+
+def test_theme_membership_deduplicates_equivalent_transliteration(tmp_path):
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    tasks=prepare(tmp_path,"okf-v4/phase-a")
+    item=tasks["concepts"][0]
+    put_json(tmp_path/f"okf-v4/state-b/summaries/{item['key']}.json",{
+        "id":item["id"],
+        "summary":"Das Konzept beschreibt die Koordination verschiedener Aufgaben.",
+        "tags":["Führung","Fuehrung"],
+    })
+    report=publish(tmp_path,phase_a="okf-v4/phase-a",
+                   state_root="okf-v4/state-b",destination="okf-v4/published",
+                   tasks=tasks)
+    assert report["theme_count"]==1
+    index=(tmp_path/"okf-v4/published/themen/fuehrung.md").read_text()
+    assert index.count("zusammenarbeit-und-aufgaben.md")==1
