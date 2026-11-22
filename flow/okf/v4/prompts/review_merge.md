@@ -21,7 +21,7 @@ For "merge": member_ids must contain 2–4 exact member IDs in the given
 group, in preferred preservation order. The FIRST ID is retained, and
 its **original title must also be retained** to preserve its filename. The
 Markdown must be one full, self-contained, accurate concept with YAML
-frontmatter title matching "title". It must preserve every statement
+frontmatter including a required nonempty scalar `type` (for example `type: concept`), a `title` matching "title", and the closing `---` delimiter. It must preserve every statement
 supported by every selected concept; do not infer new requirements or alter
 source evidence. Include a grounded German summary and 1–5 useful thematic
 tags. Other group members not in member_ids remain unchanged.
