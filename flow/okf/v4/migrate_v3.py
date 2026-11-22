@@ -199,9 +199,10 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
             if not re.fullmatch(r"[a-z][a-z0-9_-]*", cid):
                 raise ValueError(f"Invalid concept identifier: {cid!r}")
             assert_parent(old,slug)
-            if cid in ids or old in original_paths:
-                raise ValueError(f"Duplicate concept ID or path: {cid}")
-            ids.add(cid)
+            qualified_id = f"{slug}:{cid}"
+            if qualified_id in ids or old in original_paths:
+                raise ValueError(f"Duplicate concept ID or path: {qualified_id}")
+            ids.add(qualified_id)
             old_file = safe_path(workspace,source_root+"/"+old)
             raw_bytes = old_file.read_bytes()
             raw = raw_bytes.decode("utf-8")
