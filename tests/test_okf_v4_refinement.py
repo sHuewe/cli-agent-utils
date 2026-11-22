@@ -170,3 +170,28 @@ def test_merge_redirects_removed_concept_and_preserves_both_items(tmp_path):
     assert len(catalog["retired_paths"])==1
     _,original,_=checked_phase_a(tmp_path)
     assert len(original["concepts"])==2
+
+
+
+@pytest.mark.parametrize("raw", [
+    "---\ntitle: Beispiel\n---\n# Beispiel\n"
+    "Ein erklärender Text zur Umsetzung eines Konzepts und zu dessen Anforderungen.\n",
+    "---\ntype: \ntitle: Beispiel\n---\n# Beispiel\n"
+    "Ein erklärender Text zur Umsetzung eines Konzepts und zu dessen Anforderungen.\n",
+    "---\ntype: concept\ntitle: Beispiel\n# Beispiel\n"
+    "Ein erklärender Text zur Umsetzung eines Konzepts und zu dessen Anforderungen.\n",
+])
+def test_replacement_rejects_missing_type_or_unclosed_frontmatter(raw):
+    from refine_b import markdown
+    with pytest.raises(ValueError,match="frontmatter|type|delimiter"):
+        markdown("Beispiel",raw)
+
+
+def test_replacement_accepts_valid_okf_frontmatter():
+    from refine_b import markdown
+    document=(
+        "---\ntype: concept\ntitle: Beispiel\n---\n"
+        "# Beispiel\nEine ausführliche Erklärung dieses Konzepts "
+        "und seiner fachlichen Bedingungen.\n"
+    )
+    assert markdown("Beispiel",document)==document.encode("utf-8")
