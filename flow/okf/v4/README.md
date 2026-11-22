@@ -123,8 +123,9 @@ steps reuse their checkpoints, avoiding unnecessary model calls.
   missing documents, produce summaries itself, or invent source evidence.
 - Global thematic tags are an initial cross-doctrine classification, not
   the later semantic merge/split and quality-review pipeline.
-- Phase A remains immutable across B runs. Any content change requires a
-  new validated Phase-A version; downstream inventory checkpoints must then
-  be invalidated or versioned appropriately.
+- Phase A remains immutable during any B run. When concepts are reimported
+  with changed Markdown, the inventory step includes the concept SHA-256 in
+  each per-concept summary checkpoint filename, automatically invalidating
+  summaries for changed content while reusing those for unchanged concepts.
 - Future incremental update flows should use the catalog's original
   Knowledge Item identities and source snapshots for change-impact analysis.
