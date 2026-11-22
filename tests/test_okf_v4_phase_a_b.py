@@ -50,7 +50,8 @@ def fixture(workspace: Path, slug: str = "example") -> None:
         "total_items":1,
         "concepts":[{
             "id":concept_id,"title":"Zusammenarbeit und Aufgaben","path":legacy_path,
-            "coverage_items":[{"id":item_id,"normative":True,"description":"Source statement"}],
+            "coverage_items":[{"id":item_id,"normative":True,"description":"Source statement",
+                               "evidence_ranges":[{"doctrine":source_path,"start_line":1,"end_line":2}]}],
             "evidence_ranges":[{"source_path":source_path,"start_line":1,"end_line":2}],
         }],
     })
@@ -253,3 +254,41 @@ def test_llm_summary_markdown_does_not_add_untracked_links(tmp_path):
     index=(tmp_path/"okf-v4/published/doctrines/example/organization/index.md").read_text()
     assert r"\[untrusted\]" in index
     assert "[untrusted](evil.md)" not in index
+
+
+
+def test_migration_rejects_legacy_index_as_planned_concept(tmp_path):
+    fixture(tmp_path)
+    group_path=tmp_path/"okf-batched/state-v3/docs/example/group.json"
+    group=json.loads(group_path.read_text())
+    group["concepts"][0]["path"]="doctrines/example/organization/index.md"
+    put_json(group_path,group)
+    repair_path=tmp_path/"okf-batched/state-v3/docs/example/concept-s001-c010-repair.json"
+    repair=json.loads(repair_path.read_text())
+    repair["path"]="doctrines/example/organization/index.md"
+    put_json(repair_path,repair)
+    with pytest.raises(ValueError,match="Unexpected doctrine concept path"):
+        migrate_applied(tmp_path)
+    assert not (tmp_path/"okf-v4/phase-a").exists()
+
+
+def test_migration_rejects_mismatched_evidence_document(tmp_path):
+    fixture(tmp_path)
+    fixture(tmp_path,"second")
+    sections_path=tmp_path/"okf-batched/state-v3/docs/example/sections.json"
+    sections=json.loads(sections_path.read_text())
+    sections["source_path"]="doctrines/second.md"
+    put_json(sections_path,sections)
+    with pytest.raises(ValueError,match="different source"):
+        migrate_applied(tmp_path)
+    assert not (tmp_path/"okf-v4/phase-a").exists()
+
+
+def test_migration_rejects_out_of_range_evidence(tmp_path):
+    fixture(tmp_path)
+    group_path=tmp_path/"okf-batched/state-v3/docs/example/group.json"
+    group=json.loads(group_path.read_text())
+    group["concepts"][0]["coverage_items"][0]["evidence_ranges"][0]["end_line"]=100
+    put_json(group_path,group)
+    with pytest.raises(ValueError,match="outside the source"):
+        migrate_applied(tmp_path)
