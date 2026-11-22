@@ -23,8 +23,9 @@ improvement is justified. You may choose:
 
 For every replacement part, return these keys:
 title, markdown, knowledge_item_ids, summary, tags.
-"markdown" must be a complete genuine Markdown concept with YAML frontmatter
-title matching the part title. The summary and 1–5 thematic tags must be
+"markdown" must be a complete genuine Markdown concept with closed YAML
+frontmatter at the start of the document, a required nonempty scalar `type`
+(e.g. `type: concept`) and `title` matching the part title. The summary and 1–5 thematic tags must be
 grounded in the reviewed text. Each part must preserve source scope,
 modality, exceptions and provenance of its assigned Knowledge Items.
 Keep the strongest content from the original and do not introduce unsupported
