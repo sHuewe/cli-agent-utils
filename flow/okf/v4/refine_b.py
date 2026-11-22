@@ -154,8 +154,8 @@ def markdown(title: str, body: str) -> bytes:
     if closing < 2 or closing >= len(lines) - 1:
         raise ValueError("Replacement needs frontmatter and substantive body.")
     metadata=lines[1:closing]
-    types=[re.fullmatch(r"type:\\s*([A-Za-z][A-Za-z0-9_-]*)\\s*",line)
-           for line in metadata if re.match(r"^type\\s*:",line)]
+    types=[re.fullmatch(r"type:\s*([A-Za-z][A-Za-z0-9_-]*)\s*",line)
+           for line in metadata if re.match(r"^type\s*:",line)]
     if len(types) != 1 or types[0] is None:
         raise ValueError("Replacement frontmatter requires one nonempty scalar type.")
     if title_from_frontmatter(body) != title:
