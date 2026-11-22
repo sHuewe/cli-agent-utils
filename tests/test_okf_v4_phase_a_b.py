@@ -60,7 +60,7 @@ def fixture(workspace: Path, slug: str = "example") -> None:
         "documented_normative_items":1,"documented_descriptive_items":0,
     })
     put_json(state/f"concept-{concept_id}-repair.json",{
-        "concept_id":concept_id,"status":"repaired","remaining_item_ids":[],
+        "concept_id":concept_id,"path":legacy_path,"status":"repaired","remaining_item_ids":[],
         "remaining_warnings":[],"documented_item_ids":[item_id],
     })
 
@@ -185,3 +185,35 @@ def test_flow_is_concept_scoped_and_indexes_are_python_only():
     assert steps["publish_indexes"]["python_script"]["path"].endswith("publish_indexes.py")
     assert steps["publish_indexes"]["overwrite_output"] is True
     assert steps["publish_indexes"]["json_inputs"]["tasks"]["path"]==steps["inventory_tasks"]["output"]
+
+
+
+def test_migration_rejects_repair_path_mismatch(tmp_path):
+    fixture(tmp_path)
+    repair_path=tmp_path/"okf-batched/state-v3/docs/example/concept-s001-c010-repair.json"
+    repair=json.loads(repair_path.read_text())
+    repair["path"]="doctrines/example/organization/another.md"
+    put_json(repair_path,repair)
+    with pytest.raises(ValueError,match="Incomplete repair"):
+        migrate_applied(tmp_path)
+    assert not (tmp_path/"okf-v4/phase-a").exists()
+
+
+def test_checkpoint_key_changes_when_source_concept_changes(tmp_path):
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    old_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    # A new import version with changed content must use a new LLM checkpoint.
+    original=tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
+    original.write_text(original.read_text()+"\nAnother supported detail.\n")
+    migrate_applied(tmp_path)
+    new_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    assert old_key != new_key
+
+
+def test_migration_rejects_destination_nested_in_v3_input(tmp_path):
+    fixture(tmp_path)
+    with pytest.raises(ValueError,match="overlaps"):
+        migrate(tmp_path,source_root="okf-batched-generated-v3",
+                state_root="okf-batched/state-v3/docs",
+                destination="okf-batched-generated-v3/phase-a",apply=False)
