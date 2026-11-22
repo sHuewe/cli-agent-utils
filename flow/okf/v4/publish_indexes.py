@@ -204,6 +204,13 @@ def publish(
     semantic={c["id"]:{"id":c["id"],"summary":c["summary"],
                         "tags":c["tags"]} for c in catalog["concepts"]}
     artifacts,report=render(catalog,tasks["concepts"],semantic)
+    # Rewrite and validate pre-existing concept links too: a merge can retire
+    # a path that older concepts already referenced. Every old path gets a
+    # deterministic redirect to its surviving primary concept.
+    from migrate_v3 import _markdown_links
+    live_paths={c["path"] for c in catalog["concepts"]}
+    link_map={p:p for p in live_paths | set(artifacts)}
+    link_map.update(catalog.get("retired_paths",{}))
     link_count=0
     for item in tasks["concepts"]:
         src=members[item["id"]]
@@ -218,7 +225,10 @@ def publish(
                 or len(selected)!=len(set(selected))
                 or not set(selected).issubset(possibilities)):
             raise ValueError("Semantic link proposal has unknown/duplicate IDs.")
-        body=(base/src["path"]).read_bytes()
+        body=_markdown_links(
+            (base/src["path"]).read_text(encoding="utf-8"),
+            src["path"],src["path"],link_map,
+        ).encode("utf-8")
         if selected:
             appendix=["","<!-- okf-generated-links:start -->",
                       "## Verwandte Konzepte",""]
