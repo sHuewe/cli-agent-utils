@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "id",
+    "action",
+    "reason",
+    "parts"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 3
+    },
+    "action": {
+      "enum": [
+        "keep",
+        "rewrite",
+        "split"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 12,
+      "maxLength": 1200
+    },
+    "parts": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "markdown",
+          "knowledge_item_ids",
+          "summary",
+          "tags"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 180
+          },
+          "markdown": {
+            "type": "string",
+            "minLength": 70,
+            "maxLength": 250000
+          },
+          "knowledge_item_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 3
+            }
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 600
+          },
+          "tags": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 80
+            }
+          }
+        }
+      }
+    }
+  }
+}
