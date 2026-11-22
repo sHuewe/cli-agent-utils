@@ -144,6 +144,20 @@ def _semantic(value: dict, expected_id: str) -> dict:
 def markdown(title: str, body: str) -> bytes:
     if not isinstance(body, str) or not 70 <= len(body.encode("utf-8")) <= 250_000:
         raise ValueError("LLM revision must contain a substantive bounded Markdown document.")
+    if not body.startswith("---\n"):
+        raise ValueError("Replacement must begin with YAML frontmatter.")
+    lines=body.splitlines()
+    try:
+        closing=lines.index("---", 1)
+    except ValueError as exc:
+        raise ValueError("Replacement frontmatter requires a closing --- delimiter.") from exc
+    if closing < 2 or closing >= len(lines) - 1:
+        raise ValueError("Replacement needs frontmatter and substantive body.")
+    metadata=lines[1:closing]
+    types=[re.fullmatch(r"type:\\s*([A-Za-z][A-Za-z0-9_-]*)\\s*",line)
+           for line in metadata if re.match(r"^type\\s*:",line)]
+    if len(types) != 1 or types[0] is None:
+        raise ValueError("Replacement frontmatter requires one nonempty scalar type.")
     if title_from_frontmatter(body) != title:
         raise ValueError("LLM revision frontmatter title does not match the chosen title.")
     if "/index.md" in body or "\x00" in body:
