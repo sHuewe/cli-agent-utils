@@ -200,6 +200,8 @@ def apply_quality(
                 title = part.get("title")
                 if not isinstance(title, str) or not title.strip():
                     raise ValueError("Missing quality part title.")
+                if n == 0 and title != original["title"]:
+                    raise ValueError("Primary concept must retain its title and descriptive path.")
                 body = markdown(title, part.get("markdown"))
                 sem = _semantic(part, original["id"])
                 ident = original["id"] if n == 0 else f"{original['id']}--p{n+1:02d}"
