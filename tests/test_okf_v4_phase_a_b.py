@@ -31,6 +31,27 @@ def put_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
+def refresh_scan_for_fixture(root: Path, slug: str = "example") -> None:
+    """Reproduce V3 scan-local IDs and full source records for test fixtures."""
+    state=root/f"okf-batched/state-v3/docs/{slug}"
+    sections=json.loads((state/"sections.json").read_text())
+    group=json.loads((state/"group.json").read_text())
+    for section in sections["sections"]:
+        raw=[]
+        for concept in group["concepts"]:
+            for item in concept["coverage_items"]:
+                if item["id"].startswith(slug+":"):
+                    raw.append({**item,"id":item["id"][len(slug)+1:]})
+        put_json(state/f"scan-{section['id']}.json",{
+            "status":"ok","source_path":sections["source_path"],
+            "section_id":section["id"],"chunk_id":section["id"],
+            "document_id":slug,"folder_id":slug,
+            "start_line":section["start_line"],"end_line":section["end_line"],
+            "knowledge_items":raw,"candidate_concepts":[],
+            "warnings":[],
+        })
+
+
 def fixture(workspace: Path, slug: str = "example") -> None:
     original = workspace / f"doctrines/{slug}.md"
     original.parent.mkdir(parents=True, exist_ok=True)
@@ -71,6 +92,7 @@ def fixture(workspace: Path, slug: str = "example") -> None:
         "concept_id":concept_id,"path":legacy_path,"status":"repaired","remaining_item_ids":[],
         "remaining_warnings":[],"documented_item_ids":[item_id],
     })
+    refresh_scan_for_fixture(workspace, slug)
 
 
 def migrate_applied(root: Path) -> None:
