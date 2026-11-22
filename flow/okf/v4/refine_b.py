@@ -83,6 +83,7 @@ def inventory_tasks(catalog: dict, root: str) -> dict:
             "path": root + "/" + c["path"],
             "source": root + "/" + c["source_path"],
             "knowledge_item_count": len(c["knowledge_item_ids"]),
+            "knowledge_items": c["knowledge_items"],
         })
     return {"schema": "okf.inventory-tasks.v1", "status": "ok",
             "count": len(items), "concepts": items}
