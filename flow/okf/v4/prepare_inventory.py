@@ -31,6 +31,7 @@ def prepare(workspace: Path, root: str) -> dict:
             "path": root + "/" + concept["path"],
             "source": root + "/" + concept["source_path"],
             "knowledge_item_count": len(concept["knowledge_item_ids"]),
+            "knowledge_items": concept["knowledge_items"],
         })
     return {"schema": "okf.inventory-tasks.v1", "status": "ok",
             "count": len(tasks), "concepts": tasks}
