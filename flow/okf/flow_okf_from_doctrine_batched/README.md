@@ -64,6 +64,45 @@ and assignment checkpoints are retained. `jsonschema` is required.
 New scan outputs must include all three route identity fields because
 `schemas/scan.schema.json` now requires them.
 
+## Readable filenames in the published OKF
+
+The existing generation and coverage checkpoints continue to use stable
+technical IDs such as `s001-c010` and their original Markdown paths. Once
+**all** doctrine builds, local folder/module indices, cross-document themes,
+and the root `index.md` are complete, the root Flow runs the deterministic
+`publish_named` filesystem operation.
+
+It creates a separate complete OKF publication at
+`okf-batched-published-v3/`. Concept filenames are slugified from the
+existing YAML frontmatter `title` (falling back to `group.json` title).
+German umlauts are transliterated, collisions receive a stable concept-ID
+suffix, and `index.md` and inter-concept Markdown links are rewritten
+against the original filename-to-new-filename mapping. Relative links in
+theme pages and module/folder indices are also adjusted. A machine-readable
+`concept-path-map.json` in the published root records old/new paths and
+stable identities.
+
+The source tree `okf-batched-generated-v3/` and `state-v3` checkpoints
+are **never renamed or modified** by publication. This is important for
+Flow resume: the original checkpoint-based file assertions and write-path
+policies still refer to their original filenames. The publication stage is
+`overwrite_output=true` and reconstructs a complete staged tree each time.
+It validates file existence, path collisions, symlinks, and Markdown links
+before swapping in the new published tree. If publication fails, the
+previous published tree and all generator checkpoints remain untouched.
+
+**Use `okf-batched-published-v3/` as the final OKF repository**, not the
+intermediate `okf-batched-generated-v3/`. This is deliberately a separate
+directory rather than an in-place rename, because retroactively changing
+`group.json` and already completed model checkpoint paths would invalidate
+resume and risk re-generating expensive completed work. No additional
+model calls are necessary to derive descriptive filenames.
+
+For a new workspace, the named publication requires the cli-agent version
+with the `publish_named_okf` filesystem operation. After updating both
+repositories, resume the normal top-level Flow. It will run the new
+publication step only after the global navigation stage has succeeded.
+
 ## Local document pipeline
 
 1. Generic `markdown_sections(always_sections=true)` builds uniform,
