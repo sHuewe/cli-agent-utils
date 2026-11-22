@@ -61,6 +61,8 @@ def test_all_document_scans_complete_before_document_consolidation():
     assert plan["topics"]["json_operation"]["kind"] == "json_project"
     assert plan["group"]["json_operation"]["kind"] == "group_items"
     assert plan["group"]["json_operation"]["max_concept_bytes"] == 12000
+    assert plan["group"]["json_operation"]["canonicalize_route_ids"] is True
+    assert plan["group"]["json_inputs"]["sections"]["path"].endswith("/sections.json")
     assert plan["build_concepts"]["foreach"] == "steps.group.output.concepts"
     assert _steps(NEW / "flows" / "verify-document.toml")["coverage"]["json_operation"]["kind"] == "verify_coverage"
     assert "coverage_manifest" in plan and "manifest_inventory" in plan
