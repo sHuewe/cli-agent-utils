@@ -131,7 +131,7 @@ def _frontmatter_title(path: Path) -> str | None:
             line = reader.readline()
             if not line or line.strip() == "---":
                 return None
-            match = re.fullmatch(r"title:\\s*(.+?)\\s*", line.rstrip("\\r\\n"))
+            match = re.fullmatch(r"title:\s*(.+?)\s*", line.rstrip("\r\n"))
             if not match:
                 continue
             raw = match.group(1)
