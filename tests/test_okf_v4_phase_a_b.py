@@ -161,6 +161,10 @@ def finished_b(workspace: Path, *, review_mode: str = "keep") -> dict:
     merge(workspace,groups=groups)
     final_tasks=prepare_final_inventory(workspace)
     for task in final_tasks["concepts"]:
+        put_json(workspace/f"okf-v4/state-b/final/verification/{task['key']}.json",{
+            "id":task["id"],"status":"ok",
+            "missing_item_ids":[],"warnings":[],
+        })
         put_json(workspace/f"okf-v4/state-b/final/summaries/{task['key']}.json",{
             "id":task["id"],
             "summary":"Das final geprüfte Konzept beschreibt die Zuordnung von Aufgaben.",
@@ -238,7 +242,7 @@ def test_flows_separate_quality_and_publishing():
     assert list(bsteps)==[
         "inventory_tasks","summarize","quality_review","apply_quality",
         "merge_candidates","merge_review","apply_merges",
-        "final_inventory_tasks","summarize_final","complete_b",
+        "final_inventory_tasks","summarize_final","verify_final","complete_b",
     ]
     assert list(csteps)==["link_candidates","relate","publish_indexes"]
     assert b["result"]=="steps.complete_b.output"
