@@ -181,41 +181,62 @@ def render(catalog: dict, tasks: list[dict], summaries: dict[str, dict]) -> tupl
     return artifacts,report
 
 
-def publish(workspace: Path, *, phase_a: str, state_root: str,
-            destination: str, tasks: dict) -> dict:
+def publish(
+    workspace: Path, *, phase_b: str, state_root: str,
+    destination: str, tasks: dict,
+) -> dict:
+    """Publish only from certified B; do not modify any B concept file."""
+    from phase_b_contract import checked_b
+    from prepare_links import prepare as expected_links
+
     workspace=workspace.resolve()
-    _,catalog,base=checked_phase_a(workspace,phase_a)
-    if tasks.get("schema")!="okf.inventory-tasks.v1" or tasks.get("status")!="ok":
-        raise ValueError("Missing validated inventory task result.")
-    items=tasks.get("concepts")
-    if not isinstance(items,list) or len(items)!=len(catalog["concepts"]) or tasks.get("count")!=len(items):
-        raise ValueError("Inventory task count differs from Phase A.")
-    expected={c["id"]:c for c in catalog["concepts"]}
-    seen=set()
-    summaries={}
-    for item in items:
-        if not isinstance(item,dict) or item.get("id") not in expected or item["id"] in seen:
-            raise ValueError("Unknown/duplicate inventory task.")
-        c=expected[item["id"]]
-        if (item.get("title")!=c["title"] or item.get("path")!=phase_a+"/"+c["path"]
-                or item.get("source")!=phase_a+"/"+c["source_path"]
-                or item.get("knowledge_item_count")!=len(c["knowledge_item_ids"])):
-            raise ValueError("Inventory task metadata does not match Phase A.")
-        seen.add(c["id"])
-        key=c["id"].replace(":","--") + "--" + c["sha256"][:16]
-        if item.get("key") != key or not re.fullmatch(r"[a-z0-9_-]+",key):
-            raise ValueError("Invalid inventory task key.")
-        summaries[c["id"]]=_summary(workspace,state_root,item)
-    artifacts,report=render(catalog,items,summaries)
-    for c in catalog["concepts"]:
-        artifacts[c["path"]]=(base/c["path"]).read_bytes()
+    _,catalog,base=checked_b(workspace,root=phase_b,stage="B")
+    expected=expected_links(workspace)
+    if tasks!=expected:
+        raise ValueError("C link tasks differ from the final B inventory.")
+    members={c["id"]:c for c in catalog["concepts"]}
+    semantic={c["id"]:{"id":c["id"],"summary":c["summary"],
+                        "tags":c["tags"]} for c in catalog["concepts"]}
+    artifacts,report=render(catalog,tasks["concepts"],semantic)
+    link_count=0
+    for item in tasks["concepts"]:
+        src=members[item["id"]]
+        decision=json.loads(safe_path(
+            workspace,f"{state_root}/links/{item['key']}.json"
+        ).read_text(encoding="utf-8"))
+        if not isinstance(decision,dict) or decision.get("source_id")!=item["id"]:
+            raise ValueError("Missing or mismatched semantic link review.")
+        selected=decision.get("related_ids")
+        possibilities={p["id"] for p in item["candidates"]}
+        if (not isinstance(selected,list) or len(selected)>5
+                or len(selected)!=len(set(selected))
+                or not set(selected).issubset(possibilities)):
+            raise ValueError("Semantic link proposal has unknown/duplicate IDs.")
+        body=(base/src["path"]).read_bytes()
+        if selected:
+            appendix=["","<!-- okf-generated-links:start -->",
+                      "## Verwandte Konzepte",""]
+            for ident in selected:
+                target=members[ident]
+                path=_relative(src["path"],target["path"])
+                appendix.append(f"- [{_escape_label(target['title'])}]({path})")
+                link_count+=1
+            appendix.append("<!-- okf-generated-links:end -->")
+            body=body.rstrip(b"\r\n")+("\n"+"\n".join(appendix)+"\n").encode("utf-8")
+        artifacts[src["path"]]=body
+    report["semantic_links"]=link_count
+    # Navigation targets are deterministic and all known; every concept is
+    # reachable from root. Verify appended LLM-selected targets by ID above.
     target=safe_path(workspace,destination+"/.placeholder",must_exist=False).parent
-    if target.exists() and (target.is_symlink() or not (target/"inventory.json").is_file()):
-        raise ValueError("Refusing to overwrite non-B publication.")
     if target==base or base in target.parents or target in base.parents:
-        raise ValueError("Publication root overlaps Phase A.")
+        raise ValueError("Publication root overlaps B input.")
+    if target.exists() and (target.is_symlink() or not (target/"inventory.json").is_file()):
+        raise ValueError("Refusing to overwrite non-C publication.")
+    for file in target.rglob("*") if target.exists() else ():
+        if file.is_symlink() or (hasattr(file,"is_junction") and file.is_junction()):
+            raise ValueError("Existing output tree contains symlinks.")
     target.parent.mkdir(parents=True,exist_ok=True)
-    staging=Path(tempfile.mkdtemp(dir=target.parent,prefix=".phase-b-stage-"))
+    staging=Path(tempfile.mkdtemp(dir=target.parent,prefix=".phase-c-stage-"))
     backup=target.with_name("."+target.name+".previous")
     if backup.exists() or backup.is_symlink():
         raise ValueError("Previous publication backup still exists.")
@@ -241,21 +262,21 @@ def publish(workspace: Path, *, phase_a: str, state_root: str,
     finally:
         if staging.exists():
             shutil.rmtree(staging)
-    return {**report,"published_root":destination}
+    return {**report,"published_root":destination,"origin":"certified-phase-b"}
 
 
 def main(argv: list[str]|None=None)->int:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace",type=Path,default=Path("."))
-    parser.add_argument("--phase-a",default="okf-v4/phase-a")
-    parser.add_argument("--state-root",default="okf-v4/state-b")
+    parser.add_argument("--phase-b",default="okf-v4/phase-b")
+    parser.add_argument("--state-root",default="okf-v4/state-c")
     parser.add_argument("--destination",default="okf-v4/published")
     args=parser.parse_args(argv)
     envelope=json.load(sys.stdin)
     data=envelope.get("inputs",{}).get("tasks")
     if not isinstance(data,dict):
-        raise ValueError("Python step requires verified json_inputs.tasks.")
-    result=publish(args.workspace,phase_a=args.phase_a,state_root=args.state_root,
+        raise ValueError("C publisher requires verified json_inputs.tasks.")
+    result=publish(args.workspace,phase_b=args.phase_b,state_root=args.state_root,
                    destination=args.destination,tasks=data)
     print(json.dumps(result,ensure_ascii=False))
     return 0
