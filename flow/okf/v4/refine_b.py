@@ -15,7 +15,9 @@ import shutil
 import tempfile
 from typing import Any
 
-from migrate_v3 import safe_path, slugify, title_from_frontmatter
+import yaml
+
+from migrate_v3 import safe_path, slugify
 from phase_a_contract import checked_phase_a
 
 B_SCHEMA = "okf.phase-b.v1"
@@ -141,24 +143,48 @@ def _semantic(value: dict, expected_id: str) -> dict:
     return {"summary": title.strip(), "tags": cleaned}
 
 
+class _UniqueKeySafeLoader(yaml.SafeLoader):
+    """Read YAML values faithfully while rejecting duplicate mapping keys."""
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict:
+        if not isinstance(node, yaml.MappingNode):
+            raise yaml.constructor.ConstructorError(None, None, "Expected a mapping", node.start_mark)
+        result = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, str):
+                raise ValueError("OKF frontmatter keys must be strings.")
+            if key in result:
+                raise ValueError(f"Duplicate OKF frontmatter field: {key}")
+            result[key] = self.construct_object(value_node, deep=deep)
+        return result
+
+
 def markdown(title: str, body: str) -> bytes:
     if not isinstance(body, str) or not 70 <= len(body.encode("utf-8")) <= 250_000:
         raise ValueError("LLM revision must contain a substantive bounded Markdown document.")
     if not body.startswith("---\n"):
         raise ValueError("Replacement must begin with YAML frontmatter.")
-    lines=body.splitlines()
+    lines = body.splitlines()
     try:
-        closing=lines.index("---", 1)
+        closing = lines.index("---", 1)
     except ValueError as exc:
         raise ValueError("Replacement frontmatter requires a closing --- delimiter.") from exc
     if closing < 2 or closing >= len(lines) - 1:
         raise ValueError("Replacement needs frontmatter and substantive body.")
-    metadata=lines[1:closing]
-    types=[re.fullmatch(r"type:\s*([A-Za-z][A-Za-z0-9_-]*)\s*",line)
-           for line in metadata if re.match(r"^type\s*:",line)]
-    if len(types) != 1 or types[0] is None:
-        raise ValueError("Replacement frontmatter requires one nonempty scalar type.")
-    if title_from_frontmatter(body) != title:
+    try:
+        # YAML values, rather than their textual spelling, establish the
+        # parser-required type. Quotes and comments are therefore supported;
+        # null, booleans, numbers, collections and duplicates are rejected.
+        metadata = yaml.load("\n".join(lines[1:closing]), Loader=_UniqueKeySafeLoader)
+    except yaml.YAMLError as exc:
+        raise ValueError("Replacement contains invalid YAML frontmatter.") from exc
+    if not isinstance(metadata, dict):
+        raise ValueError("Replacement frontmatter must be a YAML mapping.")
+    concept_type = metadata.get("type")
+    if not isinstance(concept_type, str) or not concept_type.strip():
+        raise ValueError("Replacement frontmatter requires a nonempty string type.")
+    if metadata.get("title") != title:
         raise ValueError("LLM revision frontmatter title does not match the chosen title.")
     if "/index.md" in body or "\x00" in body:
         raise ValueError("Revised concept contains forbidden navigation/null bytes.")
