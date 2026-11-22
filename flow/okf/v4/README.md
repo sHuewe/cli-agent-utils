@@ -1,4 +1,4 @@
-# OKF V4 – Migration and Phase B
+# OKF V4 – Migration, Phase B and Phase C
 
 ## Scope: Phase A vs. global topics
 
@@ -8,14 +8,13 @@ snapshots of their source doctrines. It contains **no** `index.md`,
 no generated thematic pages, no summaries and no V3 checkpoints.
 
 Cross-doctrine topics are *derived views*, not duplicate source concepts.
-Phase B creates an LLM-supported per-concept inventory with concise
-summaries and thematic tags; deterministic scripts build local, root and
-cross-doctrine topic navigation from the complete inventory. Themes are
-navigation pages under `themen/`, not new doctrine knowledge assertions.
+Phase B creates and improves the concept corpus, then certifies a refreshed
+LLM-written inventory. Phase C builds cross-doctrine links and all navigation
+deterministically from this final inventory. Themes are navigation pages,
+not new doctrine knowledge assertions.
 
-This is an initial, standalone Phase B implementation. A later quality
-workflow can perform semantic review, concept splitting/merging and source
-coverage maintenance before publishing, without changing the import contract.
+The migration contract is intentionally independent of the B and C workflows,
+so this corpus can be reused without preserving old generator checkpoints.
 
 ## A – strict contract, V3 import
 
@@ -71,31 +70,76 @@ only after all documents have passed validation. Original V3 data and
 checkpoints remain untouched. Previously imported phases can be regenerated
 from V3; B only accepts a complete, unmodified Phase-A snapshot.
 
-## B – LLM inventory, deterministic indexes
+## B – Inventory, quality, split/merge, final verification
 
-After importing Phase A, use the generic Python subprocess step provided
-by cli-agent PR #324 (now merged):
+Phase B consumes the **immutable**, checked Phase-A artifact. It may modify
+and restructure concept content only in separately staged B trees. No LLM
+writes source Markdown directly and **B creates zero `index.md` pages**.
 
 ```powershell
 cli-agent-flow validate flow/okf/v4/phase-b.toml --workspace .
 cli-agent-flow run flow/okf/v4/phase-b.toml --workspace .
 ```
 
-Flow B has three stages:
+The B Flow runs in this order:
 
-1. **`inventory_tasks`** – A trusted Python script checks the complete
-   Phase-A file contract and fingerprints, then lists every concept.
-2. **`summarize`** – An independent read-only LLM step per concept reads
-   the actual concept Markdown, writes a content-based German summary and
-   1–5 semantic tags. Outputs are checkpointed separately as
-   `okf-v4/state-b/summaries/<key>.json`; no model can write an index.
-3. **`publish_indexes`** – Another trusted Python script verifies that
-   every concept has exactly one matching LLM inventory entry. It copies
-   only Phase-A concept pages into `okf-v4/published/` and deterministically
-   generates all indexes, the global thematic navigation and an
-   `inventory.json`.
+1. `inventory_tasks` validates the exact Phase-A file contract.
+2. `summarize` reads every actual source concept and creates its initial
+   German LLM summary and 1–5 thematic tags.
+3. `quality_review` reads the same concept plus its complete, trusted source
+   Knowledge Items. It chooses **keep**, **rewrite**, or **split** (2–8 pieces)
+   and proposes complete Markdown texts as JSON, without file write rights.
+4. `apply_quality` is a deterministic Python step. It enforces stable IDs,
+   title/path consistency, **exact one-to-one Knowledge Item preservation**
+   and source evidence retention before writing `okf-v4/b-reviewed/`.
+5. `merge_candidates` creates bounded, same-doctrine concept neighborhoods
+   using the inventory tags. `merge_review` reads at most four concepts per
+   group and either skips or proposes a merge. `apply_merges` validates and
+   writes the outcome to `okf-v4/b-merged/`, preserving the primary concept
+   ID and path. Removed IDs/paths are retained as redirects/aliases.
+6. `final_inventory_tasks` is computed from the actual revised/merged corpus,
+   not the initial list. `summarize_final` reads and summarizes *every*
+   resulting concept again, including new split children.
+7. `verify_final` reads every final concept and checks its actual text
+   against all assigned source Knowledge Items. Missing claims or unsupported
+   additions block completion.
+8. `complete_b` validates **every** final review/summary, exact input
+   provenance and complete source-item conservation, then publishes the
+   contract `okf-v4/phase-b/`: `phase-b.json`, `catalog.json`,
+   `inventory.json`, original source snapshots, and final concept Markdown.
+   It produces **no navigation files**.
 
-The resulting published tree contains all actual concept Markdown plus:
+All deterministic transformations are generic Python script steps provided
+by cli-agent PR #324, with JSON stdin/stdout and independent checkpoints.
+LLM outputs are strictly structured suggestions. Changed concept content
+and semantic merge candidates use content-sensitive checkpoint keys.
+A failure preserves the immutable A snapshot and the last completed stage.
+
+Important: a split or merge is never accepted solely because an LLM asserts
+that it is complete; Python checks all source-item identities and unchanged
+provenance, and the final LLM checks substantive claim coverage. Source
+identities and evidence are never invented or reassigned.
+
+## C – Semantic links, deterministic indexes, publication
+
+Run C **only after B has completed successfully**:
+
+```powershell
+cli-agent-flow validate flow/okf/v4/phase-c.toml --workspace .
+cli-agent-flow run flow/okf/v4/phase-c.toml --workspace .
+```
+
+1. `link_candidates` validates certified B and produces bounded candidates
+   (maximum eight per concept) from shared semantic tags.
+2. `relate` selects semantic links **by existing concept IDs only**;
+   no model can create or change Markdown in this step.
+3. `publish_indexes` validates links/IDs, resolves removed-concept path
+   aliases, updates internal Markdown links and generates all navigation
+   pages deterministically from the complete final B inventory. It checks
+   complete folder membership, valid targets, and root-to-concept reachability
+   before atomically publishing `okf-v4/published/`.
+
+The published tree contains all final concept Markdown and:
 
 ```text
 index.md
@@ -107,25 +151,21 @@ themen/<semantic-tag>.md
 inventory.json
 ```
 
-The script checks that every generated link resolves and every concept is
-reachable from the root index. No concepts can silently disappear from the
-navigation; an invalid/missing model summary aborts publication. Source
-snapshots stay inside Phase A, not the published tree.
+Overarching thematic pages are *derived navigation*, **not additional
+primary concepts**. Both flows are separately resumable. Source snapshots
+remain in the certified B corpus, not the published navigation tree.
 
-The final publishing step has `overwrite_output = true` because it also
-validates and recreates filesystem side effects. The individual LLM summary
-steps reuse their checkpoints, avoiding unnecessary model calls.
+## Limitations and further development
 
-### Limitations and next stages
+- The migration requires a complete, verified V3 corpus; it will fail closed
+  instead of importing incomplete documents or manufacturing evidence.
+- Phase B supports local rewrite/split and same-doctrine merge. It does not
+  perform cross-doctrine concept merges, which risk changing provenance;
+  C can instead link concepts across doctrines.
+- The first implementation of final semantic verification is fail-closed:
+  disputed content stops B and must be corrected/reviewed before publication.
+  Fully automated remediation loops can be added later.
+- Future incremental-update flows should use stable concept identities,
+  source snapshots, exact Knowledge Item records and the retirement mapping
+  to limit reprocessing to affected concepts.
 
-- The current importer requires complete V3 documents and complete
-  deterministic repair/coverage records. It does not attempt to repair
-  missing documents, produce summaries itself, or invent source evidence.
-- Global thematic tags are an initial cross-doctrine classification, not
-  the later semantic merge/split and quality-review pipeline.
-- Phase A remains immutable during any B run. When concepts are reimported
-  with changed Markdown, the inventory step includes the concept SHA-256 in
-  each per-concept summary checkpoint filename, automatically invalidating
-  summaries for changed content while reusing those for unchanged concepts.
-- Future incremental update flows should use the catalog's original
-  Knowledge Item identities and source snapshots for change-impact analysis.
