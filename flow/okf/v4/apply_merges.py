@@ -21,6 +21,7 @@ def merge(workspace: Path, *, groups: dict, state: str = "okf-v4/state-b",
     records={c["id"]:dict(c) for c in catalog["concepts"]}
     files={c["path"]:(base/c["path"]).read_bytes() for c in records.values()}
     aliases=dict(catalog["aliases"])
+    retired_paths=dict(catalog.get("retired_paths",{}))
     merged=0
     for task in groups["groups"]:
         decision=json.loads(safe_path(
@@ -57,6 +58,8 @@ def merge(workspace: Path, *, groups: dict, state: str = "okf-v4/state-b",
             raise ValueError("Merge duplicated a source Knowledge Item.")
         # Preserve primary identity/path; redirect only removed identities.
         primary=members[0]
+        if title != primary["title"]:
+            raise ValueError("Merged primary concept must keep its descriptive filename/title.")
         primary.update({
             "title":title,"sha256":sha(body),"summary":sem["summary"],
             "tags":sem["tags"],
@@ -68,6 +71,8 @@ def merge(workspace: Path, *, groups: dict, state: str = "okf-v4/state-b",
         })
         for c in members:
             files.pop(c["path"])
+            if c["id"] != primary["id"]:
+                retired_paths[c["path"]] = primary["path"]
         files[primary["path"]]=body
         records[primary["id"]]=primary
         for dropped in ids[1:]:
@@ -77,7 +82,8 @@ def merge(workspace: Path, *, groups: dict, state: str = "okf-v4/state-b",
     for doc in catalog["documents"]:
         files[doc["source_snapshot"]]=(base/doc["source_snapshot"]).read_bytes()
     updated={
-        **catalog,"stage":"B-merged","concepts":final,"aliases":aliases,
+        **catalog,"stage":"B-merged","concepts":final,
+        "aliases":aliases,"retired_paths":retired_paths,
         "documents":[
             {**d,"concept_ids":[c["id"] for c in final if c["document_id"]==d["id"]]}
             for d in catalog["documents"]
