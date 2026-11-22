@@ -1,0 +1,44 @@
+version = 1
+exclude_paths = ["flow"]
+result = "steps.publish_indexes.output"
+
+# Phase B consumes an immutable Phase-A snapshot. No LLM recreates concepts.
+# The Python inventory task builder validates all allowed Phase-A files.
+[[steps]]
+id = "inventory_tasks"
+output = "okf-v4/state-b/inventory-tasks.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/prepare_inventory.py"
+timeout_seconds = 300
+
+# Each concept is read individually by the LLM. Summaries and classification
+# labels must come from actual concept content, not filenames or legacy
+# manifests. Checkpoints remain per concept to avoid repeating completed calls.
+[[steps]]
+id = "summarize"
+foreach = "steps.inventory_tasks.output.concepts"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/summarize_concept.md"
+output_schema = "flow/okf/v4/schemas/concept-summary.schema.json"
+output = "okf-v4/state-b/summaries/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
+[steps.vars]
+concept = "${item}"
+
+# The publisher verifies all LLM summaries, copies only Phase-A concept
+# Markdown, writes all indices and tests full root->concept reachability.
+# It is idempotent; overwrite_output revalidates filesystem side effects.
+[[steps]]
+id = "publish_indexes"
+output = "okf-v4/state-b/publish-result.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/publish_indexes.py"
+timeout_seconds = 600
+[steps.json_inputs.tasks]
+path = "okf-v4/state-b/inventory-tasks.json"
