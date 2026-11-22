@@ -195,7 +195,7 @@ def publish(workspace: Path, *, phase_a: str, state_root: str,
                 or item.get("knowledge_item_count")!=len(c["knowledge_item_ids"])):
             raise ValueError("Inventory task metadata does not match Phase A.")
         seen.add(c["id"])
-        key=c["id"].replace(":","--")
+        key=c["id"].replace(":","--") + "--" + c["sha256"][:16]
         if item.get("key") != key or not re.fullmatch(r"[a-z0-9_-]+",key):
             raise ValueError("Invalid inventory task key.")
         summaries[c["id"]]=_summary(workspace,state_root,item)
