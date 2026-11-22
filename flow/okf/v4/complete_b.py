@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 
 from phase_b_contract import checked_b
+from migrate_v3 import safe_path
 from refine_b import B_SCHEMA, encode, sha, snapshot, validate_tasks, summary
 
 
@@ -14,7 +15,17 @@ def complete(workspace: Path, *, tasks: dict, state: str = "okf-v4/state-b",
              destination: str = "okf-v4/phase-b") -> dict:
     _,catalog,base=checked_b(workspace,root=source,stage="B-merged")
     verified=validate_tasks(tasks,catalog,source)
-    llm={t["id"]:summary(workspace,state+"/final",t) for t in verified}
+    llm={}
+    for t in verified:
+        result=json.loads(safe_path(
+            workspace,f"{state}/final/verification/{t['key']}.json"
+        ).read_text(encoding="utf-8"))
+        if (not isinstance(result,dict) or result.get("id")!=t["id"]
+                or result.get("status")!="ok"
+                or result.get("missing_item_ids")!=[]
+                or result.get("warnings")!=[]):
+            raise ValueError(f"Final semantic verification failed: {t['id']}")
+        llm[t["id"]]=summary(workspace,state+"/final",t)
     next_concepts=[]
     inventory=[]
     for concept in catalog["concepts"]:
