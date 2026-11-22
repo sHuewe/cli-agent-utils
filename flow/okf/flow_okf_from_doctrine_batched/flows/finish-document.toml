@@ -129,6 +129,11 @@ overwrite_output = false
 kind = "group_items"
 input = "assignments"
 max_concept_bytes = 12000
+# Validate scan identity against authoritative sections and canonical topic
+# folder before grouping. Never rewrite existing scan/assignment checkpoints.
+canonicalize_route_ids = true
+[steps.json_inputs.sections]
+path = "okf-batched/state-v3/docs/${input.source.slug}/sections.json"
 [steps.json_inputs.routes]
 iterate = "input.scans.iterations[]"
 path = "okf-batched/state-v3/docs/${input.source.slug}/scan-${each.id}.json"
