@@ -380,3 +380,47 @@ def test_migration_rejects_out_of_range_evidence(tmp_path):
     put_json(group_path,group)
     with pytest.raises(ValueError,match="outside the source"):
         migrate_applied(tmp_path)
+
+
+
+def test_migration_refuses_item_omitted_by_group_but_present_in_scan(tmp_path):
+    fixture(tmp_path)
+    # The group and derived coverage state both still say "one item".
+    # The original scan, however, contains two source-grounded assertions.
+    scan_file=tmp_path/"okf-batched/state-v3/docs/example/scan-s001.json"
+    scan=json.loads(scan_file.read_text())
+    second={**scan["knowledge_items"][0],
+            "id":"k002",
+            "description":"Another independent source-grounded statement."}
+    scan["knowledge_items"].append(second)
+    put_json(scan_file,scan)
+    with pytest.raises(ValueError,match="Group/scan Knowledge Item mismatch"):
+        migrate_applied(tmp_path)
+    assert not (tmp_path/"okf-v4/phase-a").exists()
+
+
+def test_migration_refuses_modified_group_claim_from_original_scan(tmp_path):
+    fixture(tmp_path)
+    group_file=tmp_path/"okf-batched/state-v3/docs/example/group.json"
+    group=json.loads(group_file.read_text())
+    group["concepts"][0]["coverage_items"][0]["description"]="Changed content"
+    put_json(group_file,group)
+    with pytest.raises(ValueError,match="Group/scan Knowledge Item mismatch"):
+        migrate_applied(tmp_path)
+
+
+def test_inventory_key_changes_when_knowledge_item_payload_changes(tmp_path):
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    original_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    concept_path="okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
+    md_before=(tmp_path/concept_path).read_bytes()
+    group_file=tmp_path/"okf-batched/state-v3/docs/example/group.json"
+    group=json.loads(group_file.read_text())
+    group["concepts"][0]["coverage_items"][0]["description"]="A modified source item description."
+    put_json(group_file,group)
+    refresh_scan_for_fixture(tmp_path)
+    migrate_applied(tmp_path)
+    new_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    assert new_key!=original_key
+    assert (tmp_path/concept_path).read_bytes()==md_before
