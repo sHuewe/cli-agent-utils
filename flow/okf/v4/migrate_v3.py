@@ -180,6 +180,10 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
         if cover.get("status") != "ok" or cover.get("missing_item_ids") or cover.get("warnings"):
             raise ValueError(f"Source coverage incomplete: {slug}")
         source_path = sections.get("source_path")
+        if (not isinstance(source_path, str)
+                or not source_path.startswith("doctrines/")
+                or not source_path.lower().endswith((".md", ".markdown"))):
+            raise ValueError(f"Unexpected source document path for {slug}: {source_path!r}")
         source = safe_path(workspace, source_path)
         source_bytes = source.read_bytes()
         src_output = f"sources/{slug}{source.suffix.lower()}"
@@ -230,7 +234,8 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
             documented = repair.get("documented_item_ids")
             if (repair.get("status") not in ("ok","repaired") or repair.get("concept_id") != cid
                     or repair.get("remaining_item_ids") or repair.get("remaining_warnings")
-                    or not isinstance(documented,list) or set(documented) != set(item_ids)):
+                    or not isinstance(documented,list) or len(documented) != len(item_ids)
+                    or set(documented) != set(item_ids)):
                 raise ValueError(f"Incomplete repair or Knowledge Item coverage: {cid}")
             pending.append((old,target,cid,raw_bytes))
             concepts.append({
@@ -238,13 +243,19 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
                 "title":final_title,"path":target,"source_path":src_output,
                 "source_original_path":source_path,
                 "knowledge_item_ids":item_ids,
+                # Preserve content, types and source evidence for future
+                # incremental impact analysis; these are source-grounded
+                # records from group.json, not LLM-generated summaries.
+                "knowledge_items":items,
                 "evidence_ranges":concept.get("evidence_ranges",[]),
                 "sha256":None,
             })
         total=group.get("total_items")
-        if total != len(listed_items) or (
-            cover.get("expected_normative_items",0)+cover.get("expected_descriptive_items",0)
-        ) != len(listed_items):
+        if (total != len(listed_items)
+                or cover.get("expected_normative_items",0) != cover.get("documented_normative_items",0)
+                or cover.get("expected_descriptive_items",0) != cover.get("documented_descriptive_items",0)
+                or (cover.get("expected_normative_items",0)+cover.get("expected_descriptive_items",0))
+                   != len(listed_items)):
             raise ValueError(f"Group/coverage item count mismatch: {slug}")
         documents.append({
             "id":slug,"source_snapshot":src_output,
