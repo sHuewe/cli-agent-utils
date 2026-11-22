@@ -72,6 +72,8 @@ from V3; B only accepts a complete, unmodified Phase-A snapshot.
 
 ## B – Inventory, quality, split/merge, final verification
 
+Phase B requires `PyYAML>=6.0,<7` in the interpreter running the Flow Python-script steps (`python -m pip install 'PyYAML>=6.0,<7'`). This dependency is declared in the workspace `pyproject.toml` and installed for repository CI tests.
+
 Phase B consumes the **immutable**, checked Phase-A artifact. It may modify
 and restructure concept content only in separately staged B trees. No LLM
 writes source Markdown directly and **B creates zero `index.md` pages**.
