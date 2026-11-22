@@ -116,6 +116,24 @@ allowed_tools = ["os__read_file"]
 [steps.vars]
 concept = "${item}"
 
+# Reopen each final file and verify every claimed Knowledge Item.
+# Missing or distorted content blocks B completion, rather than silently
+# publishing a defective concept.
+[[steps]]
+id = "verify_final"
+foreach = "steps.final_inventory_tasks.output.concepts"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/verify_final.md"
+output_schema = "flow/okf/v4/schemas/final-verification.schema.json"
+output = "okf-v4/state-b/final/verification/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
+[steps.vars]
+concept = "${item}"
+
 # Only this step certifies B as finished. It checks exact provenance,
 # read-only A integrity, and the refreshed full final inventory.
 [[steps]]
