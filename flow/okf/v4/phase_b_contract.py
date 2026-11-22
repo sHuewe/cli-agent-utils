@@ -74,6 +74,19 @@ def checked_b(
             raise ValueError("B Knowledge-Item order/identity differs.")
     if current_items != orig_items:
         raise ValueError("B discarded or altered the source-derived Knowledge Items.")
+    current_paths={c["path"] for c in concepts}
+    retired=catalog.get("retired_paths",{})
+    if (not isinstance(retired,dict)
+            or any(not isinstance(old,str) or not isinstance(new,str)
+                   or old in current_paths or new not in current_paths
+                   or not old.startswith("doctrines/") or old.endswith("/index.md")
+                   for old,new in retired.items())):
+        raise ValueError("Invalid retired concept path mapping.")
+    aliases=catalog.get("aliases",{})
+    if (not isinstance(aliases,dict)
+            or any(not isinstance(old,str) or new not in ids
+                   for old,new in aliases.items())):
+        raise ValueError("Invalid concept ID alias mapping.")
     for doc in docs:
         if set(doc.get("concept_ids",[])) != {c["id"] for c in concepts if c["document_id"]==doc["id"]}:
             raise ValueError("B source document concept membership inconsistent.")
