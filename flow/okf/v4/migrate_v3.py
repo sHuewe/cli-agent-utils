@@ -233,6 +233,7 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
             repair = read_json(doc_dir / f"concept-{cid}-repair.json")
             documented = repair.get("documented_item_ids")
             if (repair.get("status") not in ("ok","repaired") or repair.get("concept_id") != cid
+                    or repair.get("path") not in (old, source_root+"/"+old)
                     or repair.get("remaining_item_ids") or repair.get("remaining_warnings")
                     or not isinstance(documented,list) or len(documented) != len(item_ids)
                     or set(documented) != set(item_ids)):
@@ -284,7 +285,7 @@ def migrate(workspace: Path, *, source_root: str, state_root: str,
             destination: str, apply: bool = False) -> dict:
     workspace=workspace.resolve()
     target=safe_path(workspace,destination+"/.placeholder",must_exist=False).parent
-    if any(target == parent or target in parent.parents for parent in (
+    if any(target == parent or target in parent.parents or parent in target.parents for parent in (
         safe_path(workspace,source_root+"/.placeholder",must_exist=False).parent,
         safe_path(workspace,state_root+"/.placeholder",must_exist=False).parent,
     )):
