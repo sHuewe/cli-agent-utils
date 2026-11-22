@@ -73,8 +73,25 @@ def snapshot(workspace: Path, target_name: str, files: dict[str, bytes], marker:
 def inventory_tasks(catalog: dict, root: str) -> dict:
     items = []
     used = set()
+    source_hashes={doc["id"]: doc["sha256"] for doc in catalog["documents"]}
     for c in sorted(catalog["concepts"], key=lambda x: x["path"]):
-        key = c["id"].replace(":", "--") + "--" + c["sha256"][:16]
+        if c["document_id"] not in source_hashes:
+            raise ValueError("Inventory concept has no source document.")
+        # The LLM reviews the whole assignment, not only Markdown.
+        # Any change to the source snapshot, content, identity, planned
+        # title or complete Knowledge Item payload invalidates checkpoints.
+        payload={
+            "id":c["id"],"path":c["path"],"title":c["title"],
+            "concept_sha256":c["sha256"],
+            "source_sha256":source_hashes[c["document_id"]],
+            "source_path":c["source_path"],
+            "knowledge_item_ids":c["knowledge_item_ids"],
+            "knowledge_items":c["knowledge_items"],
+        }
+        signature=sha(json.dumps(
+            payload,sort_keys=True,ensure_ascii=False,separators=(",",":")
+        ).encode("utf-8"))[:20]
+        key = c["id"].replace(":", "--") + "--" + signature
         if not re.fullmatch(r"[a-z0-9_-]+", key) or key in used:
             raise ValueError("Invalid/duplicate concept inventory checkpoint key.")
         used.add(key)
