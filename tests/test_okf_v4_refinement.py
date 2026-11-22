@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from test_okf_v4_phase_a_b import fixture, migrate_applied, put_json
+from test_okf_v4_phase_a_b import fixture, migrate_applied, put_json, refresh_scan_for_fixture
 
 V4=Path(__file__).resolve().parents[1]/"flow/okf/v4"
 sys.path.insert(0,str(V4))
@@ -58,6 +58,7 @@ def two_items(root: Path, *, same_concept: bool) -> None:
     coverage["expected_normative_items"]=2
     coverage["documented_normative_items"]=2
     put_json(doc/"coverage.json",coverage)
+    refresh_scan_for_fixture(root, "example")
 
 
 def inputs(root: Path):
@@ -76,7 +77,7 @@ def inputs(root: Path):
 
 
 def markdown(title: str) -> str:
-    return (f"---\ntitle: {title}\n---\n# {title}\n"
+    return (f"---\ntype: concept\ntitle: {title}\n---\n# {title}\n"
             "Beschreibt die fachlichen Anforderungen, ihre Bedingungen "
             "und die Zuordnung der notwendigen Teilaufgaben im Detail.\n")
 
