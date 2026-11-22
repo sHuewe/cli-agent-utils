@@ -241,7 +241,10 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
             pending.append((old,target,cid,raw_bytes))
             concepts.append({
                 "id": f"{slug}:{cid}", "legacy_id":cid, "document_id":slug,
-                "title":final_title,"path":target,"source_path":src_output,
+                "title":final_title, "description":concept.get("description",""),
+                "type":concept.get("type",""), "tags":concept.get("tags",[]),
+                "related":concept.get("related",[]),
+                "path":target,"source_path":src_output,
                 "source_original_path":source_path,
                 "knowledge_item_ids":item_ids,
                 # Preserve content, types and source evidence for future
