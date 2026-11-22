@@ -51,7 +51,7 @@ def _escape_label(value: str) -> str:
     # Treat LLM-produced summaries and tags strictly as plain text in
     # generated Markdown, not as permission to inject extra navigation.
     collapsed = " ".join(value.split()).replace("\\", "\\\\")
-    return re.sub(r"([\x60*_\\[\\]<>!|])", r"\\\1", collapsed)
+    return re.sub(r"([`*_\[\]<>!|])", r"\\\1", collapsed)
 
 
 def render(catalog: dict, tasks: list[dict], summaries: dict[str, dict]) -> tuple[dict[str, bytes], dict]:
