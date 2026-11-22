@@ -18,7 +18,9 @@ def prepare(workspace: Path, root: str) -> dict:
     tasks = []
     seen = set()
     for concept in sorted(catalog["concepts"], key=lambda c: c["path"]):
-        key = concept["id"].replace(":", "--")
+        # A changed concept gets a new checkpoint key; stale LLM summaries
+        # are never silently reused for modified Markdown.
+        key = concept["id"].replace(":", "--") + "--" + concept["sha256"][:16]
         if not re.fullmatch(r"[a-z0-9_-]+", key) or key in seen:
             raise ValueError(f"Unsafe or duplicate inventory key: {key!r}")
         seen.add(key)
