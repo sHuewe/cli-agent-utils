@@ -65,8 +65,12 @@ def checked_phase_a(workspace: Path, root: str = "okf-v4/phase-a") -> tuple[dict
             raise ValueError(f"Invalid concept path: {path!r}")
         concept_names.add(path)
         item_ids = concept.get("knowledge_item_ids")
+        knowledge_items = concept.get("knowledge_items")
         if not isinstance(item_ids, list) or not item_ids:
             raise ValueError(f"Concept lacks source Knowledge Items: {cid}")
+        if (not isinstance(knowledge_items,list) or len(knowledge_items) != len(item_ids)
+                or [item.get("id") if isinstance(item,dict) else None for item in knowledge_items] != item_ids):
+            raise ValueError(f"Source Knowledge Item content/IDs mismatch: {cid}")
         for item in item_ids:
             if not isinstance(item,str) or item in knowledge_ids:
                 raise ValueError("Duplicate/invalid Knowledge Item across Phase A.")
