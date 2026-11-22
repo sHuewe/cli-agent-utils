@@ -126,8 +126,12 @@ def render(catalog: dict, tasks: list[dict], summaries: dict[str, dict]) -> tupl
     for entry in inventory:
         for tag in entry["tags"]:
             key=slugify(tag)
-            group=themes.setdefault(key,{"title":tag,"members":[]})
-            group["members"].append(entry)
+            group=themes.setdefault(key,{"title":tag,"members":[],"member_ids":set()})
+            # Distinct labels can normalize to one filename (e.g. an umlaut
+            # and its transliteration). Preserve one link per concept ID.
+            if entry["id"] not in group["member_ids"]:
+                group["members"].append(entry)
+                group["member_ids"].add(entry["id"])
     theme_entries=[]
     for key,group in sorted(themes.items()):
         page=f"themen/{key}.md"
