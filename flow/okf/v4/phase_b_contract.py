@@ -102,8 +102,21 @@ def checked_b(
         if inventory.get("schema") != "okf.inventory.v1":
             raise ValueError("Final B inventory has wrong schema.")
         entries = inventory.get("concepts", [])
-        if {c["id"] for c in entries} != ids or len(entries)!=len(ids):
+        if (not isinstance(entries,list)
+                or any(not isinstance(entry,dict) for entry in entries)
+                or {entry.get("id") for entry in entries} != ids
+                or len(entries)!=len(ids)):
             raise ValueError("Final B inventory is incomplete.")
+        final_by_id={c["id"]:c for c in concepts}
+        for entry in entries:
+            entity=final_by_id[entry["id"]]
+            for field in ("id","path","title","summary","tags","sha256",
+                          "document_id","knowledge_item_ids","source_path"):
+                if entry.get(field)!=entity.get(field):
+                    raise ValueError(
+                        f"Final B inventory field {field} disagrees with the "
+                        f"verified concept {entity['id']}"
+                    )
     actual = set()
     for file in base.rglob("*"):
         if file.is_symlink() or (hasattr(file,"is_junction") and file.is_junction()):
