@@ -13,29 +13,12 @@ import sys
 from phase_a_contract import checked_phase_a
 
 
+from refine_b import inventory_tasks
+
+
 def prepare(workspace: Path, root: str) -> dict:
     _, catalog, _ = checked_phase_a(workspace, root)
-    tasks = []
-    seen = set()
-    for concept in sorted(catalog["concepts"], key=lambda c: c["path"]):
-        # A changed concept gets a new checkpoint key; stale LLM summaries
-        # are never silently reused for modified Markdown.
-        key = concept["id"].replace(":", "--") + "--" + concept["sha256"][:16]
-        if not re.fullmatch(r"[a-z0-9_-]+", key) or key in seen:
-            raise ValueError(f"Unsafe or duplicate inventory key: {key!r}")
-        seen.add(key)
-        tasks.append({
-            "id": concept["id"],
-            "key": key,
-            "title": concept["title"],
-            "path": root + "/" + concept["path"],
-            "source": root + "/" + concept["source_path"],
-            "knowledge_item_count": len(concept["knowledge_item_ids"]),
-            "knowledge_items": concept["knowledge_items"],
-        })
-    return {"schema": "okf.inventory-tasks.v1", "status": "ok",
-            "count": len(tasks), "concepts": tasks}
-
+    return inventory_tasks(catalog, root)
 
 def main(argv: list[str] | None = None) -> int:
     parser=argparse.ArgumentParser(description=__doc__)
