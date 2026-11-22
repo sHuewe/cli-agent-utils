@@ -195,3 +195,47 @@ def test_replacement_accepts_valid_okf_frontmatter():
         "und seiner fachlichen Bedingungen.\n"
     )
     assert markdown("Beispiel",document)==document.encode("utf-8")
+
+
+
+@pytest.mark.parametrize("scalar", [
+    "concept",
+    '"concept"',
+    "'concept'",
+    "concept # document kind",
+])
+def test_replacement_accepts_valid_yaml_type_spellings(scalar):
+    from refine_b import markdown
+    body=(
+        f"---\ntype: {scalar}\ntitle: Beispiel\n---\n"
+        "# Beispiel\nEin vollständiger fachlicher Text mit der präzisen "
+        "Beschreibung der zugehörigen Anforderungen.\n"
+    )
+    assert markdown("Beispiel", body)==body.encode("utf-8")
+
+
+@pytest.mark.parametrize("scalar", [
+    "null", "~", "true", "false", "123", "[]", "{}",
+    '""', "''", "  # missing value",
+])
+def test_replacement_rejects_yaml_type_that_is_not_a_nonempty_string(scalar):
+    from refine_b import markdown
+    body=(
+        f"---\ntype: {scalar}\ntitle: Beispiel\n---\n"
+        "# Beispiel\nEin vollständiger fachlicher Text mit der präzisen "
+        "Beschreibung der zugehörigen Anforderungen.\n"
+    )
+    with pytest.raises(ValueError, match="type"):
+        markdown("Beispiel", body)
+
+
+def test_replacement_rejects_duplicate_yaml_fields():
+    from refine_b import markdown
+    body=(
+        "---\ntype: concept\ntitle: Beispiel\n"
+        "type: autre\ntitle: Beispiel\n---\n"
+        "# Beispiel\nDieser Abschnitt enthält eine hinreichend lange "
+        "fachliche Beschreibung für die vollständige Prüfung.\n"
+    )
+    with pytest.raises(ValueError, match="Duplicate"):
+        markdown("Beispiel", body)
