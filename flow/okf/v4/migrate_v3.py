@@ -114,6 +114,71 @@ def validate_evidence(
             raise ValueError(f"Evidence range outside the source for {context}")
 
 
+def authoritative_scanned_items(
+    workspace: Path, state_root: str, slug: str, sections: dict,
+    source_path: str, line_count: int,
+) -> dict[str, dict]:
+    """Reconcile Phase-A coverage against ALL original V3 scan outputs.
+
+    The V3 grouping operation prefixes each scan-local item ID with its
+    document ID and otherwise preserves the original item fields verbatim.
+    Group/coverage alone cannot certify that extraction was complete.
+    """
+    planned = sections.get("sections")
+    if not isinstance(planned, list) or not planned:
+        raise ValueError(f"No authoritative V3 scan sections for {slug}")
+    scanned: dict[str, dict] = {}
+    section_ids: set[str] = set()
+    for section in planned:
+        if not isinstance(section, dict):
+            raise ValueError(f"Invalid section plan for {slug}")
+        sid = section.get("id")
+        start, end = section.get("start_line"), section.get("end_line")
+        if (not isinstance(sid, str)
+                or not re.fullmatch(r"[a-zA-Z0-9_-]+", sid)
+                or sid in section_ids
+                or type(start) is not int or type(end) is not int
+                or not 1 <= start <= end <= line_count):
+            raise ValueError(f"Invalid V3 section ID/range in {slug}")
+        section_ids.add(sid)
+        scan_path = f"{state_root}/{slug}/scan-{sid}.json"
+        scan = read_json(safe_path(workspace, scan_path))
+        if (scan.get("status") != "ok"
+                or scan.get("source_path") != source_path
+                or scan.get("section_id") != sid
+                or scan.get("chunk_id") != sid
+                or scan.get("document_id") != slug
+                or scan.get("folder_id") != slug
+                or scan.get("start_line") != start
+                or scan.get("end_line") != end):
+            raise ValueError(f"V3 scan does not match authoritative section {slug}/{sid}")
+        items = scan.get("knowledge_items")
+        if not isinstance(items, list):
+            raise ValueError(f"Scan Knowledge Items missing in {slug}/{sid}")
+        for entry in items:
+            if not isinstance(entry, dict):
+                raise ValueError(f"Invalid scanned Knowledge Item in {slug}/{sid}")
+            local_id = entry.get("id")
+            if not isinstance(local_id, str) or not local_id:
+                raise ValueError(f"Invalid scanned item ID in {slug}/{sid}")
+            qualified = f"{slug}:{local_id}"
+            if qualified in scanned:
+                raise ValueError(f"Duplicate scan Knowledge Item ID: {qualified}")
+            validate_evidence(
+                entry.get("evidence_ranges"), source_path=source_path,
+                line_count=line_count, context=f"scan {slug}/{sid}/{local_id}",
+            )
+            if any(
+                ev["start_line"] < start or ev["end_line"] > end
+                for ev in entry["evidence_ranges"]
+            ):
+                raise ValueError(f"Scanned item evidence outside section: {qualified}")
+            scanned[qualified] = {**entry, "id": qualified}
+    if not scanned:
+        raise ValueError(f"No Knowledge Items found in V3 source scans: {slug}")
+    return scanned
+
+
 def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str]) -> str:
     """Update explicitly linked old concept paths; leave nonconcept links alone.
 
@@ -208,6 +273,9 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
         source_line_count = len(source_bytes.decode("utf-8").splitlines())
         if source_line_count < 1:
             raise ValueError(f"Empty source document: {source_path}")
+        scanned_items = authoritative_scanned_items(
+            workspace, state_root, slug, sections, source_path, source_line_count,
+        )
         src_output = f"sources/{slug}{source.suffix.lower()}"
         if src_output in outputs:
             raise ValueError("Duplicate source output")
@@ -285,6 +353,20 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
                 "evidence_ranges":concept.get("evidence_ranges",[]),
                 "sha256":None,
             })
+        # Reconcile both identities and full source-derived payloads.
+        # A stale group and its derived coverage.json may agree with each
+        # other while silently omitting scanned knowledge.
+        grouped_items = {
+            ki["id"]:ki for concept in planned
+            for ki in concept["coverage_items"]
+        }
+        if grouped_items != scanned_items or listed_items != set(scanned_items):
+            raise ValueError(
+                f"Group/scan Knowledge Item mismatch for {slug}: "
+                f"missing={sorted(set(scanned_items)-listed_items)[:6]}, "
+                f"unexpected={sorted(listed_items-set(scanned_items))[:6]}, "
+                f"modified={sorted(ident for ident in set(scanned_items)&listed_items if scanned_items[ident] != grouped_items[ident])[:6]}"
+            )
         total=group.get("total_items")
         if (total != len(listed_items)
                 or cover.get("expected_normative_items",0) != cover.get("documented_normative_items",0)
