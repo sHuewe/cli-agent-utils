@@ -173,6 +173,18 @@ def publish(
 
     workspace=workspace.resolve()
     _,catalog,base=checked_b(workspace,root=phase_b,stage="B")
+    target=safe_path(workspace,destination+"/.placeholder",must_exist=False).parent
+    phase_a_root=safe_path(
+        workspace,"okf-v4/phase-a/.placeholder",must_exist=False
+    ).parent
+    # Never publish into, or replace an ancestor of, either immutable input
+    # tree. Phase-B validation also depends on Phase A remaining untouched.
+    # Check before any output is staged or previous publication is replaced.
+    if any(
+        target == source or target in source.parents or source in target.parents
+        for source in (phase_a_root, base)
+    ):
+        raise ValueError("Publication root overlaps protected Phase-A/Phase-B input.")
     expected=expected_links(workspace)
     if tasks!=expected:
         raise ValueError("C link tasks differ from the final B inventory.")
@@ -219,9 +231,6 @@ def publish(
     report["semantic_links"]=link_count
     # Navigation targets are deterministic and all known; every concept is
     # reachable from root. Verify appended LLM-selected targets by ID above.
-    target=safe_path(workspace,destination+"/.placeholder",must_exist=False).parent
-    if target==base or base in target.parents or target in base.parents:
-        raise ValueError("Publication root overlaps B input.")
     if target.exists() and (target.is_symlink() or not (target/"inventory.json").is_file()):
         raise ValueError("Refusing to overwrite non-C publication.")
     for file in target.rglob("*") if target.exists() else ():
