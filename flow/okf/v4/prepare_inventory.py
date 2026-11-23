@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     args=parser.parse_args(argv)
     # Consume the standard JSON envelope even when no json_inputs are needed.
     json.load(sys.stdin)
-    print(json.dumps(prepare(args.workspace.resolve(), args.phase_a), ensure_ascii=False))
+    print(json.dumps(prepare(args.workspace.resolve(), args.phase_a), ensure_ascii=True))
     return 0
 
 
