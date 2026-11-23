@@ -55,7 +55,7 @@ def prepare(workspace: Path) -> dict:
 
 def main() -> None:
     json.load(sys.stdin)
-    print(json.dumps(prepare(Path(".").resolve()),ensure_ascii=False))
+    print(json.dumps(prepare(Path(".").resolve()),ensure_ascii=True))
 
 
 if __name__=="__main__":
