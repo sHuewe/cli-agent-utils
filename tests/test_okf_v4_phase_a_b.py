@@ -136,9 +136,6 @@ def test_migration_copies_only_contract_files_not_indexes_or_old_checkpoints(tmp
     assert (tmp_path/"okf-batched-generated-v3/index.md").exists()
 
 
-@pytest.mark.parametrize("field,blank", [
-    ("document_id", None), ("folder_id", ""), ("chunk_id", "  "),
-])
 @pytest.mark.parametrize("legacy,valid", [
     ("md-ttp-example-the-russian-reconnaissance-fire-complex-2d4ab5ebcc37cb28", True),
     ("md-ttp-example-the-russian-reconnaissance-fire-complex-2d4ab5ebcc37cb29", False),
@@ -173,6 +170,9 @@ def test_migration_accepts_hash_identical_legacy_scan_document_id(tmp_path,field
     assert original.read_bytes()==before
 
 
+@pytest.mark.parametrize("field,blank", [
+    ("document_id", None), ("folder_id", ""), ("chunk_id", "  "),
+])
 def test_migration_accepts_legacy_missing_scan_route_without_modifying_v3(
     tmp_path, field, blank,
 ):
