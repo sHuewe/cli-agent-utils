@@ -297,7 +297,8 @@ def authoritative_scanned_items(
 
 def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
                     *, allow_deferred_index_links: bool = False,
-                    source_targets: frozenset[str] = frozenset()) -> str:
+                    source_targets: frozenset[str] = frozenset(),
+                    source_references: set[str] | None = None) -> str:
     """Rewrite concept links and safely retire known V3 source-document links.
 
     Phase A excludes old indexes (regenerated in C), and retains their links
@@ -305,7 +306,8 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
     source snapshots in Phase A, but are intentionally not published in C.
     A link back to an *exactly identified original source* therefore becomes
     its visible label, while provenance remains in the Phase-A catalog.
-    Unknown Markdown targets still fail closed.
+    Unknown Markdown targets still fail closed. Accepted source references
+    are recorded by the caller, including sources not themselves migrated.
     """
     from urllib.parse import unquote, quote, urlsplit
     pattern = re.compile(r"(?P<before>\]\(\s*|\[[^\]\n]+\]:[ \t]*)(?P<url><[^>\n]+>|[^\s()]+)", re.M)
@@ -315,6 +317,19 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
     )
     codes = re.compile(r"(?<!\x60)(?P<t>\x60+)(?!\x60).*?(?<!\x60)(?P=t)(?!\x60)", re.S)
     fences = re.compile(r"^[ ]{0,3}(\x60{3,}|~{3,})(.*)$")
+    # On Windows, historical Markdown filenames can use different casing
+    # from the actual source file. Only a unique verified original file may
+    # match case-insensitively; never treat arbitrary *.md as a source.
+    source_lookup: dict[str, str] = {}
+    for path in source_targets:
+        key = path.casefold()
+        if key in source_lookup and source_lookup[key] != path:
+            raise ValueError(f"Ambiguous case-insensitive source path: {path}")
+        source_lookup[key] = path
+
+    def matched_source(resolved: str) -> str | None:
+        return source_lookup.get(resolved.casefold())
+
     def resolved_source(raw: str) -> bool:
         target = raw[1:-1] if raw.startswith("<") and raw.endswith(">") else raw
         parsed = urlsplit(target)
@@ -324,7 +339,10 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
         resolved = posixpath.normpath(posixpath.join(
             posixpath.dirname(old), unquote(parsed.path),
         ))
-        return resolved in source_targets
+        match = matched_source(resolved)
+        if match is not None and source_references is not None:
+            source_references.add(match)
+        return match is not None
 
     def rewrite(segment: str) -> str:
         def source_to_text(match: re.Match) -> str:
@@ -360,12 +378,21 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
             if (allow_deferred_index_links
                     and posixpath.basename(original).casefold() == "index.md"):
                 return match.group()
-            if original in source_targets:
+            source_reference = matched_source(original)
+            if source_reference is not None:
+                if source_references is not None:
+                    source_references.add(source_reference)
                 # Reference-style source definitions have no inline label;
-                # remove the destination rather than emitting a dangling link.
+                # replace the destination rather than emitting a dangling
+                # file link. Inline links were converted to visible text.
                 return match["before"] + "#"
-            if decoded.lower().endswith(".md"):
-                raise ValueError(f"Unresolved concept Markdown link in {old}: {target!r}")
+            if decoded.lower().endswith((".md", ".markdown")):
+                raise ValueError(
+                    f"Unresolved concept Markdown link in {old}: {target!r}; "
+                    f"resolved relative to V3 generated root: {original!r}. "
+                    "This is neither an imported concept, a generated index, "
+                    "nor an existing file under --document-root."
+                )
             return match.group()
         result = []
         prev = 0
@@ -397,6 +424,40 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
             chunk.append(line)
     result.append(rewrite("".join(chunk)))
     return "".join(result)
+
+
+def _original_source_targets(
+    workspace: Path, source_root: str, document_root: str,
+) -> frozenset[str]:
+    """Index only real Markdown in the configured original-source directory.
+
+    Extra sources are used only for verifying old hyperlinks; they are never
+    copied to Phase A or published in C. Reject symlink/junction escapes and
+    filenames colliding on case-insensitive filesystems.
+    """
+    root = safe_path(
+        workspace, document_root + "/.placeholder", must_exist=False,
+    ).parent
+    if not root.is_dir():
+        raise ValueError(f"Original source directory missing: {root}")
+    results: dict[str, str] = {}
+    for entry in sorted(root.rglob("*")):
+        if entry.is_symlink() or (
+            hasattr(entry, "is_junction") and entry.is_junction()
+        ):
+            raise ValueError(f"Symlink/junction in source directory: {entry}")
+        if not entry.is_file() or entry.suffix.casefold() not in (".md", ".markdown"):
+            continue
+        original = entry.relative_to(workspace).as_posix()
+        safe_path(workspace, original)
+        relative = posixpath.relpath(original, start=source_root)
+        key = relative.casefold()
+        if key in results and results[key] != relative:
+            raise ValueError(
+                f"Case-insensitive source filename collision: {relative!r}"
+            )
+        results[key] = relative
+    return frozenset(results.values())
 
 
 def prepare(workspace: Path, *, source_root: str, state_root: str,
@@ -564,21 +625,28 @@ def prepare(workspace: Path, *, source_root: str, state_root: str,
             },
         })
     by_path = {x["path"]:x for x in concepts}
-    # Links in old generated Markdown are resolved relative to source_root,
-    # not necessarily a direct child of the workspace. Derive the relative
-    # destination for each cataloged original using the configured V3 root.
-    # Only those exact paths qualify: unrelated Markdown must still fail.
-    source_targets = frozenset(
-        posixpath.relpath(doc["original_path"], start=source_root)
-        for doc in documents
+    # V3 concepts may reference original Markdown that has not reached a
+    # document group checkpoint. Check actual files under --document-root,
+    # not just sources that will be imported. No extra files are copied.
+    source_targets = _original_source_targets(
+        workspace, source_root, document_root,
     )
     for old, target, cid, data in pending:
+        source_references: set[str] = set()
         fixed = _markdown_links(
             data.decode("utf-8"), old, target, original_paths,
             allow_deferred_index_links=True, source_targets=source_targets,
+            source_references=source_references,
         ).encode("utf-8")
         outputs[target] = fixed
-        by_path[target]["sha256"] = checksum(fixed)
+        record = by_path[target]
+        record["sha256"] = checksum(fixed)
+        # Preserve the exact workspace-relative names of retired links,
+        # including original sources outside the migrated document subset.
+        record["source_reference_paths"] = sorted(
+            posixpath.normpath(posixpath.join(source_root, path))
+            for path in source_references
+        )
     catalog={"schema":SCHEMA,"documents":documents,"concepts":concepts}
     outputs["catalog.json"] = (json.dumps(catalog,ensure_ascii=False,indent=2)+"\n").encode("utf-8")
     contract={
