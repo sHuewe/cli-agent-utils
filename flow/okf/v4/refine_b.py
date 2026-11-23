@@ -242,7 +242,12 @@ def apply_quality(
     workspace: Path, *, phase_a: str, state: str, tasks: dict,
     destination: str,
 ) -> dict:
-    marker, catalog, base = checked_phase_a(workspace, phase_a)
+    if phase_a == "okf-v4/phase-a":
+        marker, catalog, base = checked_phase_a(workspace, phase_a)
+    else:
+        from phase_b_contract import checked_b
+        marker, catalog, base = checked_b(
+            workspace, root=phase_a, stage="B-source")
     entries = validate_tasks(tasks, catalog, phase_a)
     files: dict[str, bytes] = {}
     next_concepts: list[dict] = []
@@ -312,9 +317,12 @@ def apply_quality(
     for doc in catalog["documents"]:
         data = (base / doc["source_snapshot"]).read_bytes()
         files[doc["source_snapshot"]] = data
+    origin_hash = (sha((base / "phase-a.json").read_bytes())
+                   if phase_a == "okf-v4/phase-a"
+                   else catalog["origin_phase_a_sha256"])
     result = {
         "schema": B_SCHEMA, "stage": "B-draft",
-        "origin_phase_a_sha256": sha((base / "phase-a.json").read_bytes()),
+        "origin_phase_a_sha256": origin_hash,
         "documents": [
             {**doc, "concept_ids": [c["id"] for c in next_concepts if c["document_id"] == doc["id"]]}
             for doc in catalog["documents"]
