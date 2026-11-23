@@ -100,7 +100,7 @@ id = "initial_verification_tasks"
 output = "okf-v4/state-b/initial-verification-tasks.json"
 overwrite_output = true
 [steps.python_script]
-path = "flow/okf/v4/prepare_final_inventory.py"
+path = "flow/okf/v4/prepare_initial_verification.py"
 timeout_seconds = 300
 
 [[steps]]
