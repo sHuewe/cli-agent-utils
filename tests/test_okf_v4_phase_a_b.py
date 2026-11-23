@@ -14,6 +14,7 @@ import pytest
 V4 = Path(__file__).resolve().parents[1] / "flow/okf/v4"
 sys.path.insert(0, str(V4))
 from migrate_v3 import migrate
+from source_repair import prepare as source_repair_tasks, apply as apply_source_repair
 from phase_a_contract import checked_phase_a
 from prepare_inventory import prepare
 from publish_indexes import publish
@@ -126,18 +127,76 @@ def test_migration_copies_only_contract_files_not_indexes_or_old_checkpoints(tmp
     assert (tmp_path/"okf-batched-generated-v3/index.md").exists()
 
 
-def test_migration_rejects_incomplete_coverage_and_preserves_previous_target(tmp_path):
+def test_migration_keeps_incomplete_coverage_for_pre_inventory_repair(tmp_path):
+    fixture(tmp_path)
+    state=tmp_path/"okf-batched/state-v3/docs/example"
+    original_scan=state/"scan-s001.json"
+    scan=json.loads(original_scan.read_text())
+    scan["knowledge_items"].append({
+        "id":"k002", "normative":True,
+        "description":"A distinct source-grounded requirement",
+        "evidence_ranges":[{
+            "doctrine":"doctrines/example.md", "start_line":1, "end_line":2
+        }],
+    })
+    put_json(original_scan, scan)
+    coverage=json.loads((state/"coverage.json").read_text())
+    coverage.update({
+        "status":"needs_revision",
+        "missing_item_ids":["example:k002"],
+        "warnings":["Uncovered scanned assertion"],
+        "expected_normative_items":2,
+    })
+    put_json(state/"coverage.json",coverage)
+    # Incomplete V3 repair is expected and no longer a migration blocker.
+    repair=state/"concept-s001-c010-repair.json"
+    repair.unlink()
+    migrate_applied(tmp_path)
+    marker,catalog,_=checked_phase_a(tmp_path)
+    assert marker["knowledge_item_count"]==1
+    assert marker["source_knowledge_item_count"]==2
+    assert marker["pending_knowledge_item_count"]==1
+    assert catalog["documents"][0]["pending_knowledge_item_ids"]==["example:k002"]
+    tasks=source_repair_tasks(tmp_path)
+    assert {t["kind"] for t in tasks["concepts"]}=={"existing","missing"}
+    for task in tasks["concepts"]:
+        if task["kind"]=="existing":
+            proposal={
+                "id":task["id"],"action":"keep","title":task["title"],
+                "markdown":"","knowledge_item_ids":task["knowledge_item_ids"],
+            }
+        else:
+            title="Zusaetzliche Anforderung"
+            proposal={
+                "id":task["id"],"action":"rewrite","title":title,
+                "markdown":(
+                    "---\ntitle: Zusaetzliche Anforderung\ntype: concept\n---\n"
+                    "# Zusaetzliche Anforderung\n"
+                    "Eine weitere Anforderung, die ausdrücklich in der Ursprungsvorschrift belegt ist.\n"
+                ),
+                "knowledge_item_ids":task["knowledge_item_ids"],
+            }
+        put_json(tmp_path/f"okf-v4/state-b/source-repair/proposals/{task['key']}.json",proposal)
+    apply_source_repair(tmp_path,tasks)
+    checked_b(tmp_path,root="okf-v4/b-source-repaired",stage="B-source")
+    recovered=prepare(tmp_path,"okf-v4/b-source-repaired")
+    assert len(recovered["concepts"])==2
+    assert sum(x["knowledge_item_count"] for x in recovered["concepts"])==2
+
+
+def test_source_repair_rejects_modified_original_knowledge_item_ids(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    marker=tmp_path/"okf-v4/phase-a/phase-a.json"
-    initial=marker.read_bytes()
-    state=tmp_path/"okf-batched/state-v3/docs/example/coverage.json"
-    data=json.loads(state.read_text())
-    data["missing_item_ids"]=["example:k001"]
-    put_json(state,data)
-    with pytest.raises(ValueError,match="coverage incomplete"):
-        migrate_applied(tmp_path)
-    assert marker.read_bytes()==initial
+    tasks=source_repair_tasks(tmp_path)
+    assert tasks["count"]==0
+    apply_source_repair(tmp_path,tasks)
+    checked_b(tmp_path,root="okf-v4/b-source-repaired",stage="B-source")
+    catalog_path=tmp_path/"okf-v4/b-source-repaired/catalog.json"
+    catalog=json.loads(catalog_path.read_text())
+    catalog["concepts"][0]["knowledge_items"][0]["id"]="fabricated:k999"
+    put_json(catalog_path,catalog)
+    with pytest.raises(ValueError):
+        checked_b(tmp_path,root="okf-v4/b-source-repaired",stage="B-source")
 
 
 def test_phase_a_rejects_any_uncontracted_index(tmp_path):
