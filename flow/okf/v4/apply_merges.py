@@ -116,7 +116,7 @@ def main() -> None:
     groups=data.get("inputs",{}).get("groups")
     if not isinstance(groups,dict):
         raise ValueError("Expected verified merge tasks in json_inputs.groups.")
-    print(json.dumps(merge(Path(".").resolve(),groups=groups),ensure_ascii=False))
+    print(json.dumps(merge(Path(".").resolve(),groups=groups),ensure_ascii=True))
 
 
 if __name__=="__main__":
