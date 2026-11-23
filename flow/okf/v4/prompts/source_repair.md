@@ -16,8 +16,18 @@ accurately; otherwise choose "rewrite" with complete Markdown.
 
 For kind=missing: the item was present in the original V3 scan but not
 assigned to any V3 concept. Create a precise, substantive doctrine concept
-grounded only in that item and its source lines. Use action="rewrite",
-choose a meaningful German title and write complete Markdown.
+grounded only in that item and its source lines.
+
+For kind=audit_missing: an independent, line-windowed review of the ORIGINAL
+source snapshot found a missing claim absent from the V3 scan. Its new
+Knowledge Item was verified against an exact source quotation and line
+number before this task. Read the relevant source line(s) yourself, use
+only the supplied claim and its evidence, and create a narrow concept.
+Do not add or reinterpret other assertions from the source; the independent
+audit handles those separately.
+
+For both missing kinds choose action="rewrite", a meaningful German title
+and complete source-grounded Markdown.
 
 All replacement Markdown must begin with closed YAML frontmatter, with
 a nonempty scalar type (e.g. type: concept) and a title exactly matching
