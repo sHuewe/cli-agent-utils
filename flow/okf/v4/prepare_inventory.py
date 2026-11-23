@@ -11,13 +11,19 @@ import re
 import sys
 
 from phase_b_contract import checked_b
+from phase_a_contract import checked_phase_a
 
 
 from refine_b import inventory_tasks
 
 
 def prepare(workspace: Path, root: str) -> dict:
-    _, catalog, _ = checked_b(workspace, root=root, stage="B-source")
+    # Legacy callers of the reusable helper may still inspect a pristine A.
+    # The real phase-b flow passes the repaired B-source root by default.
+    if root == "okf-v4/phase-a":
+        _, catalog, _ = checked_phase_a(workspace, root)
+    else:
+        _, catalog, _ = checked_b(workspace, root=root, stage="B-source")
     return inventory_tasks(catalog, root)
 
 def main(argv: list[str] | None = None) -> int:
