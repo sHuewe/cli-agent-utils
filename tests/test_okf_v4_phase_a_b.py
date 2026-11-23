@@ -424,3 +424,32 @@ def test_inventory_key_changes_when_knowledge_item_payload_changes(tmp_path):
     new_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
     assert new_key!=original_key
     assert (tmp_path/concept_path).read_bytes()==md_before
+
+@pytest.mark.parametrize("destination", [
+    "okf-v4/phase-a/published",
+    "okf-v4/phase-b/published",
+    "okf-v4",
+    "okf-v4/phase-a",
+    "okf-v4/phase-b",
+])
+def test_c_refuses_publication_overlapping_phase_a_or_b(tmp_path, destination):
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    finished_b(tmp_path)
+    tasks=prepare_links(tmp_path)
+    for item in tasks["concepts"]:
+        put_json(tmp_path/f"okf-v4/state-c/links/{item['key']}.json", {
+            "source_id": item["id"], "related_ids": [],
+        })
+    original_a=(tmp_path/"okf-v4/phase-a/phase-a.json").read_bytes()
+    original_b=(tmp_path/"okf-v4/phase-b/phase-b.json").read_bytes()
+    with pytest.raises(ValueError, match="overlaps protected"):
+        publish(tmp_path, phase_b="okf-v4/phase-b",
+                state_root="okf-v4/state-c", destination=destination,
+                tasks=tasks)
+    assert (tmp_path/"okf-v4/phase-a/phase-a.json").read_bytes()==original_a
+    assert (tmp_path/"okf-v4/phase-b/phase-b.json").read_bytes()==original_b
+    checked_phase_a(tmp_path)
+    checked_b(tmp_path, root="okf-v4/phase-b", stage="B")
+    assert not (tmp_path/"okf-v4/phase-a/published").exists()
+    assert not (tmp_path/"okf-v4/phase-b/published").exists()
