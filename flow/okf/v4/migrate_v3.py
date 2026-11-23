@@ -298,7 +298,9 @@ def authoritative_scanned_items(
 def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
                     *, allow_deferred_index_links: bool = False,
                     source_targets: frozenset[str] = frozenset(),
-                    source_references: set[str] | None = None) -> str:
+                    source_references: set[str] | None = None,
+                    workspace_source_root: str | None = None,
+                    document_root: str | None = None) -> str:
     """Rewrite concept links and safely retire known V3 source-document links.
 
     Phase A excludes old indexes (regenerated in C), and retains their links
@@ -327,8 +329,28 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
             raise ValueError(f"Ambiguous case-insensitive source path: {path}")
         source_lookup[key] = path
 
-    def matched_source(resolved: str) -> str | None:
-        return source_lookup.get(resolved.casefold())
+    def matched_source(resolved: str, decoded: str) -> str | None:
+        # A normal Markdown URL is relative to the old concept file.
+        # Historical V3 LLM outputs sometimes wrote 'md/file.md' instead,
+        # intending a workspace-relative source path (despite the concept
+        # being nested under generated/doctrines/...).
+        match = source_lookup.get(resolved.casefold())
+        if match is not None:
+            return match
+        if workspace_source_root is None or document_root is None:
+            return None
+        # Only an explicit, traversal-free prefix of the configured source
+        # directory can use this legacy interpretation. Do not reinterpret
+        # arbitrary relative links or unresolved concept references.
+        parts = decoded.split("/")
+        root_parts = document_root.split("/")
+        if (len(parts) <= len(root_parts)
+                or [p.casefold() for p in parts[:len(root_parts)]]
+                    != [p.casefold() for p in root_parts]
+                or any(part in ("", ".", "..") for part in parts)):
+            return None
+        canonical = posixpath.relpath(decoded, start=workspace_source_root)
+        return source_lookup.get(canonical.casefold())
 
     def resolved_source(raw: str) -> bool:
         target = raw[1:-1] if raw.startswith("<") and raw.endswith(">") else raw
@@ -336,10 +358,17 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
         if (parsed.scheme or parsed.netloc or not parsed.path
                 or parsed.path.startswith("/")):
             return False
+        decoded = unquote(parsed.path)
         resolved = posixpath.normpath(posixpath.join(
-            posixpath.dirname(old), unquote(parsed.path),
+            posixpath.dirname(old), decoded,
         ))
-        match = matched_source(resolved)
+        # A valid concept-relative link always takes precedence over the
+        # workspace-rooted source compatibility fallback. Otherwise an old
+        # concept reference could be silently converted to plain text just
+        # because a source document happens to share its URL spelling.
+        if resolved in mapping:
+            return False
+        match = matched_source(resolved, decoded)
         if match is not None and source_references is not None:
             source_references.add(match)
         return match is not None
@@ -378,7 +407,7 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
             if (allow_deferred_index_links
                     and posixpath.basename(original).casefold() == "index.md"):
                 return match.group()
-            source_reference = matched_source(original)
+            source_reference = matched_source(original, decoded)
             if source_reference is not None:
                 if source_references is not None:
                     source_references.add(source_reference)
@@ -637,6 +666,7 @@ def prepare(workspace: Path, *, source_root: str, state_root: str,
             data.decode("utf-8"), old, target, original_paths,
             allow_deferred_index_links=True, source_targets=source_targets,
             source_references=source_references,
+            workspace_source_root=source_root, document_root=document_root,
         ).encode("utf-8")
         outputs[target] = fixed
         record = by_path[target]

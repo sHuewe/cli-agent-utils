@@ -98,7 +98,12 @@ These records are structured metadata in catalog.json, not copied checkpoints.
 
 Legacy concept Markdown may also link back to an original source document,
 for example `../../../../md/Some_Source.md` from within the old generated V3
-tree. When the relative path resolves to a real Markdown file beneath the
+tree. Old generated concepts sometimes use a workspace-relative URL
+such as `md/Some_Source.md` despite residing deep under the V3 generated
+tree. Both an ordinary concept-relative URL and an explicit path starting
+with the configured `--document-root/` are checked against the actual
+workspace source tree (without permitting `..` in workspace-rooted paths).
+When the URL resolves to a real Markdown file beneath the
 configured `--document-root`, the importer retains its visible link label
 as text without creating a dangling hyperlink. This includes existing
 source documents without a completed V3 group checkpoint; they are **not**
