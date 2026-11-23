@@ -23,10 +23,10 @@ MAX_LINES = 18
 MAX_COMPARE_ITEM_BYTES = 7000
 MAX_COMPARE_CLAIM_BYTES = 2200
 
-# V2 introduces independent extraction and batched cross-checks. New task
-# hashes ensure V1 cached verdicts cannot be mistaken for V2 reviews.
-TASK_SCHEMA = "okf.source-coverage-tasks.v2"
-COMPARE_SCHEMA = "okf.source-coverage-comparison-tasks.v1"
+# V3 tracks atomic facets independently across comparison batches.
+# Versioned task keys prevent stale cached model results from being reused.
+TASK_SCHEMA = "okf.source-coverage-tasks.v3"
+COMPARE_SCHEMA = "okf.source-coverage-comparison-tasks.v2"
 
 
 def canonical(value: object) -> bytes:
@@ -88,7 +88,7 @@ def prepare(workspace: Path, phase_a: str = PHASE_A) -> dict:
                 "last_line": last,
                 "lines": chunk,
             }
-            item["key"] = "audit-v2-" + digest(item)[:24]
+            item["key"] = "audit-v3-" + digest(item)[:24]
             result.append(item)
     if len({x["key"] for x in result}) != len(result):
         raise ValueError("Source audit task hash collision.")
@@ -127,11 +127,17 @@ def _reviewed_claims(workspace: Path, phase_a: str, state: str) -> tuple[dict, l
                 raise ValueError("Malformed extracted source claim.")
             quote, statement = claim.get("source_quote"), claim.get("statement")
             number, normative = claim.get("line"), claim.get("normative")
+            facets = claim.get("facets")
             if (not isinstance(quote, str) or not 5 <= len(quote) <= 600
                     or not isinstance(statement, str)
                     or not 12 <= len(statement) <= 700
-                    or type(number) is not int or type(normative) is not bool):
-                raise ValueError(f"Malformed source claim: {task['key']}")
+                    or type(number) is not int or type(normative) is not bool
+                    or not isinstance(facets, list) or not 1 <= len(facets) <= 8
+                    or any(not isinstance(facet, str)
+                           or not 8 <= len(facet.strip()) <= 240
+                           for facet in facets)
+                    or len(set(facets)) != len(facets)):
+                raise ValueError(f"Malformed source claim/facets: {task['key']}")
             if not any(
                 line["line"] == number and quote in line["text"]
                 for line in task["lines"]
@@ -147,7 +153,7 @@ def _reviewed_claims(workspace: Path, phase_a: str, state: str) -> tuple[dict, l
                 "id": ident, "document_id": task["document_id"],
                 "chunk_key": task["key"], "line": number,
                 "source_quote": quote, "statement": statement,
-                "normative": normative,
+                "normative": normative, "facets": facets,
                 "source_original_path": task["source_original_path"],
             })
     by_id = {}
@@ -248,18 +254,32 @@ def additions(workspace: Path, *, required: bool = False,
     ).read_text(encoding="utf-8"))
     if expected != stored:
         raise ValueError("Stale or modified coverage comparison task ledger.")
-    covered = set()
+    # Every atomic facet must be covered, but its supporting KI may live in
+    # any comparison batch. Never infer full coverage from a partial match.
+    covered_facets: dict[str, set[int]] = {}
     for task in expected["comparisons"]:
         verdict = json.loads(safe_path(
             workspace, state + "/coverage/comparisons/" + task["key"] + ".json"
         ).read_text(encoding="utf-8"))
-        valid_ids = {claim["id"] for claim in task["claims"]}
-        selected = verdict.get("covered_ids") if isinstance(verdict, dict) else None
+        allowed = {claim["id"]: len(claim["facets"]) for claim in task["claims"]}
+        selected = verdict.get("covered_facets") if isinstance(verdict, dict) else None
         if (not isinstance(verdict, dict) or verdict.get("key") != task["key"]
-                or not isinstance(selected, list) or len(set(selected)) != len(selected)
-                or not all(isinstance(i, str) and i in valid_ids for i in selected)):
+                or not isinstance(selected, list)):
             raise ValueError(f"Invalid source comparison verdict: {task['key']}")
-        covered.update(selected)
+        seen_claims = set()
+        for entry in selected:
+            if not isinstance(entry, dict) or set(entry) != {"claim_id", "facet_indices"}:
+                raise ValueError(f"Invalid comparison facet entry: {task['key']}")
+            claim_id, indices = entry["claim_id"], entry["facet_indices"]
+            if (not isinstance(claim_id, str) or claim_id not in allowed
+                    or claim_id in seen_claims or not isinstance(indices, list)
+                    or not indices or any(type(i) is not int
+                                          or i < 0 or i >= allowed[claim_id]
+                                          for i in indices)
+                    or len(indices) != len(set(indices))):
+                raise ValueError(f"Invalid comparison facet indices: {task['key']}")
+            seen_claims.add(claim_id)
+            covered_facets.setdefault(claim_id, set()).update(indices)
     _, catalog, _ = checked_phase_a(workspace, phase_a)
     original_ids = {
         item["id"] for doc in catalog["documents"]
@@ -267,7 +287,7 @@ def additions(workspace: Path, *, required: bool = False,
     }
     result = []
     for claim in claims:
-        if claim["id"] in covered:
+        if covered_facets.get(claim["id"], set()) == set(range(len(claim["facets"]))):
             continue
         if claim["id"] in original_ids:
             raise ValueError("Source audit attempted to replace an existing item.")
