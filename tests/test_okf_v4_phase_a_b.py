@@ -288,6 +288,77 @@ def test_nested_source_root_resolves_only_real_workspace_sources(tmp_path):
         migrate(tmp_path,**kwargs,apply=False)
 
 
+def test_source_hyperlink_to_ungrouped_existing_md_is_accepted(tmp_path):
+    fixture(tmp_path)
+    original=tmp_path/"doctrines/Other_Source.md"
+    original.write_text("# A valid but ungrouped source\n",encoding="utf-8")
+    old=tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
+    old.write_text(
+        old.read_text(encoding="utf-8")
+        + "\n[Other source](../../../../doctrines/other_source.MD)\n",
+        encoding="utf-8",
+    )
+    migrate_applied(tmp_path)
+    _,catalog,base=checked_phase_a(tmp_path)
+    concept=catalog["concepts"][0]
+    imported=(base/concept["path"]).read_text(encoding="utf-8")
+    assert "Other source" in imported
+    assert "other_source.MD" not in imported
+    assert concept["source_reference_paths"]==["doctrines/Other_Source.md"]
+    # Referenced but ungrouped sources cannot silently enter the A file set.
+    assert not (base/"sources/Other_Source.md").exists()
+    assert not (base/"doctrines/Other_Source.md").exists()
+
+
+def test_source_hyperlink_to_missing_md_still_fails(tmp_path):
+    fixture(tmp_path)
+    old=tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
+    old.write_text(
+        old.read_text(encoding="utf-8")
+        + "\n[Other source](../../../../doctrines/Other_Source.md)\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError,match="Unresolved concept Markdown link"):
+        migrate_applied(tmp_path)
+
+
+def test_source_hyperlink_with_nested_v3_root_uses_actual_file(tmp_path):
+    fixture(tmp_path)
+    generated=tmp_path/"okf-batched-generated-v3"
+    nested=tmp_path/"nested/generated"
+    nested.parent.mkdir(parents=True,exist_ok=True)
+    generated.rename(nested)
+    source=tmp_path/"doctrines/Other_Source.md"
+    source.write_text("# Another source\n",encoding="utf-8")
+    old=nested/"doctrines/example/organization/s001-c010.md"
+    old.write_text(
+        old.read_text(encoding="utf-8")
+        + "\n[Other source](../../../../../doctrines/Other_Source.md)\n",
+        encoding="utf-8",
+    )
+    result=migrate(
+        tmp_path,source_root="nested/generated",
+        state_root="okf-batched/state-v3/docs",
+        destination="okf-v4/phase-a",apply=True,
+    )
+    assert result["status"]=="completed"
+    _,catalog,base=checked_phase_a(tmp_path)
+    concept=catalog["concepts"][0]
+    assert concept["source_reference_paths"]==["doctrines/Other_Source.md"]
+    assert "Other source" in (base/concept["path"]).read_text(encoding="utf-8")
+    old.write_text(
+        old.read_text(encoding="utf-8")
+        + "\n[False path](../../../../doctrines/Other_Source.md)\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError,match="Unresolved concept Markdown link"):
+        migrate(
+            tmp_path,source_root="nested/generated",
+            state_root="okf-batched/state-v3/docs",
+            destination="okf-v4/phase-a",
+        )
+
+
 def test_migration_defers_legacy_index_navigation_to_phase_c(tmp_path):
     fixture(tmp_path)
     legacy = tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
