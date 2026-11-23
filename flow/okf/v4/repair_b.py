@@ -112,7 +112,7 @@ def select(workspace: Path, round_number: int) -> dict:
     root, stage = SOURCES[round_number]
     _, catalog, _ = _validated(workspace, root, stage)
     available = _task_map(catalog, root)
-    original, first = _initial_verdicts()
+    original, first = _initial_verdicts(workspace)
     if set(original) != set(available):
         raise ValueError("Concept identities changed between B and repair stages.")
     findings: dict[str, dict] = {}
