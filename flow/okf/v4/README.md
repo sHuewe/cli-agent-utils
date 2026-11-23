@@ -57,6 +57,11 @@ scans and grouped concept files are available. It reads V3
 `sections.json`, `scan-<section>.json`, `group.json`, `coverage.json`,
 optional `concept-<id>-repair.json` and existing concept Markdown.
 It reconciles every grouped item against the authoritative scan payload.
+For older V3 scan files, missing or blank routing fields `document_id`,
+`folder_id` and `chunk_id` are inferred from the V3 state-directory slug
+and the matching `sections.json` section ID **in memory only**. Explicit
+nonempty conflicts and section/source mismatches still fail closed, with a
+field-specific error. The V3 scan checkpoint is never rewritten.
 Unassigned scan items, incomplete repair statuses and V3 warnings are retained
 in the catalog for a required pre-inventory source repair in B. Legacy
 `concept-<id>-repair.json` reports are LLM-produced **diagnostics**, not

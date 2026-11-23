@@ -136,6 +136,49 @@ def test_migration_copies_only_contract_files_not_indexes_or_old_checkpoints(tmp
     assert (tmp_path/"okf-batched-generated-v3/index.md").exists()
 
 
+@pytest.mark.parametrize("field,blank", [
+    ("document_id", None), ("folder_id", ""), ("chunk_id", "  "),
+])
+def test_migration_accepts_legacy_missing_scan_route_without_modifying_v3(
+    tmp_path, field, blank,
+):
+    fixture(tmp_path)
+    scan_path=tmp_path/"okf-batched/state-v3/docs/example/scan-s001.json"
+    scan=json.loads(scan_path.read_text(encoding="utf-8"))
+    if blank is None:
+        scan.pop(field)
+    else:
+        scan[field]=blank
+    put_json(scan_path,scan)
+    original=scan_path.read_bytes()
+    migrate_applied(tmp_path)
+    _,catalog,_=checked_phase_a(tmp_path)
+    assert catalog["documents"][0]["source_knowledge_items"][0]["id"]=="example:k001"
+    assert scan_path.read_bytes()==original
+
+
+@pytest.mark.parametrize("field,wrong", [
+    ("document_id", "another-document"),
+    ("folder_id", "another-document"),
+    ("chunk_id", "s099"),
+    ("section_id", "s099"),
+    ("source_path", "md/other.md"),
+    ("start_line", 2),
+    ("end_line", 3),
+])
+def test_migration_rejects_conflicting_scan_metadata(tmp_path,field,wrong):
+    fixture(tmp_path)
+    scan_path=tmp_path/"okf-batched/state-v3/docs/example/scan-s001.json"
+    scan=json.loads(scan_path.read_text(encoding="utf-8"))
+    scan[field]=wrong
+    put_json(scan_path,scan)
+    original=scan_path.read_bytes()
+    with pytest.raises(ValueError,match=field):
+        migrate_applied(tmp_path)
+    assert scan_path.read_bytes()==original
+    assert not (tmp_path/"okf-v4/phase-a").exists()
+
+
 def test_migration_accepts_configurable_original_document_root(tmp_path):
     fixture(tmp_path)
     old_source=tmp_path/"doctrines/example.md"
@@ -538,7 +581,7 @@ def test_migration_rejects_mismatched_evidence_document(tmp_path):
     sections=json.loads(sections_path.read_text())
     sections["source_path"]="doctrines/second.md"
     put_json(sections_path,sections)
-    with pytest.raises(ValueError,match="different source|V3 scan does not match"):
+    with pytest.raises(ValueError,match="different source|V3 scan section mismatch"):
         migrate_applied(tmp_path)
     assert not (tmp_path/"okf-v4/phase-a").exists()
 
