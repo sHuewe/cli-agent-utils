@@ -14,6 +14,7 @@ import pytest
 V4 = Path(__file__).resolve().parents[1] / "flow/okf/v4"
 sys.path.insert(0, str(V4))
 from migrate_v3 import migrate
+from source_repair import prepare as source_repair_tasks, apply as apply_source_repair
 from phase_a_contract import checked_phase_a
 from prepare_inventory import prepare
 from publish_indexes import publish
@@ -105,6 +106,15 @@ def migrate_applied(root: Path) -> None:
     assert result["status"]=="completed"
 
 
+def prepare_repaired(root: Path) -> dict:
+    """Materialize the mandatory B-source stage before any B inventory tests."""
+    tasks=source_repair_tasks(root)
+    if tasks["count"]:
+        raise AssertionError("Complete fixture unexpectedly requires source repair.")
+    apply_source_repair(root,tasks)
+    return prepare(root,"okf-v4/b-source-repaired")
+
+
 def test_migration_copies_only_contract_files_not_indexes_or_old_checkpoints(tmp_path):
     fixture(tmp_path)
     dry=migrate(tmp_path,source_root="okf-batched-generated-v3",
@@ -126,18 +136,76 @@ def test_migration_copies_only_contract_files_not_indexes_or_old_checkpoints(tmp
     assert (tmp_path/"okf-batched-generated-v3/index.md").exists()
 
 
-def test_migration_rejects_incomplete_coverage_and_preserves_previous_target(tmp_path):
+def test_migration_keeps_incomplete_coverage_for_pre_inventory_repair(tmp_path):
+    fixture(tmp_path)
+    state=tmp_path/"okf-batched/state-v3/docs/example"
+    original_scan=state/"scan-s001.json"
+    scan=json.loads(original_scan.read_text())
+    scan["knowledge_items"].append({
+        "id":"k002", "normative":True,
+        "description":"A distinct source-grounded requirement",
+        "evidence_ranges":[{
+            "doctrine":"doctrines/example.md", "start_line":1, "end_line":2
+        }],
+    })
+    put_json(original_scan, scan)
+    coverage=json.loads((state/"coverage.json").read_text())
+    coverage.update({
+        "status":"needs_revision",
+        "missing_item_ids":["example:k002"],
+        "warnings":["Uncovered scanned assertion"],
+        "expected_normative_items":2,
+    })
+    put_json(state/"coverage.json",coverage)
+    # Incomplete V3 repair is expected and no longer a migration blocker.
+    repair=state/"concept-s001-c010-repair.json"
+    repair.unlink()
+    migrate_applied(tmp_path)
+    marker,catalog,_=checked_phase_a(tmp_path)
+    assert marker["knowledge_item_count"]==1
+    assert marker["source_knowledge_item_count"]==2
+    assert marker["pending_knowledge_item_count"]==1
+    assert catalog["documents"][0]["pending_knowledge_item_ids"]==["example:k002"]
+    tasks=source_repair_tasks(tmp_path)
+    assert {t["kind"] for t in tasks["concepts"]}=={"existing","missing"}
+    for task in tasks["concepts"]:
+        if task["kind"]=="existing":
+            proposal={
+                "id":task["id"],"action":"keep","title":task["title"],
+                "markdown":"","knowledge_item_ids":task["knowledge_item_ids"],
+            }
+        else:
+            title="Zusaetzliche Anforderung"
+            proposal={
+                "id":task["id"],"action":"rewrite","title":title,
+                "markdown":(
+                    "---\ntitle: Zusaetzliche Anforderung\ntype: concept\n---\n"
+                    "# Zusaetzliche Anforderung\n"
+                    "Eine weitere Anforderung, die ausdrücklich in der Ursprungsvorschrift belegt ist.\n"
+                ),
+                "knowledge_item_ids":task["knowledge_item_ids"],
+            }
+        put_json(tmp_path/f"okf-v4/state-b/source-repair/proposals/{task['key']}.json",proposal)
+    apply_source_repair(tmp_path,tasks)
+    checked_b(tmp_path,root="okf-v4/b-source-repaired",stage="B-source")
+    recovered=prepare(tmp_path,"okf-v4/b-source-repaired")
+    assert len(recovered["concepts"])==2
+    assert sum(x["knowledge_item_count"] for x in recovered["concepts"])==2
+
+
+def test_source_repair_rejects_modified_original_knowledge_item_ids(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    marker=tmp_path/"okf-v4/phase-a/phase-a.json"
-    initial=marker.read_bytes()
-    state=tmp_path/"okf-batched/state-v3/docs/example/coverage.json"
-    data=json.loads(state.read_text())
-    data["missing_item_ids"]=["example:k001"]
-    put_json(state,data)
-    with pytest.raises(ValueError,match="coverage incomplete"):
-        migrate_applied(tmp_path)
-    assert marker.read_bytes()==initial
+    tasks=source_repair_tasks(tmp_path)
+    assert tasks["count"]==0
+    apply_source_repair(tmp_path,tasks)
+    checked_b(tmp_path,root="okf-v4/b-source-repaired",stage="B-source")
+    catalog_path=tmp_path/"okf-v4/b-source-repaired/catalog.json"
+    catalog=json.loads(catalog_path.read_text())
+    catalog["concepts"][0]["knowledge_items"][0]["id"]="fabricated:k999"
+    put_json(catalog_path,catalog)
+    with pytest.raises(ValueError):
+        checked_b(tmp_path,root="okf-v4/b-source-repaired",stage="B-source")
 
 
 def test_phase_a_rejects_any_uncontracted_index(tmp_path):
@@ -160,7 +228,7 @@ def test_same_legacy_concept_id_from_other_doctrine_is_allowed(tmp_path):
 
 
 def finished_b(workspace: Path, *, review_mode: str = "keep") -> dict:
-    tasks=prepare(workspace,"okf-v4/phase-a")
+    tasks=prepare_repaired(workspace)
     for item in tasks["concepts"]:
         put_json(workspace/f"okf-v4/state-b/summaries/{item['key']}.json",{
             "id":item["id"],
@@ -172,7 +240,7 @@ def finished_b(workspace: Path, *, review_mode: str = "keep") -> dict:
             "reason":"Die Aussagen sind klar voneinander abgegrenzt.",
             "parts":[],
         })
-    result=apply_quality(workspace,phase_a="okf-v4/phase-a",
+    result=apply_quality(workspace,phase_a="okf-v4/b-source-repaired",
                          state="okf-v4/state-b",tasks=tasks,
                          destination="okf-v4/b-reviewed")
     assert result["reviewed_concepts"]==len(tasks["concepts"])
@@ -257,13 +325,13 @@ def test_b_is_content_quality_only_and_c_builds_complete_navigation(tmp_path):
 def test_missing_llm_summary_aborts_b_before_any_index_creation(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    tasks=prepare(tmp_path,"okf-v4/phase-a")
+    tasks=prepare_repaired(tmp_path)
     item=tasks["concepts"][0]
     put_json(tmp_path/f"okf-v4/state-b/reviews/{item['key']}.json",{
         "id":item["id"],"action":"keep","reason":"Valid concept.","parts":[],
     })
     with pytest.raises(ValueError,match="Required file"):
-        apply_quality(tmp_path,phase_a="okf-v4/phase-a",state="okf-v4/state-b",
+        apply_quality(tmp_path,phase_a="okf-v4/b-source-repaired",state="okf-v4/state-b",
                       tasks=tasks,destination="okf-v4/b-reviewed")
     assert not (tmp_path/"okf-v4/phase-b").exists()
     assert not (tmp_path/"okf-v4/published").exists()
@@ -276,6 +344,7 @@ def test_flows_separate_quality_and_publishing():
     bsteps={step["id"]:step for step in b["steps"]}
     csteps={step["id"]:step for step in c["steps"]}
     assert list(bsteps)==[
+        "source_repair_tasks","source_repair_review","apply_source_repairs",
         "inventory_tasks","summarize","quality_review","apply_quality",
         "merge_candidates","merge_review","apply_merges",
         "initial_verification_tasks","verify_final",
@@ -301,7 +370,7 @@ def test_migration_rejects_repair_path_mismatch(tmp_path):
     repair=json.loads(repair_path.read_text())
     repair["path"]="doctrines/example/organization/another.md"
     put_json(repair_path,repair)
-    with pytest.raises(ValueError,match="Incomplete repair"):
+    with pytest.raises(ValueError,match="Invalid repair"):
         migrate_applied(tmp_path)
     assert not (tmp_path/"okf-v4/phase-a").exists()
 
@@ -309,12 +378,12 @@ def test_migration_rejects_repair_path_mismatch(tmp_path):
 def test_checkpoint_key_changes_when_source_concept_changes(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    old_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    old_key=prepare_repaired(tmp_path)["concepts"][0]["key"]
     # A new import version with changed content must use a new LLM checkpoint.
     original=tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
     original.write_text(original.read_text()+"\nAnother supported detail.\n")
     migrate_applied(tmp_path)
-    new_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    new_key=prepare_repaired(tmp_path)["concepts"][0]["key"]
     assert old_key != new_key
 
 
@@ -413,9 +482,9 @@ def test_migration_refuses_item_omitted_by_group_but_present_in_scan(tmp_path):
             "description":"Another independent source-grounded statement."}
     scan["knowledge_items"].append(second)
     put_json(scan_file,scan)
-    with pytest.raises(ValueError,match="Group/scan Knowledge Item mismatch"):
-        migrate_applied(tmp_path)
-    assert not (tmp_path/"okf-v4/phase-a").exists()
+    migrate_applied(tmp_path)
+    _,catalog,_=checked_phase_a(tmp_path)
+    assert len(catalog["documents"][0]["pending_knowledge_item_ids"])==1
 
 
 def test_migration_refuses_modified_group_claim_from_original_scan(tmp_path):
@@ -431,7 +500,7 @@ def test_migration_refuses_modified_group_claim_from_original_scan(tmp_path):
 def test_inventory_key_changes_when_knowledge_item_payload_changes(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    original_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    original_key=prepare_repaired(tmp_path)["concepts"][0]["key"]
     concept_path="okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
     md_before=(tmp_path/concept_path).read_bytes()
     group_file=tmp_path/"okf-batched/state-v3/docs/example/group.json"
@@ -440,7 +509,7 @@ def test_inventory_key_changes_when_knowledge_item_payload_changes(tmp_path):
     put_json(group_file,group)
     refresh_scan_for_fixture(tmp_path)
     migrate_applied(tmp_path)
-    new_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    new_key=prepare_repaired(tmp_path)["concepts"][0]["key"]
     assert new_key!=original_key
     assert (tmp_path/concept_path).read_bytes()==md_before
 
@@ -481,7 +550,7 @@ def test_c_refuses_publication_overlapping_phase_a_or_b(tmp_path, destination):
 def test_quality_refuses_destination_overlapping_protected_inputs(tmp_path, destination):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    tasks=prepare(tmp_path,"okf-v4/phase-a")
+    tasks=prepare_repaired(tmp_path)
     for item in tasks["concepts"]:
         put_json(tmp_path/f"okf-v4/state-b/summaries/{item['key']}.json",{
             "id":item["id"], "summary":"Dieses Konzept beschreibt die Aufgaben und ihre Koordination.",
@@ -494,7 +563,7 @@ def test_quality_refuses_destination_overlapping_protected_inputs(tmp_path, dest
         })
     original=(tmp_path/"okf-v4/phase-a/phase-a.json").read_bytes()
     with pytest.raises(ValueError,match="overlaps protected input"):
-        apply_quality(tmp_path,phase_a="okf-v4/phase-a",
+        apply_quality(tmp_path,phase_a="okf-v4/b-source-repaired",
                       state="okf-v4/state-b",tasks=tasks,destination=destination)
     checked_phase_a(tmp_path)
     assert (tmp_path/"okf-v4/phase-a/phase-a.json").read_bytes()==original

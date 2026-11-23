@@ -7,11 +7,10 @@ import sys
 
 import pytest
 
-from test_okf_v4_phase_a_b import fixture, migrate_applied, put_json, refresh_scan_for_fixture
+from test_okf_v4_phase_a_b import fixture, migrate_applied, put_json, refresh_scan_for_fixture, prepare_repaired
 
 V4=Path(__file__).resolve().parents[1]/"flow/okf/v4"
 sys.path.insert(0,str(V4))
-from prepare_inventory import prepare as prepare_a
 from refine_b import apply_quality
 from phase_b_contract import checked_b
 from prepare_merges import prepare as prepare_merges
@@ -62,7 +61,7 @@ def two_items(root: Path, *, same_concept: bool) -> None:
 
 
 def inputs(root: Path):
-    tasks=prepare_a(root,"okf-v4/phase-a")
+    tasks=prepare_repaired(root)
     for item in tasks["concepts"]:
         put_json(root/f"okf-v4/state-b/summaries/{item['key']}.json",{
             "id":item["id"],"summary":"Fachlich fundierte Zusammenfassung der Aufgaben und ihrer Koordination.",
@@ -101,7 +100,7 @@ def test_review_can_split_without_losing_any_source_item(tmp_path):
             ("Zusatzaufgaben","example:k002"),
         )],
     })
-    result=apply_quality(tmp_path,phase_a="okf-v4/phase-a",
+    result=apply_quality(tmp_path,phase_a="okf-v4/b-source-repaired",
                          state="okf-v4/state-b",tasks=tasks,
                          destination="okf-v4/b-reviewed")
     assert result["split_children"]==1
@@ -131,7 +130,7 @@ def test_review_rejects_split_that_duplicates_source_items(tmp_path):
         } for title in ("Zusammenarbeit und Aufgaben","Zusatzaufgaben")],
     })
     with pytest.raises(ValueError,match="lost or duplicated"):
-        apply_quality(tmp_path,phase_a="okf-v4/phase-a",
+        apply_quality(tmp_path,phase_a="okf-v4/b-source-repaired",
                       state="okf-v4/state-b",tasks=tasks,
                       destination="okf-v4/b-reviewed")
     assert not (tmp_path/"okf-v4/b-reviewed").exists()
@@ -142,7 +141,7 @@ def test_merge_redirects_removed_concept_and_preserves_both_items(tmp_path):
     two_items(tmp_path,same_concept=False)
     migrate_applied(tmp_path)
     tasks=inputs(tmp_path)
-    apply_quality(tmp_path,phase_a="okf-v4/phase-a",
+    apply_quality(tmp_path,phase_a="okf-v4/b-source-repaired",
                   state="okf-v4/state-b",tasks=tasks,
                   destination="okf-v4/b-reviewed")
     groups=prepare_merges(tmp_path)

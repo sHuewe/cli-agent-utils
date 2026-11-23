@@ -289,8 +289,9 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
         if not group_path.is_file() or not cover_path.is_file() or not section_path.is_file():
             raise ValueError(f"Incomplete V3 document: {slug}")
         group, cover, sections = (read_json(p) for p in (group_path,cover_path,section_path))
-        if cover.get("status") != "ok" or cover.get("missing_item_ids") or cover.get("warnings"):
-            raise ValueError(f"Source coverage incomplete: {slug}")
+        # Preserve incomplete V3 coverage so B can repair it from original scans.
+        if cover.get("status") != "ok" and not (cover.get("missing_item_ids") or cover.get("warnings")):
+            raise ValueError(f"Unexplained V3 coverage status: {slug}")
         source_path = sections.get("source_path")
         if (not isinstance(source_path, str)
                 or not source_path.startswith("doctrines/")
@@ -304,6 +305,7 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
         scanned_items = authoritative_scanned_items(
             workspace, state_root, slug, sections, source_path, source_line_count,
         )
+        source_item_ids = set(scanned_items)
         src_output = f"sources/{slug}{source.suffix.lower()}"
         if src_output in outputs:
             raise ValueError("Duplicate source output")
@@ -357,14 +359,22 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
                     concept["evidence_ranges"], source_path=source_path,
                     line_count=source_line_count, context=f"concept {cid}",
                 )
-            repair = read_json(doc_dir / f"concept-{cid}-repair.json")
-            documented = repair.get("documented_item_ids")
-            if (repair.get("status") not in ("ok","repaired") or repair.get("concept_id") != cid
+            repair_file = doc_dir / f"concept-{cid}-repair.json"
+            repair = read_json(repair_file) if repair_file.is_file() else {}
+            documented = repair.get("documented_item_ids", [])
+            if repair and (repair.get("concept_id") != cid
                     or repair.get("path") not in (old, source_root+"/"+old)
-                    or repair.get("remaining_item_ids") or repair.get("remaining_warnings")
-                    or not isinstance(documented,list) or len(documented) != len(item_ids)
-                    or set(documented) != set(item_ids)):
-                raise ValueError(f"Incomplete repair or Knowledge Item coverage: {cid}")
+                    or not isinstance(documented, list)
+                    or not set(documented).issubset(item_ids)):
+                raise ValueError(f"Invalid repair identity/coverage: {cid}")
+            repair_required = (
+                not repair or repair.get("status") not in ("ok", "repaired")
+                or set(documented) != set(item_ids)
+                or bool(repair.get("remaining_item_ids"))
+                or bool(repair.get("remaining_warnings"))
+                or bool(cover.get("warnings"))
+                or bool(set(cover.get("missing_item_ids", [])) & set(item_ids))
+            )
             pending.append((old,target,cid,raw_bytes))
             concepts.append({
                 "id": f"{slug}:{cid}", "legacy_id":cid, "document_id":slug,
@@ -379,6 +389,7 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
                 # records from group.json, not LLM-generated summaries.
                 "knowledge_items":items,
                 "evidence_ranges":concept.get("evidence_ranges",[]),
+                "source_repair_required": repair_required,
                 "sha256":None,
             })
         # Reconcile both identities and full source-derived payloads.
@@ -388,24 +399,39 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
             ki["id"]:ki for concept in planned
             for ki in concept["coverage_items"]
         }
-        if grouped_items != scanned_items or listed_items != set(scanned_items):
+        # Missing scanned items are recovered in B; modified/extra items fail.
+        if (listed_items - source_item_ids
+                or any(scanned_items[i] != grouped_items[i] for i in listed_items)):
             raise ValueError(
                 f"Group/scan Knowledge Item mismatch for {slug}: "
                 f"missing={sorted(set(scanned_items)-listed_items)[:6]}, "
                 f"unexpected={sorted(listed_items-set(scanned_items))[:6]}, "
                 f"modified={sorted(ident for ident in set(scanned_items)&listed_items if scanned_items[ident] != grouped_items[ident])[:6]}"
             )
-        total=group.get("total_items")
-        if (total != len(listed_items)
-                or cover.get("expected_normative_items",0) != cover.get("documented_normative_items",0)
-                or cover.get("expected_descriptive_items",0) != cover.get("documented_descriptive_items",0)
-                or (cover.get("expected_normative_items",0)+cover.get("expected_descriptive_items",0))
-                   != len(listed_items)):
-            raise ValueError(f"Group/coverage item count mismatch: {slug}")
+        total = group.get("total_items")
+        if total != len(listed_items):
+            raise ValueError(f"Group item count mismatch: {slug}")
+        missing = sorted(source_item_ids - listed_items)
+        declared_missing = cover.get("missing_item_ids", [])
+        warnings = cover.get("warnings", [])
+        if (not isinstance(declared_missing, list)
+                or not all(isinstance(x, str) for x in declared_missing)
+                or not isinstance(warnings, list)
+                or not all(isinstance(x, str) for x in warnings)
+                or any(x not in source_item_ids for x in declared_missing)):
+            raise ValueError(f"Malformed V3 coverage findings: {slug}")
         documents.append({
             "id":slug,"source_snapshot":src_output,
             "original_path":source_path,"sha256":checksum(source_bytes),
             "concept_ids":[x["id"] for x in concepts if x["document_id"]==slug],
+            "source_knowledge_items": [scanned_items[i] for i in sorted(scanned_items)],
+            "pending_knowledge_item_ids": missing,
+            "coverage_diagnostics": {
+                "status": cover.get("status"), "missing_item_ids": declared_missing,
+                "warnings": warnings,
+                "source_item_count": len(scanned_items),
+                "grouped_item_count": len(listed_items),
+            },
         })
     by_path = {x["path"]:x for x in concepts}
     for old, target, cid, data in pending:
@@ -418,6 +444,8 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
         "schema":SCHEMA, "stage":"A","status":"completed","origin":"v3_migration",
         "catalog":"catalog.json","concept_count":len(concepts),
         "document_count":len(documents),"knowledge_item_count":len(ki_ids),
+        "source_knowledge_item_count":sum(len(d["source_knowledge_items"]) for d in documents),
+        "pending_knowledge_item_count":sum(len(d["pending_knowledge_item_ids"]) for d in documents),
         "catalog_sha256":checksum(outputs["catalog.json"]),
         "allowed_files":sorted([*outputs,"phase-a.json"]),
     }

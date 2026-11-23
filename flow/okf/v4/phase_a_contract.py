@@ -51,6 +51,14 @@ def checked_phase_a(workspace: Path, root: str = "okf-v4/phase-a") -> tuple[dict
         if digest(source.read_bytes()) != doc.get("sha256"):
             raise ValueError("Phase-A source snapshot changed.")
         source_names.add(snapshot)
+        scanned = doc.get("source_knowledge_items")
+        pending = doc.get("pending_knowledge_item_ids")
+        if (not isinstance(scanned, list) or not scanned
+                or any(not isinstance(x, dict) or not isinstance(x.get("id"), str) for x in scanned)
+                or len({x["id"] for x in scanned}) != len(scanned)
+                or not isinstance(pending, list) or len(pending) != len(set(pending))
+                or not set(pending).issubset({x["id"] for x in scanned})):
+            raise ValueError("Invalid authoritative V3 source item ledger.")
     concept_names: set[str] = set()
     concept_ids: set[str] = set()
     knowledge_ids: set[str] = set()
@@ -79,7 +87,23 @@ def checked_phase_a(workspace: Path, root: str = "okf-v4/phase-a") -> tuple[dict
         data = file.read_bytes()
         if len(data) > MAX_CONCEPT_BYTES or digest(data) != concept.get("sha256"):
             raise ValueError(f"Phase-A concept changed: {path}")
-    if marker_data.get("knowledge_item_count") != len(knowledge_ids):
+    scanned_ids = set()
+    for doc in documents:
+        for item in doc["source_knowledge_items"]:
+            if item["id"] in scanned_ids:
+                raise ValueError("Duplicate source-scanned Knowledge Item.")
+            scanned_ids.add(item["id"])
+        grouped = {ki["id"]: ki for concept in concepts
+                   if concept["document_id"] == doc["id"]
+                   for ki in concept["knowledge_items"]}
+        scanned = {ki["id"]: ki for ki in doc["source_knowledge_items"]}
+        if (not set(grouped).issubset(scanned)
+                or any(scanned[k] != v for k, v in grouped.items())
+                or set(doc["pending_knowledge_item_ids"]) != set(scanned) - set(grouped)):
+            raise ValueError("Phase-A source scan/group reconciliation mismatch.")
+    if (marker_data.get("knowledge_item_count") != len(knowledge_ids)
+            or marker_data.get("source_knowledge_item_count") != len(scanned_ids)
+            or marker_data.get("pending_knowledge_item_count") != len(scanned_ids - knowledge_ids)):
         raise ValueError("Phase-A Knowledge Item count mismatch.")
     for doc in documents:
         actual = {c["id"] for c in concepts if c["document_id"] == doc["id"]}
