@@ -136,6 +136,62 @@ def test_migration_copies_only_contract_files_not_indexes_or_old_checkpoints(tmp
     assert (tmp_path/"okf-batched-generated-v3/index.md").exists()
 
 
+def test_migration_accepts_configurable_original_document_root(tmp_path):
+    fixture(tmp_path)
+    old_source=tmp_path/"doctrines/example.md"
+    new_source=tmp_path/"md/example.md"
+    new_source.parent.mkdir(parents=True,exist_ok=True)
+    old_source.rename(new_source)
+    state=tmp_path/"okf-batched/state-v3/docs/example"
+    sections=json.loads((state/"sections.json").read_text(encoding="utf-8"))
+    sections["source_path"]="md/example.md"
+    put_json(state/"sections.json",sections)
+    scan=json.loads((state/"scan-s001.json").read_text(encoding="utf-8"))
+    scan["source_path"]="md/example.md"
+    for item in scan["knowledge_items"]:
+        for evidence in item["evidence_ranges"]:
+            evidence["doctrine"]="md/example.md"
+    put_json(state/"scan-s001.json",scan)
+    group=json.loads((state/"group.json").read_text(encoding="utf-8"))
+    for concept in group["concepts"]:
+        for item in concept["coverage_items"]:
+            for evidence in item["evidence_ranges"]:
+                evidence["doctrine"]="md/example.md"
+        for evidence in concept["evidence_ranges"]:
+            evidence["source_path"]="md/example.md"
+    put_json(state/"group.json",group)
+    kwargs={
+        "source_root":"okf-batched-generated-v3",
+        "state_root":"okf-batched/state-v3/docs",
+        "destination":"okf-v4/phase-a",
+    }
+    with pytest.raises(ValueError,match="Unexpected source document path"):
+        migrate(tmp_path,**kwargs)
+    result=migrate(tmp_path,**kwargs,document_root="md",apply=True)
+    assert result["status"]=="completed"
+    marker,catalog,base=checked_phase_a(tmp_path)
+    assert marker["document_count"]==1
+    assert catalog["documents"][0]["original_path"]=="md/example.md"
+    assert catalog["concepts"][0]["source_original_path"]=="md/example.md"
+    assert (base/"sources/example.md").read_bytes()==new_source.read_bytes()
+    assert (base/"doctrines/example/organization/zusammenarbeit-und-aufgaben.md").is_file()
+    assert not (base/"md").exists()
+
+
+def test_document_root_rejects_unsafe_or_overlapping_paths(tmp_path):
+    fixture(tmp_path)
+    kwargs={
+        "source_root":"okf-batched-generated-v3",
+        "state_root":"okf-batched/state-v3/docs",
+        "destination":"okf-v4/phase-a",
+    }
+    for document_root in ("../md", "/md", "C:/md", r"md\\sub"):
+        with pytest.raises(ValueError,match="Unsafe workspace path"):
+            migrate(tmp_path,**kwargs,document_root=document_root)
+    with pytest.raises(ValueError,match="overlaps"):
+        migrate(tmp_path,**{**kwargs,"destination":"doctrines/phase-a"})
+
+
 def test_migration_keeps_incomplete_coverage_for_pre_inventory_repair(tmp_path):
     fixture(tmp_path)
     state=tmp_path/"okf-batched/state-v3/docs/example"

@@ -34,7 +34,23 @@ py .\flow\okf\v4\migrate_v3.py --workspace . --apply
 Defaults: V3 generated tree `okf-batched-generated-v3/`, V3 state
 `okf-batched/state-v3/docs/`, V4 destination `okf-v4/phase-a/`.
 All paths can be overridden with `--source-root`, `--state-root` and
-`--destination`.
+`--destination`. The location of the **original source documents** can
+be configured separately using `--document-root` (default: `doctrines`).
+
+If the source document paths in V3 `sections.json`, scan evidence and
+concept evidence are rooted in `md/` instead of `doctrines/`, run:
+
+```powershell
+py .\flow\okf\v4\migrate_v3.py --workspace . --document-root md
+py .\flow\okf\v4\migrate_v3.py --workspace . --document-root md --apply
+```
+
+This option only selects the **existing, original input Markdown**. Generated
+V3 concept paths and the new Phase-A concept layout intentionally remain
+under `doctrines/<slug>/...`, and source snapshots remain under
+`sources/<slug>.md`. The V3 metadata paths must continue to match their
+actual source files; the migration does not silently rewrite original evidence.
+The destination may not overlap source documents, V3 generated files or V3 state.
 
 The importer accepts incomplete V3 coverage when the original section
 scans and grouped concept files are available. It reads V3
