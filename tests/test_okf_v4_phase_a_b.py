@@ -152,6 +152,7 @@ def test_bounded_source_coverage_discovers_original_claim_absent_from_v3(tmp_pat
                     "source_quote":"A separate previously omitted source fact.",
                     "statement":"There is a separate source fact that was not included in the original scan.",
                     "normative":False,
+                    "facets":["A separate source fact is present in the text."],
                 })
         put_json(
             tmp_path/f"okf-v4/state-b/coverage/reviews/{task['key']}.json",
@@ -165,7 +166,7 @@ def test_bounded_source_coverage_discovers_original_claim_absent_from_v3(tmp_pat
     for comparison in compare_tasks["comparisons"]:
         put_json(
             tmp_path/f"okf-v4/state-b/coverage/comparisons/{comparison['key']}.json",
-            {"key":comparison["key"],"covered_ids":[]},
+            {"key":comparison["key"],"covered_facets":[]},
         )
     missing_items=coverage_additions(tmp_path,required=True)
     assert len(missing_items)==1
@@ -237,6 +238,7 @@ def test_source_coverage_rejects_unsupported_quote_and_incomplete_reviews(tmp_pa
                     "source_quote":"Invented quotation not present in source",
                     "statement":"Invented claim that is unsupported by original evidence.",
                     "normative":False,
+                    "facets":["An unsupported invented claim is present."],
                 }],
             },
         )
@@ -286,6 +288,7 @@ def test_dense_overlapping_knowledge_items_are_compared_without_loss(
                 "line":line["line"],"source_quote":quote,
                 "statement":"A source assertion to compare against all overlapping items.",
                 "normative":False,
+                "facets":["The source describes a particular assertion."],
             }]
         put_json(
             tmp_path/f"okf-v4/state-b/coverage/reviews/{task['key']}.json",
@@ -309,13 +312,76 @@ def test_dense_overlapping_knowledge_items_are_compared_without_loss(
         put_json(
             tmp_path/f"okf-v4/state-b/coverage/comparisons/{task['key']}.json",
             {"key":task["key"],
-             "covered_ids":[claim_id] if i==len(batches["comparisons"])-1 else []},
+             "covered_facets":[{"claim_id":claim_id,"facet_indices":[0]}]
+                if i==len(batches["comparisons"])-1 else []},
         )
     assert coverage_additions(tmp_path,required=True)==[]
     (tmp_path/f"okf-v4/state-b/coverage/comparisons/"
      f"{batches['comparisons'][-1]['key']}.json").unlink()
     with pytest.raises(ValueError,match="Required file"):
         coverage_additions(tmp_path,required=True)
+
+
+def test_collective_facet_coverage_across_disjoint_item_batches(tmp_path, monkeypatch):
+    """A compound claim must be covered by distinct KIs in separate batches."""
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    import source_coverage as coverage
+    real_check=coverage.checked_phase_a
+
+    def two_items(workspace, root="okf-v4/phase-a"):
+        marker,catalog,base=real_check(workspace,root)
+        import copy
+        catalog=copy.deepcopy(catalog)
+        original=catalog["documents"][0]["source_knowledge_items"][0]
+        catalog["documents"][0]["source_knowledge_items"]=[
+            {**original,"id":"example:approval",
+             "description":"Approval must be obtained before proceeding."},
+            {**original,"id":"example:logging",
+             "description":"The operation must be logged."},
+        ]
+        return marker,catalog,base
+
+    monkeypatch.setattr(coverage,"checked_phase_a",two_items)
+    monkeypatch.setattr(coverage,"MAX_COMPARE_ITEM_BYTES",180)
+    tasks=coverage_tasks(tmp_path)
+    put_json(tmp_path/"okf-v4/state-b/coverage/tasks.json",tasks)
+    for task in tasks["chunks"]:
+        missing=[]
+        if task==tasks["chunks"][0]:
+            line=next(x for x in task["lines"] if len(x["text"])>=10)
+            missing=[{
+                "line":line["line"],"source_quote":line["text"][:10],
+                "statement":"Approval and logging are both required.",
+                "normative":True,
+                "facets":["Approval must be obtained first.",
+                          "The operation must be logged."],
+            }]
+        put_json(
+            tmp_path/f"okf-v4/state-b/coverage/reviews/{task['key']}.json",
+            {"key":task["key"],"status":"claims" if missing else "ok",
+             "missing":missing},
+        )
+    comparisons=coverage_compare_tasks(tmp_path)
+    assert comparisons["count"]==2
+    assert all(len(x["known_items"])==1 for x in comparisons["comparisons"])
+    put_json(tmp_path/"okf-v4/state-b/coverage/comparison-tasks.json",comparisons)
+    ident=comparisons["comparisons"][0]["claims"][0]["id"]
+    for index, task in enumerate(comparisons["comparisons"]):
+        put_json(
+            tmp_path/f"okf-v4/state-b/coverage/comparisons/{task['key']}.json",
+            {"key":task["key"],
+             "covered_facets":[{"claim_id":ident,"facet_indices":[index]}]},
+        )
+    assert coverage_additions(tmp_path,required=True)==[]
+    last=comparisons["comparisons"][-1]
+    put_json(
+        tmp_path/f"okf-v4/state-b/coverage/comparisons/{last['key']}.json",
+        {"key":last["key"],"covered_facets":[]},
+    )
+    findings=coverage_additions(tmp_path,required=True)
+    assert len(findings)==1
+    assert findings[0]["id"]==ident
 
 
 def test_source_coverage_windows_console_transport_is_ascii_safe(tmp_path):
