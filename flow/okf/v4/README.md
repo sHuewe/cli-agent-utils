@@ -137,12 +137,15 @@ from V3; B only accepts a complete, unmodified Phase-A snapshot.
 
 Phase B requires `PyYAML>=6.0,<7` in the interpreter running the Flow Python-script steps (`python -m pip install 'PyYAML>=6.0,<7'`). This dependency is declared in the workspace `pyproject.toml` and installed for repository CI tests.
 
-The Phase-B Flow sets `[limits].max_foreach_items = 5000`, because
-a real large source set can produce 1,430+ independently checkpointed audit
-windows. This needs the newer `cli-agent-flow` version with configurable
-foreach limits; the older runner rejects the new TOML setting.
-The higher limit increases the number of **small** model calls, not
-their individual prompt size or timeout.
+The normal Phase-B Flow intentionally skips the optional independent
+full-source re-extraction: it would require thousands of sequential LLM
+calls for large source collections. It still **strictly reconciles every
+original V3 Knowledge Item** against the revised concept corpus and runs
+all regular quality, merge, verification, repair and final-inventory steps.
+A new full-source claim that V3 never extracted is not guaranteed to be
+detected by this streamlined pipeline. Older partial audit checkpoint
+files under `okf-v4/state-b/coverage/` are ignored rather than silently
+treated as a completed audit.
 
 Phase B consumes the **immutable**, checked Phase-A artifact. It may modify
 and restructure concept content only in separately staged B trees. No LLM
@@ -155,37 +158,14 @@ cli-agent-flow run flow/okf/v4/phase-b.toml --workspace .
 
 The B Flow runs in this order:
 
-0. **Independent full-source coverage**: `source_coverage_tasks` splits
-   every immutable source snapshot into deterministic, line-numbered windows
-   (at most 18 fragments / about 2.6k source characters per LLM request).
-   `source_coverage_review` extracts cited factual/normative claims from
-   each source window *without* the historical V3 Knowledge Items.
-   `source_coverage_comparison_tasks` then builds separate, bounded
-   claim/Knowledge-Item batches; `source_coverage_compare` checks claims
-   against **all** Knowledge Items overlapping that window, without
-   truncation. Compound claims are split into independently matchable
-   facets, each of which may be covered by different Knowledge Items in
-   different batches. Python unions covered facet indices across all
-   batches; only a fully covered claim is suppressed. Every original
-   Knowledge Item in scope must occur in a comparison batch. Extracted claims require a literal source quote
-   and exact evidence line. `certify_source_coverage` rejects missing,
-   stale, unsupported, inconsistent or overflowing reviews or incomplete
-   batches before any source repairs. Every task has a content-derived
-   checkpoint key; changing the coverage protocol invalidates old V1/V2
-   extraction and comparison checkpoints. Large doctrines require many small calls,
-   not a single model prompt with an oversized context.
-   Windows subprocess JSON is emitted with ASCII escapes (without changing
-   UTF-8 file contents), preventing cp1252 `UnicodeEncodeError`.
-   Findings become additional immutable source-bound Knowledge Items
-   in B; Phase A and the original V3 scan remain unchanged.
 1. `source_repair_tasks` validates immutable A and identifies incomplete
    V3 concept repairs and unassigned original scan Knowledge Items. Bounded,
    read-only `source_repair_review` LLM tasks propose corrected content or
    additional source-bound concepts. `apply_source_repairs` deterministically
-   checks identities, provenance, **complete original scan coverage and
-   independently audited missing claims** before publishing
-   `okf-v4/b-source-repaired/`. A remains untouched. When both the V3 scan
-   and independent source audit find no gaps, no source-repair LLM tasks run.
+   checks identities, provenance and **complete original V3 scan
+   Knowledge-Item coverage** before publishing
+   `okf-v4/b-source-repaired/`. A remains untouched. If the original V3
+   grouping had no gaps, no source-repair LLM tasks are needed.
 2. `inventory_tasks` validates the fully reconciled B-source corpus.
    `summarize` reads every actual source concept and creates its initial
    German LLM summary and 1–5 thematic tags.
