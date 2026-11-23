@@ -213,6 +213,46 @@ def test_migration_rejects_conflicting_scan_metadata(tmp_path,field,wrong):
     assert not (tmp_path/"okf-v4/phase-a").exists()
 
 
+def test_v3_original_source_links_become_text_with_catalog_provenance(tmp_path):
+    fixture(tmp_path)
+    old=tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
+    old.write_text(
+        old.read_text(encoding="utf-8")
+        + "\n[Originalquelle](../../../../doctrines/example.md)\n",
+        encoding="utf-8",
+    )
+    migrate_applied(tmp_path)
+    _,catalog,base=checked_phase_a(tmp_path)
+    concept=(base/catalog["concepts"][0]["path"]).read_text(encoding="utf-8")
+    assert "Originalquelle" in concept
+    assert "../../../../doctrines/example.md" not in concept
+    assert catalog["documents"][0]["original_path"]=="doctrines/example.md"
+    assert (base/"sources/example.md").is_file()
+    assert not (base/"doctrines/example.md").exists()
+    finished_b(tmp_path)
+    finished_c(tmp_path)
+    published=(tmp_path/"okf-v4/published"/catalog["concepts"][0]["path"]).read_text(
+        encoding="utf-8"
+    )
+    assert "Originalquelle" in published
+    assert "../../../../doctrines/example.md" not in published
+
+
+def test_source_link_matches_md_root_but_not_unrelated_markdown():
+    from migrate_v3 import _markdown_links
+    old="doctrines/example/organization/s001-c010.md"
+    exact=frozenset({"../md/source.md"})
+    assert _markdown_links(
+        "[Source](../../../../md/source.md)",
+        old,old,{},source_targets=exact,
+    )=="Source"
+    with pytest.raises(ValueError, match="Unresolved concept Markdown link"):
+        _markdown_links(
+            "[Unrelated](../../../../md/unknown.md)",
+            old,old,{},source_targets=exact,
+        )
+
+
 def test_migration_defers_legacy_index_navigation_to_phase_c(tmp_path):
     fixture(tmp_path)
     legacy = tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
