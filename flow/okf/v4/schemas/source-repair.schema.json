@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["id", "action", "title", "markdown", "knowledge_item_ids"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"type": "string", "minLength": 3},
+    "action": {"enum": ["keep", "rewrite"]},
+    "title": {"type": "string"},
+    "markdown": {"type": "string", "maxLength": 250000},
+    "knowledge_item_ids": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 3}
+    }
+  }
+}
