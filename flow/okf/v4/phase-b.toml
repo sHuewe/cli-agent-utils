@@ -1,4 +1,11 @@
 version = 1
+
+# The independent source audit has 1430+ short LLM windows in real datasets.
+# Preserve small requests rather than enlarging prompts to satisfy a fixed
+# foreach limit. This requires a cli-agent-flow version with [limits] support.
+[limits]
+max_foreach_items = 5000
+
 exclude_paths = ["flow"]
 result = "steps.complete_b.output"
 
