@@ -14,7 +14,8 @@ def checked_b(
     phase_a: str = "okf-v4/phase-a",
 ) -> tuple[dict, dict, Path]:
     workspace = workspace.resolve()
-    marker_name = {"B-draft": "draft.json", "B-merged": "merged.json",
+    marker_name = {"B-source": "source-repaired.json",
+                   "B-draft": "draft.json", "B-merged": "merged.json",
                    "B-repair-1": "repair-1.json",
                    "B-repair-2": "repair-2.json",
                    "B": "phase-b.json"}.get(stage)
@@ -35,7 +36,8 @@ def checked_b(
     if not isinstance(docs, list) or not isinstance(concepts, list) or not concepts:
         raise ValueError("Malformed Phase-B corpus.")
     original_ids = {c["id"]: c for c in original["concepts"]}
-    orig_items = {x["id"]: x for c in original["concepts"] for x in c["knowledge_items"]}
+    orig_items = {x["id"]: x for doc in original["documents"]
+                  for x in doc["source_knowledge_items"]}
     current_items = {}
     ids = set()
     paths = set()
