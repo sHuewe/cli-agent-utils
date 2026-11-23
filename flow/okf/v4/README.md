@@ -137,6 +137,13 @@ from V3; B only accepts a complete, unmodified Phase-A snapshot.
 
 Phase B requires `PyYAML>=6.0,<7` in the interpreter running the Flow Python-script steps (`python -m pip install 'PyYAML>=6.0,<7'`). This dependency is declared in the workspace `pyproject.toml` and installed for repository CI tests.
 
+The Phase-B Flow sets `[limits].max_foreach_items = 5000`, because
+a real large source set can produce 1,430+ independently checkpointed audit
+windows. This needs the newer `cli-agent-flow` version with configurable
+foreach limits; the older runner rejects the new TOML setting.
+The higher limit increases the number of **small** model calls, not
+their individual prompt size or timeout.
+
 Phase B consumes the **immutable**, checked Phase-A artifact. It may modify
 and restructure concept content only in separately staged B trees. No LLM
 writes source Markdown directly and **B creates zero `index.md` pages**.
