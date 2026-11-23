@@ -16,7 +16,7 @@ import shutil
 import sys
 import tempfile
 
-from migrate_v3 import safe_path, slugify
+from migrate_v3 import safe_path, theme_slug
 
 
 def _relative(current: str, target: str) -> str:
@@ -104,7 +104,7 @@ def render(catalog: dict, tasks: list[dict], summaries: dict[str, dict]) -> tupl
     themes: dict[str,dict] = {}
     for entry in inventory:
         for tag in entry["tags"]:
-            key=slugify(tag)
+            key=theme_slug(tag)
             group=themes.setdefault(key,{"title":tag,"members":[],"member_ids":set()})
             # Distinct labels can normalize to one filename (e.g. an umlaut
             # and its transliteration). Preserve one link per concept ID.
