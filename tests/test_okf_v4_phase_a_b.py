@@ -15,7 +15,10 @@ V4 = Path(__file__).resolve().parents[1] / "flow/okf/v4"
 sys.path.insert(0, str(V4))
 from migrate_v3 import migrate
 from source_repair import prepare as source_repair_tasks, apply as apply_source_repair
-from source_coverage import prepare as coverage_tasks, additions as coverage_additions
+from source_coverage import (
+    prepare as coverage_tasks, additions as coverage_additions,
+    compare_prepare as coverage_compare_tasks,
+)
 from phase_a_contract import checked_phase_a
 from prepare_inventory import prepare
 from publish_indexes import publish
@@ -152,8 +155,17 @@ def test_bounded_source_coverage_discovers_original_claim_absent_from_v3(tmp_pat
                 })
         put_json(
             tmp_path/f"okf-v4/state-b/coverage/reviews/{task['key']}.json",
-            {"key":task["key"],"status":"missing" if missing else "ok",
+            {"key":task["key"],"status":"claims" if missing else "ok",
              "missing":missing},
+        )
+    compare_tasks=coverage_compare_tasks(tmp_path)
+    put_json(
+        tmp_path/"okf-v4/state-b/coverage/comparison-tasks.json",compare_tasks,
+    )
+    for comparison in compare_tasks["comparisons"]:
+        put_json(
+            tmp_path/f"okf-v4/state-b/coverage/comparisons/{comparison['key']}.json",
+            {"key":comparison["key"],"covered_ids":[]},
         )
     missing_items=coverage_additions(tmp_path,required=True)
     assert len(missing_items)==1
@@ -219,7 +231,7 @@ def test_source_coverage_rejects_unsupported_quote_and_incomplete_reviews(tmp_pa
         put_json(
             tmp_path/f"okf-v4/state-b/coverage/reviews/{task['key']}.json",
             {
-                "key":task["key"],"status":"missing",
+                "key":task["key"],"status":"claims",
                 "missing":[{
                     "line":task["first_line"],
                     "source_quote":"Invented quotation not present in source",
@@ -229,6 +241,80 @@ def test_source_coverage_rejects_unsupported_quote_and_incomplete_reviews(tmp_pa
             },
         )
     with pytest.raises(ValueError,match="Source quote absent"):
+        coverage_additions(tmp_path,required=True)
+
+
+def test_dense_overlapping_knowledge_items_are_compared_without_loss(
+    tmp_path, monkeypatch,
+):
+    """A real 9 KB overlap must never truncate or abort claim extraction."""
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    import source_coverage as coverage
+    real_check=coverage.checked_phase_a
+
+    def dense_checked(workspace, root="okf-v4/phase-a"):
+        marker,catalog,base=real_check(workspace,root)
+        import copy
+        catalog=copy.deepcopy(catalog)
+        original=catalog["documents"][0]["source_knowledge_items"][0]
+        catalog["documents"][0]["source_knowledge_items"] = [
+            {
+                **original,
+                "id":f"example:synthetic-{i:03d}",
+                "description":(
+                    "Original overlapping source assertion " + str(i)
+                    + " with a substantial description to fill the bounded batches. "
+                    + "This record must be considered, never dropped."
+                ),
+            }
+            for i in range(180)
+        ]
+        return marker,catalog,base
+
+    monkeypatch.setattr(coverage,"checked_phase_a",dense_checked)
+    tasks=coverage_tasks(tmp_path)
+    assert tasks["chunks"]
+    assert all("known_items" not in task for task in tasks["chunks"])
+    put_json(tmp_path/"okf-v4/state-b/coverage/tasks.json",tasks)
+    for task in tasks["chunks"]:
+        claim=[]
+        if task == tasks["chunks"][0]:
+            line=next(x for x in task["lines"] if len(x["text"]) >= 5)
+            quote=line["text"][:min(40,len(line["text"]))]
+            claim=[{
+                "line":line["line"],"source_quote":quote,
+                "statement":"A source assertion to compare against all overlapping items.",
+                "normative":False,
+            }]
+        put_json(
+            tmp_path/f"okf-v4/state-b/coverage/reviews/{task['key']}.json",
+            {"key":task["key"],"status":"claims" if claim else "ok",
+             "missing":claim},
+        )
+    batches=coverage_compare_tasks(tmp_path)
+    assert batches["count"]>1
+    flattened=[
+        ki["id"] for task in batches["comparisons"] for ki in task["known_items"]
+    ]
+    assert len(flattened)==180
+    assert len(set(flattened))==180
+    assert all(
+        len(coverage.canonical(task["known_items"])) < 7500
+        for task in batches["comparisons"]
+    )
+    put_json(tmp_path/"okf-v4/state-b/coverage/comparison-tasks.json",batches)
+    claim_id=batches["comparisons"][0]["claims"][0]["id"]
+    for i, task in enumerate(batches["comparisons"]):
+        put_json(
+            tmp_path/f"okf-v4/state-b/coverage/comparisons/{task['key']}.json",
+            {"key":task["key"],
+             "covered_ids":[claim_id] if i==len(batches["comparisons"])-1 else []},
+        )
+    assert coverage_additions(tmp_path,required=True)==[]
+    (tmp_path/f"okf-v4/state-b/coverage/comparisons/"
+     f"{batches['comparisons'][-1]['key']}.json").unlink()
+    with pytest.raises(ValueError,match="Required file"):
         coverage_additions(tmp_path,required=True)
 
 
@@ -937,7 +1023,9 @@ def test_flows_separate_quality_and_publishing():
     bsteps={step["id"]:step for step in b["steps"]}
     csteps={step["id"]:step for step in c["steps"]}
     assert list(bsteps)==[
-        "source_coverage_tasks","source_coverage_review","certify_source_coverage",
+        "source_coverage_tasks","source_coverage_review",
+        "source_coverage_comparison_tasks","source_coverage_compare",
+        "certify_source_coverage",
         "source_repair_tasks","source_repair_review","apply_source_repairs",
         "inventory_tasks","summarize","quality_review","apply_quality",
         "merge_candidates","merge_review","apply_merges",
