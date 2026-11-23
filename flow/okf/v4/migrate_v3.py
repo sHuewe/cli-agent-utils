@@ -343,7 +343,10 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
         # directory can use this legacy interpretation. Do not reinterpret
         # arbitrary relative links or unresolved concept references.
         parts = decoded.split("/")
-        if (len(parts) < 2 or parts[0].casefold() != document_root.casefold()
+        root_parts = document_root.split("/")
+        if (len(parts) <= len(root_parts)
+                or [p.casefold() for p in parts[:len(root_parts)]]
+                    != [p.casefold() for p in root_parts]
                 or any(part in ("", ".", "..") for part in parts)):
             return None
         canonical = posixpath.relpath(decoded, start=workspace_source_root)
@@ -359,6 +362,12 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
         resolved = posixpath.normpath(posixpath.join(
             posixpath.dirname(old), decoded,
         ))
+        # A valid concept-relative link always takes precedence over the
+        # workspace-rooted source compatibility fallback. Otherwise an old
+        # concept reference could be silently converted to plain text just
+        # because a source document happens to share its URL spelling.
+        if resolved in mapping:
+            return False
         match = matched_source(resolved, decoded)
         if match is not None and source_references is not None:
             source_references.add(match)
