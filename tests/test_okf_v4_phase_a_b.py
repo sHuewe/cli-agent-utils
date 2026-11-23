@@ -21,6 +21,9 @@ from refine_b import apply_quality
 from prepare_merges import prepare as prepare_merges
 from apply_merges import merge
 from prepare_final_inventory import prepare as prepare_final_inventory
+from prepare_initial_verification import prepare as prepare_initial_verification
+from repair_b import select as select_repairs, apply as apply_repairs
+from repair_b import verification_tasks as repair_verification_tasks, certify as certify_repairs
 from complete_b import complete
 from prepare_links import prepare as prepare_links
 from phase_b_contract import checked_b
@@ -181,18 +184,29 @@ def finished_b(workspace: Path, *, review_mode: str = "keep") -> dict:
             "member_ids":[],"title":"","markdown":"","summary":"","tags":[],
         })
     merge(workspace,groups=groups)
-    final_tasks=prepare_final_inventory(workspace)
-    for task in final_tasks["concepts"]:
+    original_tasks=prepare_initial_verification(workspace)
+    for task in original_tasks["concepts"]:
         put_json(workspace/f"okf-v4/state-b/final/verification/{task['key']}.json",{
             "id":task["id"],"status":"ok",
             "missing_item_ids":[],"warnings":[],
         })
+    first=select_repairs(workspace,1)
+    assert not first["concepts"]
+    apply_repairs(workspace,1,first)
+    assert not repair_verification_tasks(workspace,1,first)["concepts"]
+    second=select_repairs(workspace,2)
+    assert not second["concepts"]
+    apply_repairs(workspace,2,second)
+    assert not repair_verification_tasks(workspace,2,second)["concepts"]
+    certification=certify_repairs(workspace)
+    final_tasks=prepare_final_inventory(workspace)
+    for task in final_tasks["concepts"]:
         put_json(workspace/f"okf-v4/state-b/final/summaries/{task['key']}.json",{
             "id":task["id"],
             "summary":"Das final geprüfte Konzept beschreibt die Zuordnung von Aufgaben.",
             "tags":["Koordination"],
         })
-    complete(workspace,tasks=final_tasks)
+    complete(workspace,tasks=final_tasks,certification=certification)
     checked_b(workspace,root="okf-v4/phase-b",stage="B")
     return final_tasks
 
@@ -264,7 +278,12 @@ def test_flows_separate_quality_and_publishing():
     assert list(bsteps)==[
         "inventory_tasks","summarize","quality_review","apply_quality",
         "merge_candidates","merge_review","apply_merges",
-        "final_inventory_tasks","summarize_final","verify_final","complete_b",
+        "initial_verification_tasks","verify_final",
+        "repair_candidates_1","repair_review_1","apply_repair_1",
+        "repair_verification_tasks_1","verify_repair_1",
+        "repair_candidates_2","repair_review_2","apply_repair_2",
+        "repair_verification_tasks_2","verify_repair_2",
+        "certify_repairs","final_inventory_tasks","summarize_final","complete_b",
     ]
     assert list(csteps)==["link_candidates","relate","publish_indexes"]
     assert b["result"]=="steps.complete_b.output"
@@ -505,7 +524,7 @@ def test_later_b_stages_refuse_protected_input_overlap(tmp_path,stage,destinatio
     else:
         tasks=prepare_final_inventory(tmp_path)
         with pytest.raises(ValueError,match="overlaps protected input"):
-            complete(tmp_path,tasks=tasks,destination=destination)
+            complete(tmp_path,tasks=tasks,certification=certify_repairs(tmp_path),destination=destination)
     checked_phase_a(tmp_path)
     checked_b(tmp_path,root="okf-v4/b-reviewed",stage="B-draft")
     checked_b(tmp_path,root="okf-v4/b-merged",stage="B-merged")

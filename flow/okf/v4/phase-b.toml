@@ -93,8 +93,170 @@ timeout_seconds = 600
 [steps.json_inputs.groups]
 path = "okf-v4/state-b/merge-candidates.json"
 
-# A second inventory pass describes the ACTUAL revised/merged files, never
-# the initial A draft. The source hash enters each summary checkpoint key.
+# Initial semantic verification identifies only concepts requiring repair.
+# Its output is content-hash keyed to the complete source Knowledge Items.
+[[steps]]
+id = "initial_verification_tasks"
+output = "okf-v4/state-b/initial-verification-tasks.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/prepare_initial_verification.py"
+timeout_seconds = 300
+
+[[steps]]
+id = "verify_final"
+foreach = "steps.initial_verification_tasks.output.concepts"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/verify_final.md"
+output_schema = "flow/okf/v4/schemas/final-verification.schema.json"
+output = "okf-v4/state-b/final/verification/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
+[steps.vars]
+concept = "${item}"
+
+# Round one repairs only failed concepts. Every LLM edit is a proposal.
+[[steps]]
+id = "repair_candidates_1"
+output = "okf-v4/state-b/repair-1/tasks.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/repair_b.py"
+args = ["--mode", "select", "--round", "1"]
+timeout_seconds = 300
+
+[[steps]]
+id = "repair_review_1"
+foreach = "steps.repair_candidates_1.output.concepts"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/repair_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output_schema = "flow/okf/v4/schemas/concept-repair.schema.json"
+output = "okf-v4/state-b/repair-1/proposals/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
+[steps.vars]
+concept = "${item}"
+
+[[steps]]
+id = "apply_repair_1"
+output = "okf-v4/state-b/repair-1/apply-result.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/repair_b.py"
+args = ["--mode", "apply", "--round", "1"]
+timeout_seconds = 600
+[steps.json_inputs.tasks]
+path = "okf-v4/state-b/repair-1/tasks.json"
+
+[[steps]]
+id = "repair_verification_tasks_1"
+output = "okf-v4/state-b/repair-1/verification-tasks.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/repair_b.py"
+args = ["--mode", "verify-tasks", "--round", "1"]
+timeout_seconds = 300
+[steps.json_inputs.tasks]
+path = "okf-v4/state-b/repair-1/tasks.json"
+
+[[steps]]
+id = "verify_repair_1"
+foreach = "steps.repair_verification_tasks_1.output.concepts"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/verify_final.md"
+output_schema = "flow/okf/v4/schemas/final-verification.schema.json"
+output = "okf-v4/state-b/repair-1/verification/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
+[steps.vars]
+concept = "${item}"
+
+# A second and LAST attempt on still-unresolved concepts.
+[[steps]]
+id = "repair_candidates_2"
+output = "okf-v4/state-b/repair-2/tasks.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/repair_b.py"
+args = ["--mode", "select", "--round", "2"]
+timeout_seconds = 300
+
+[[steps]]
+id = "repair_review_2"
+foreach = "steps.repair_candidates_2.output.concepts"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/repair_concept.md"
+add_file_context = ["flow/okf/okf-format.md"]
+output_schema = "flow/okf/v4/schemas/concept-repair.schema.json"
+output = "okf-v4/state-b/repair-2/proposals/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
+[steps.vars]
+concept = "${item}"
+
+[[steps]]
+id = "apply_repair_2"
+output = "okf-v4/state-b/repair-2/apply-result.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/repair_b.py"
+args = ["--mode", "apply", "--round", "2"]
+timeout_seconds = 600
+[steps.json_inputs.tasks]
+path = "okf-v4/state-b/repair-2/tasks.json"
+
+[[steps]]
+id = "repair_verification_tasks_2"
+output = "okf-v4/state-b/repair-2/verification-tasks.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/repair_b.py"
+args = ["--mode", "verify-tasks", "--round", "2"]
+timeout_seconds = 300
+[steps.json_inputs.tasks]
+path = "okf-v4/state-b/repair-2/tasks.json"
+
+[[steps]]
+id = "verify_repair_2"
+foreach = "steps.repair_verification_tasks_2.output.concepts"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/verify_final.md"
+output_schema = "flow/okf/v4/schemas/final-verification.schema.json"
+output = "okf-v4/state-b/repair-2/verification/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
+[steps.vars]
+concept = "${item}"
+
+# Reconcile initial and both repair verifications. A valid old verdict only
+# survives if the final concept/source fingerprint remains identical.
+[[steps]]
+id = "certify_repairs"
+output = "okf-v4/state-b/final/repair-certification.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/repair_b.py"
+args = ["--mode", "certify"]
+timeout_seconds = 300
+
+# Final inventory is generated from the ACTUAL fully verified, repaired
+# corpus, never the pre-repair B-merged snapshot.
 [[steps]]
 id = "final_inventory_tasks"
 output = "okf-v4/state-b/final-inventory-tasks.json"
@@ -118,26 +280,7 @@ allowed_tools = ["os__read_file"]
 [steps.vars]
 concept = "${item}"
 
-# Reopen each final file and verify every claimed Knowledge Item.
-# Missing or distorted content blocks B completion, rather than silently
-# publishing a defective concept.
-[[steps]]
-id = "verify_final"
-foreach = "steps.final_inventory_tasks.output.concepts"
-iteration_id = "${item.key}"
-prompt_file = "flow/okf/v4/prompts/verify_final.md"
-output_schema = "flow/okf/v4/schemas/final-verification.schema.json"
-output = "okf-v4/state-b/final/verification/${iteration.id}.json"
-overwrite_output = false
-workspace_access = "read"
-response_format = "json"
-[steps.tool_policy]
-allowed_tools = ["os__read_file"]
-[steps.vars]
-concept = "${item}"
-
-# Only this step certifies B as finished. It checks exact provenance,
-# read-only A integrity, and the refreshed full final inventory.
+# Complete B only after the fail-closed repair certification and summaries.
 [[steps]]
 id = "complete_b"
 output = "okf-v4/state-b/complete-result.json"
@@ -147,3 +290,5 @@ path = "flow/okf/v4/complete_b.py"
 timeout_seconds = 600
 [steps.json_inputs.tasks]
 path = "okf-v4/state-b/final-inventory-tasks.json"
+[steps.json_inputs.certification]
+path = "okf-v4/state-b/final/repair-certification.json"

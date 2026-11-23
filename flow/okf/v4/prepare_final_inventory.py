@@ -10,8 +10,8 @@ from refine_b import inventory_tasks
 
 
 def prepare(workspace: Path) -> dict:
-    _, catalog, _ = checked_b(workspace, root="okf-v4/b-merged", stage="B-merged")
-    return inventory_tasks(catalog, "okf-v4/b-merged")
+    _, catalog, _ = checked_b(workspace, root="okf-v4/b-repair-2", stage="B-repair-2")
+    return inventory_tasks(catalog, "okf-v4/b-repair-2")
 
 
 def main() -> None:
