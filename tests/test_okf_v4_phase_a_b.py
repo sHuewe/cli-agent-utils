@@ -253,6 +253,41 @@ def test_source_link_matches_md_root_but_not_unrelated_markdown():
         )
 
 
+def test_nested_source_root_resolves_only_real_workspace_sources(tmp_path):
+    fixture(tmp_path)
+    generated=tmp_path/"okf-batched-generated-v3"
+    nested=tmp_path/"nested/generated"
+    nested.parent.mkdir(parents=True,exist_ok=True)
+    generated.rename(nested)
+    old=nested/"doctrines/example/organization/s001-c010.md"
+    old.write_text(
+        old.read_text(encoding="utf-8")
+        + "\n[Actual source](../../../../../doctrines/example.md)\n",
+        encoding="utf-8",
+    )
+    from migrate_v3 import migrate
+    kwargs={
+        "source_root":"nested/generated",
+        "state_root":"okf-batched/state-v3/docs",
+        "destination":"okf-v4/phase-a",
+    }
+    migrate(tmp_path,**kwargs,apply=True)
+    _,catalog,base=checked_phase_a(tmp_path)
+    content=(base/catalog["concepts"][0]["path"]).read_text(encoding="utf-8")
+    assert "Actual source" in content
+    assert "../../../../../doctrines/example.md" not in content
+
+    # A path resolving to nested/doctrines rather than the actual workspace
+    # source must not be silently accepted, even when the basename matches.
+    old.write_text(
+        old.read_text(encoding="utf-8")
+        + "\n[Wrong source](../../../../doctrines/example.md)\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError,match="Unresolved concept Markdown link"):
+        migrate(tmp_path,**kwargs,apply=False)
+
+
 def test_migration_defers_legacy_index_navigation_to_phase_c(tmp_path):
     fixture(tmp_path)
     legacy = tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
