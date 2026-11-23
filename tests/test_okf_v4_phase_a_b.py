@@ -359,6 +359,80 @@ def test_source_hyperlink_with_nested_v3_root_uses_actual_file(tmp_path):
         )
 
 
+def test_workspace_rooted_md_source_link_in_legacy_concept(tmp_path):
+    fixture(tmp_path)
+    from migrate_v3 import migrate
+    original=tmp_path/"doctrines/example.md"
+    md=tmp_path/"md"
+    md.mkdir()
+    source=md/"Enemy_SOP_RUS_example.md"
+    source.write_text("# External reference\n",encoding="utf-8")
+    original.rename(md/"example.md")
+    state=tmp_path/"okf-batched/state-v3/docs/example"
+    sections=json.loads((state/"sections.json").read_text(encoding="utf-8"))
+    sections["source_path"]="md/example.md"
+    put_json(state/"sections.json",sections)
+    scan=json.loads((state/"scan-s001.json").read_text(encoding="utf-8"))
+    scan["source_path"]="md/example.md"
+    for item in scan["knowledge_items"]:
+        for evidence in item["evidence_ranges"]:
+            evidence["doctrine"]="md/example.md"
+    put_json(state/"scan-s001.json",scan)
+    group=json.loads((state/"group.json").read_text(encoding="utf-8"))
+    for concept in group["concepts"]:
+        for item in concept["coverage_items"]:
+            for evidence in item["evidence_ranges"]:
+                evidence["doctrine"]="md/example.md"
+        for evidence in concept["evidence_ranges"]:
+            evidence["source_path"]="md/example.md"
+    put_json(state/"group.json",group)
+    old=tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
+    old.write_text(
+        old.read_text(encoding="utf-8")
+        + "\n[Quelle](md/Enemy_SOP_RUS_example.md)\n",
+        encoding="utf-8",
+    )
+    kwargs=dict(
+        source_root="okf-batched-generated-v3",
+        state_root="okf-batched/state-v3/docs",
+        destination="okf-v4/phase-a",
+        document_root="md",
+    )
+    migrate(tmp_path,**kwargs,apply=True)
+    _,catalog,base=checked_phase_a(tmp_path)
+    concept=catalog["concepts"][0]
+    imported=(base/concept["path"]).read_text(encoding="utf-8")
+    assert "\nQuelle\n" in imported
+    assert "md/Enemy_SOP_RUS_example.md" not in imported
+    assert concept["source_reference_paths"]==["md/Enemy_SOP_RUS_example.md"]
+    assert not (base/"sources/Enemy_SOP_RUS_example.md").exists()
+    # Unknown files under the same workspace-relative prefix must fail.
+    old.write_text(
+        old.read_text(encoding="utf-8") +
+        "\n[Not there](md/not-existing.md)\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError,match="Unresolved concept Markdown link"):
+        migrate(tmp_path,**kwargs)
+
+
+def test_workspace_rooted_source_lookup_never_accepts_traversal():
+    from migrate_v3 import _markdown_links
+    old="doctrines/example/organization/old.md"
+    targets=frozenset({"../md/example.md"})
+    assert _markdown_links(
+        "[Quelle](md/example.md)",old,old,{},
+        source_targets=targets,workspace_source_root="okf-batched-generated-v3",
+        document_root="md",
+    )=="Quelle"
+    with pytest.raises(ValueError,match="Unresolved concept Markdown link"):
+        _markdown_links(
+            "[Wrong](md/../example.md)",old,old,{},
+            source_targets=targets,workspace_source_root="okf-batched-generated-v3",
+            document_root="md",
+        )
+
+
 def test_migration_defers_legacy_index_navigation_to_phase_c(tmp_path):
     fixture(tmp_path)
     legacy = tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
