@@ -29,7 +29,8 @@
           "line",
           "source_quote",
           "statement",
-          "normative"
+          "normative",
+          "facets"
         ],
         "properties": {
           "line": {
@@ -48,6 +49,17 @@
           },
           "normative": {
             "type": "boolean"
+          },
+          "facets": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 240
+            }
           }
         }
       }
