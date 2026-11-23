@@ -221,9 +221,9 @@ def publish(
             appendix=["","<!-- okf-generated-links:start -->",
                       "## Verwandte Konzepte",""]
             for ident in selected:
-                target=members[ident]
-                path=_relative(src["path"],target["path"])
-                appendix.append(f"- [{_escape_label(target['title'])}]({path})")
+                linked_concept=members[ident]
+                path=_relative(src["path"],linked_concept["path"])
+                appendix.append(f"- [{_escape_label(linked_concept['title'])}]({path})")
                 link_count+=1
             appendix.append("<!-- okf-generated-links:end -->")
             body=body.rstrip(b"\r\n")+("\n"+"\n".join(appendix)+"\n").encode("utf-8")
