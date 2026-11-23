@@ -4,19 +4,37 @@
   "additionalProperties": false,
   "required": [
     "key",
-    "covered_ids"
+    "covered_facets"
   ],
   "properties": {
     "key": {
       "type": "string",
       "minLength": 15
     },
-    "covered_ids": {
+    "covered_facets": {
       "type": "array",
-      "uniqueItems": true,
       "items": {
-        "type": "string",
-        "minLength": 4
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_id",
+          "facet_indices"
+        ],
+        "properties": {
+          "claim_id": {
+            "type": "string",
+            "minLength": 4
+          },
+          "facet_indices": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
       }
     }
   }
