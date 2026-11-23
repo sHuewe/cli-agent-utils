@@ -59,9 +59,15 @@ optional `concept-<id>-repair.json` and existing concept Markdown.
 It reconciles every grouped item against the authoritative scan payload.
 For older V3 scan files, missing or blank routing fields `document_id`,
 `folder_id` and `chunk_id` are inferred from the V3 state-directory slug
-and the matching `sections.json` section ID **in memory only**. Explicit
-nonempty conflicts and section/source mismatches still fail closed, with a
-field-specific error. The V3 scan checkpoint is never rewritten.
+and the matching `sections.json` section ID **in memory only**.
+Historical nonempty `document_id` and `folder_id` aliases are also
+accepted when both the legacy and canonical slugs have the **same exact
+16-character hexadecimal document hash** and one descriptive slug prefix
+is a bounded, whole-token extension of the other. These aliases are recorded
+in the Phase-A catalog as `legacy_scan_route_aliases`.
+Different hashes, unrelated prefixes, conflicting `chunk_id`, and
+section/source mismatches still fail closed with a field-specific error.
+The V3 scan checkpoint is never rewritten.
 Unassigned scan items, incomplete repair statuses and V3 warnings are retained
 in the catalog for a required pre-inventory source repair in B. Legacy
 `concept-<id>-repair.json` reports are LLM-produced **diagnostics**, not
