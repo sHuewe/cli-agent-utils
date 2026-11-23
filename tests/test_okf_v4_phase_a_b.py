@@ -453,3 +453,63 @@ def test_c_refuses_publication_overlapping_phase_a_or_b(tmp_path, destination):
     checked_b(tmp_path, root="okf-v4/phase-b", stage="B")
     assert not (tmp_path/"okf-v4/phase-a/published").exists()
     assert not (tmp_path/"okf-v4/phase-b/published").exists()
+
+
+@pytest.mark.parametrize("destination", [
+    "okf-v4/phase-a/reviewed", "okf-v4/phase-a",
+    "okf-v4", "okf-v4/state-b/reviewed",
+])
+def test_quality_refuses_destination_overlapping_protected_inputs(tmp_path, destination):
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    tasks=prepare(tmp_path,"okf-v4/phase-a")
+    for item in tasks["concepts"]:
+        put_json(tmp_path/f"okf-v4/state-b/summaries/{item['key']}.json",{
+            "id":item["id"], "summary":"Dieses Konzept beschreibt die Aufgaben und ihre Koordination.",
+            "tags":["Koordination"],
+        })
+        put_json(tmp_path/f"okf-v4/state-b/reviews/{item['key']}.json",{
+            "id":item["id"], "action":"keep",
+            "reason":"Die ursprünglichen Aussagen sind vollständig.",
+            "parts":[],
+        })
+    original=(tmp_path/"okf-v4/phase-a/phase-a.json").read_bytes()
+    with pytest.raises(ValueError,match="overlaps protected input"):
+        apply_quality(tmp_path,phase_a="okf-v4/phase-a",
+                      state="okf-v4/state-b",tasks=tasks,destination=destination)
+    checked_phase_a(tmp_path)
+    assert (tmp_path/"okf-v4/phase-a/phase-a.json").read_bytes()==original
+    assert not (tmp_path/"okf-v4/phase-a/reviewed").exists()
+
+
+@pytest.mark.parametrize("stage,destination", [
+    ("merge", "okf-v4/phase-a/merged"),
+    ("merge", "okf-v4/b-reviewed/merged"),
+    ("merge", "okf-v4/state-b/merged"),
+    ("merge", "okf-v4"),
+    ("complete", "okf-v4/phase-a/completed"),
+    ("complete", "okf-v4/b-merged/completed"),
+    ("complete", "okf-v4/state-b/completed"),
+    ("complete", "okf-v4"),
+])
+def test_later_b_stages_refuse_protected_input_overlap(tmp_path,stage,destination):
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    finished_b(tmp_path)
+    original_a=(tmp_path/"okf-v4/phase-a/phase-a.json").read_bytes()
+    original_b=(tmp_path/"okf-v4/b-merged/merged.json").read_bytes()
+    if stage=="merge":
+        groups=prepare_merges(tmp_path)
+        with pytest.raises(ValueError,match="overlaps protected input"):
+            merge(tmp_path,groups=groups,destination=destination)
+    else:
+        tasks=prepare_final_inventory(tmp_path)
+        with pytest.raises(ValueError,match="overlaps protected input"):
+            complete(tmp_path,tasks=tasks,destination=destination)
+    checked_phase_a(tmp_path)
+    checked_b(tmp_path,root="okf-v4/b-reviewed",stage="B-draft")
+    checked_b(tmp_path,root="okf-v4/b-merged",stage="B-merged")
+    assert (tmp_path/"okf-v4/phase-a/phase-a.json").read_bytes()==original_a
+    assert (tmp_path/"okf-v4/b-merged/merged.json").read_bytes()==original_b
+    assert not (tmp_path/"okf-v4/phase-a/merged").exists()
+    assert not (tmp_path/"okf-v4/phase-a/completed").exists()
