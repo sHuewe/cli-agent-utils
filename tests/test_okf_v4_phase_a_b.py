@@ -157,11 +157,11 @@ def test_legacy_scan_document_slug_alias_is_bounded_and_hash_checked(legacy, val
 
 @pytest.mark.parametrize("field", ["document_id", "folder_id"])
 def test_migration_accepts_hash_identical_legacy_scan_document_id(tmp_path,field):
-    slug = "example-a-detailed-source-2d4ab5ebcc37cb28"
+    slug = "example-a-detailed-source-comes-2d4ab5ebcc37cb28"
     fixture(tmp_path, slug)
     original = tmp_path/f"okf-batched/state-v3/docs/{slug}/scan-s001.json"
     scan=json.loads(original.read_text(encoding="utf-8"))
-    scan[field]="example-a-detailed-2d4ab5ebcc37cb28"
+    scan[field]="example-a-detailed-source-2d4ab5ebcc37cb28"
     put_json(original,scan)
     before=original.read_bytes()
     migrate_applied(tmp_path)
