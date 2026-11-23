@@ -36,7 +36,8 @@ def _key(identity: str, payload: dict) -> str:
 
 
 def prepare(workspace: Path, phase_a: str = PHASE_A,
-            require_coverage: bool = False) -> dict:
+            require_coverage: bool = False,
+            skip_coverage: bool = False) -> dict:
     _, catalog, _ = checked_phase_a(workspace, phase_a)
     by_document = {doc["id"]: doc for doc in catalog["documents"]}
     entries = []
@@ -82,7 +83,11 @@ def prepare(workspace: Path, phase_a: str = PHASE_A,
     # Independent source audit can identify claims that the V3 scanner
     # omitted entirely. These are separately source-quoted and line-anchored;
     # their identities are distinct from all immutable V3 scan identities.
-    audited = coverage_additions(
+    if skip_coverage and require_coverage:
+        raise ValueError("Cannot require and skip full-source coverage together.")
+    # Main B deliberately ignores any partial/stale coverage checkpoints left
+    # by earlier runs. Full-source audit is not a prerequisite for V3 item repair.
+    audited = [] if skip_coverage else coverage_additions(
         workspace, required=require_coverage, phase_a=phase_a,
     )
     for ki in audited:
@@ -112,12 +117,14 @@ def prepare(workspace: Path, phase_a: str = PHASE_A,
 
 def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
           state: str = STATE, destination: str = DESTINATION,
-          require_coverage: bool = False) -> dict:
-    if tasks != prepare(workspace, phase_a, require_coverage):
+          require_coverage: bool = False, skip_coverage: bool = False) -> dict:
+    if tasks != prepare(
+        workspace, phase_a, require_coverage, skip_coverage,
+    ):
         raise ValueError("Source repair tasks are missing, stale or modified.")
     _, original, base = checked_phase_a(workspace, phase_a)
     docs = original["documents"]
-    audited = coverage_additions(
+    audited = [] if skip_coverage else coverage_additions(
         workspace, required=require_coverage, phase_a=phase_a, state=state,
     )
     original_concepts = original["concepts"]
@@ -222,16 +229,23 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--mode", choices=("prepare", "apply"), required=True)
     p.add_argument("--require-coverage", action="store_true")
+    p.add_argument("--skip-coverage", action="store_true")
     args = p.parse_args()
     envelope = json.load(sys.stdin)
     workspace = Path(".").resolve()
     if args.mode == "prepare":
-        result = prepare(workspace, require_coverage=args.require_coverage)
+        result = prepare(
+            workspace, require_coverage=args.require_coverage,
+            skip_coverage=args.skip_coverage,
+        )
     else:
         given = envelope.get("inputs", {}).get("tasks")
         if not isinstance(given, dict):
             raise ValueError("Missing source repair tasks JSON input.")
-        result = apply(workspace, given, require_coverage=args.require_coverage)
+        result = apply(
+            workspace, given, require_coverage=args.require_coverage,
+            skip_coverage=args.skip_coverage,
+        )
     print(json.dumps(result, ensure_ascii=True))
 
 
