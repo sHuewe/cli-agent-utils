@@ -1,0 +1,173 @@
+# OKF V4 – Migration, Phase B and Phase C
+
+## Scope: Phase A vs. global topics
+
+**Phase A consists exclusively of the original doctrine-specific concepts**
+under `doctrines/<slug>/...`, plus structured provenance metadata and
+snapshots of their source doctrines. It contains **no** `index.md`,
+no generated thematic pages, no summaries and no V3 checkpoints.
+
+Cross-doctrine topics are *derived views*, not duplicate source concepts.
+Phase B creates and improves the concept corpus, then certifies a refreshed
+LLM-written inventory. Phase C builds cross-doctrine links and all navigation
+deterministically from this final inventory. Themes are navigation pages,
+not new doctrine knowledge assertions.
+
+The migration contract is intentionally independent of the B and C workflows,
+so this corpus can be reused without preserving old generator checkpoints.
+
+## A – strict contract, V3 import
+
+Run from the workspace root. Python 3.11+ standard library only:
+
+```powershell
+py .\flow\okf\v4\migrate_v3.py --workspace .
+```
+
+This is a **dry-run** by default. Apply the migration after checking the
+validation report:
+
+```powershell
+py .\flow\okf\v4\migrate_v3.py --workspace . --apply
+```
+
+Defaults: V3 generated tree `okf-batched-generated-v3/`, V3 state
+`okf-batched/state-v3/docs/`, V4 destination `okf-v4/phase-a/`.
+All paths can be overridden with `--source-root`, `--state-root` and
+`--destination`.
+
+The importer fails closed if any existing document group is incomplete.
+It reads V3 `sections.json`, `group.json`, `coverage.json`,
+`concept-<id>-repair.json` and the planned Markdown concept for each
+group member. It verifies complete Knowledge Item membership against
+repair reports and deterministic coverage status.
+
+**Exact Phase-A permitted file set:**
+
+```text
+okf-v4/phase-a/
+  phase-a.json
+  catalog.json
+  sources/<slug>.md                     # or .markdown, as supplied
+  doctrines/<slug>/<named-concept>.md
+  doctrines/<slug>/<folder>/<named-concept>.md
+```
+
+Only the *original source Markdown*, the planned concept Markdown files
+(with descriptive slugs and corrected inter-concept links), and these two
+structured metadata files are copied or created. The catalog preserves
+stable, document-scoped IDs, source snapshot hashes, complete original
+Knowledge Item objects and their evidence ranges.
+
+**Prohibited in Phase A:** any `index.md`, `themen/`, legacy manifests,
+Build/Verify/Repair JSON checkpoints, schema/prompt files, backups and
+temporary files. Existing V3 `index.md` files are intentionally ignored,
+never copied. `phase_a_contract.py` rejects **any** uncontracted file,
+including an accidentally added index.
+
+The importer stages output and replaces an existing V4 Phase-A destination
+only after all documents have passed validation. Original V3 data and
+checkpoints remain untouched. Previously imported phases can be regenerated
+from V3; B only accepts a complete, unmodified Phase-A snapshot.
+
+## B – Inventory, quality, split/merge, final verification
+
+Phase B requires `PyYAML>=6.0,<7` in the interpreter running the Flow Python-script steps (`python -m pip install 'PyYAML>=6.0,<7'`). This dependency is declared in the workspace `pyproject.toml` and installed for repository CI tests.
+
+Phase B consumes the **immutable**, checked Phase-A artifact. It may modify
+and restructure concept content only in separately staged B trees. No LLM
+writes source Markdown directly and **B creates zero `index.md` pages**.
+
+```powershell
+cli-agent-flow validate flow/okf/v4/phase-b.toml --workspace .
+cli-agent-flow run flow/okf/v4/phase-b.toml --workspace .
+```
+
+The B Flow runs in this order:
+
+1. `inventory_tasks` validates the exact Phase-A file contract.
+2. `summarize` reads every actual source concept and creates its initial
+   German LLM summary and 1–5 thematic tags.
+3. `quality_review` reads the same concept plus its complete, trusted source
+   Knowledge Items. It chooses **keep**, **rewrite**, or **split** (2–8 pieces)
+   and proposes complete Markdown texts as JSON, without file write rights.
+4. `apply_quality` is a deterministic Python step. It enforces stable IDs,
+   title/path consistency, **exact one-to-one Knowledge Item preservation**
+   and source evidence retention before writing `okf-v4/b-reviewed/`.
+5. `merge_candidates` creates bounded, same-doctrine concept neighborhoods
+   using the inventory tags. `merge_review` reads at most four concepts per
+   group and either skips or proposes a merge. `apply_merges` validates and
+   writes the outcome to `okf-v4/b-merged/`, preserving the primary concept
+   ID and path. Removed IDs/paths are retained as redirects/aliases.
+6. `final_inventory_tasks` is computed from the actual revised/merged corpus,
+   not the initial list. `summarize_final` reads and summarizes *every*
+   resulting concept again, including new split children.
+7. `verify_final` reads every final concept and checks its actual text
+   against all assigned source Knowledge Items. Missing claims or unsupported
+   additions block completion.
+8. `complete_b` validates **every** final review/summary, exact input
+   provenance and complete source-item conservation, then publishes the
+   contract `okf-v4/phase-b/`: `phase-b.json`, `catalog.json`,
+   `inventory.json`, original source snapshots, and final concept Markdown.
+   It produces **no navigation files**.
+
+All deterministic transformations are generic Python script steps provided
+by cli-agent PR #324, with JSON stdin/stdout and independent checkpoints.
+LLM outputs are strictly structured suggestions. Changed concept content
+and semantic merge candidates use content-sensitive checkpoint keys.
+A failure preserves the immutable A snapshot and the last completed stage.
+
+Important: a split or merge is never accepted solely because an LLM asserts
+that it is complete; Python checks all source-item identities and unchanged
+provenance, and the final LLM checks substantive claim coverage. Source
+identities and evidence are never invented or reassigned.
+
+## C – Semantic links, deterministic indexes, publication
+
+Run C **only after B has completed successfully**:
+
+```powershell
+cli-agent-flow validate flow/okf/v4/phase-c.toml --workspace .
+cli-agent-flow run flow/okf/v4/phase-c.toml --workspace .
+```
+
+1. `link_candidates` validates certified B and produces bounded candidates
+   (maximum eight per concept) from shared semantic tags.
+2. `relate` selects semantic links **by existing concept IDs only**;
+   no model can create or change Markdown in this step.
+3. `publish_indexes` validates links/IDs, resolves removed-concept path
+   aliases, updates internal Markdown links and generates all navigation
+   pages deterministically from the complete final B inventory. It checks
+   complete folder membership, valid targets, and root-to-concept reachability
+   before atomically publishing `okf-v4/published/`.
+
+The published tree contains all final concept Markdown and:
+
+```text
+index.md
+doctrines/index.md
+doctrines/<slug>/index.md
+doctrines/<slug>/<folder>/index.md
+themen/index.md
+themen/<semantic-tag>.md
+inventory.json
+```
+
+Overarching thematic pages are *derived navigation*, **not additional
+primary concepts**. Both flows are separately resumable. Source snapshots
+remain in the certified B corpus, not the published navigation tree.
+
+## Limitations and further development
+
+- The migration requires a complete, verified V3 corpus; it will fail closed
+  instead of importing incomplete documents or manufacturing evidence.
+- Phase B supports local rewrite/split and same-doctrine merge. It does not
+  perform cross-doctrine concept merges, which risk changing provenance;
+  C can instead link concepts across doctrines.
+- The first implementation of final semantic verification is fail-closed:
+  disputed content stops B and must be corrected/reviewed before publication.
+  Fully automated remediation loops can be added later.
+- Future incremental-update flows should use stable concept identities,
+  source snapshots, exact Knowledge Item records and the retirement mapping
+  to limit reprocessing to affected concepts.
+

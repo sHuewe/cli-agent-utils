@@ -3,7 +3,7 @@ name = "cli-agent-utils-workspace"
 version = "0.0.0"
 description = "Non-installable development workspace for independent MCP projects"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["PyYAML>=6.0,<7"]
 
 [tool.uv]
 package = false

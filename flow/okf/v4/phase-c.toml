@@ -1,0 +1,37 @@
+version = 1
+exclude_paths = ["flow"]
+result = "steps.publish_indexes.output"
+
+# C never changes the source B corpus. It consumes only a certified B.
+[[steps]]
+id = "link_candidates"
+output = "okf-v4/state-c/link-candidates.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/prepare_links.py"
+timeout_seconds = 300
+
+# The LLM suggests related EXISTING IDs; it cannot edit Markdown or indexes.
+[[steps]]
+id = "relate"
+foreach = "steps.link_candidates.output.concepts"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/relate_concept.md"
+output_schema = "flow/okf/v4/schemas/concept-links.schema.json"
+output = "okf-v4/state-c/links/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+concept = "${item}"
+
+# Deterministic file+link resolution, complete indexes, root reachability.
+[[steps]]
+id = "publish_indexes"
+output = "okf-v4/state-c/publish-result.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/publish_indexes.py"
+timeout_seconds = 600
+[steps.json_inputs.tasks]
+path = "okf-v4/state-c/link-candidates.json"
