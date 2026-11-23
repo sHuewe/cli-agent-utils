@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import sys
 
-from migrate_v3 import slugify
+from migrate_v3 import theme_slug
 from phase_b_contract import checked_b
 
 
@@ -17,7 +17,7 @@ def prepare(workspace: Path) -> dict:
     buckets: dict[tuple[str,str],list[dict]]={}
     for c in concepts:
         for tag in c.get("tags",[]):
-            buckets.setdefault((c["document_id"],slugify(tag)),[]).append(c)
+            buckets.setdefault((c["document_id"],theme_slug(tag)),[]).append(c)
     used=set()
     groups=[]
     for (doc,theme),members in sorted(buckets.items(),key=lambda pair:pair[0]):
