@@ -17,7 +17,7 @@ from typing import Any
 
 import yaml
 
-from migrate_v3 import safe_path, slugify
+from migrate_v3 import safe_path, slugify, theme_slug
 from phase_a_contract import checked_phase_a
 
 B_SCHEMA = "okf.phase-b.v1"
@@ -163,7 +163,7 @@ def _semantic(value: dict, expected_id: str) -> dict:
     for tag in tags:
         if not isinstance(tag, str) or not 2 <= len(tag.strip()) <= 80:
             raise ValueError(f"Invalid LLM tag for {expected_id}")
-        name = slugify(tag.strip())
+        name = theme_slug(tag.strip())
         if name not in normalized:
             normalized.add(name)
             cleaned.append(tag.strip())
