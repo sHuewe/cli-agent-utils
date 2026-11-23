@@ -2,7 +2,44 @@ version = 1
 exclude_paths = ["flow"]
 result = "steps.complete_b.output"
 
-# A is immutable. Python verifies its exact file contract before any LLM work.
+# Recover original V3 scan assertions missing from the grouped concept corpus
+# before summaries, quality refinement or merging. A remains immutable.
+[[steps]]
+id = "source_repair_tasks"
+output = "okf-v4/state-b/source-repair/tasks.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/source_repair.py"
+args = ["--mode", "prepare"]
+timeout_seconds = 300
+
+[[steps]]
+id = "source_repair_review"
+foreach = "steps.source_repair_tasks.output.concepts"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/source_repair.md"
+output_schema = "flow/okf/v4/schemas/source-repair.schema.json"
+output = "okf-v4/state-b/source-repair/proposals/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "read"
+response_format = "json"
+[steps.tool_policy]
+allowed_tools = ["os__read_file"]
+[steps.vars]
+concept = "${item}"
+
+[[steps]]
+id = "apply_source_repairs"
+output = "okf-v4/state-b/source-repair/apply-result.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/source_repair.py"
+args = ["--mode", "apply"]
+timeout_seconds = 600
+[steps.json_inputs.tasks]
+path = "okf-v4/state-b/source-repair/tasks.json"
+
+# Inventory is permitted only after the full source scan ledger is covered.
 [[steps]]
 id = "inventory_tasks"
 output = "okf-v4/state-b/inventory-tasks.json"
