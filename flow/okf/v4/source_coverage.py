@@ -153,12 +153,12 @@ def _reviewed_claims(workspace: Path, phase_a: str, state: str) -> tuple[dict, l
     by_id = {}
     for claim in claims:
         ident = claim["id"]
-        if ident in by_id and by_id[ident] != {
-                k: v for k, v in claim.items() if k != "chunk_key"}:
+        if ident in by_id:
             previous = {k: v for k, v in by_id[ident].items() if k != "chunk_key"}
             current = {k: v for k, v in claim.items() if k != "chunk_key"}
             if previous != current:
                 raise ValueError(f"Conflicting duplicate extracted source claim: {ident}")
+            continue
         by_id[ident] = claim
     return tasks, [by_id[k] for k in sorted(by_id)]
 
