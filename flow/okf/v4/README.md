@@ -96,6 +96,13 @@ stable, document-scoped IDs, source snapshot hashes, **all** original
 scan Knowledge Items, pending assignments, V3 diagnostics and source evidence.
 These records are structured metadata in catalog.json, not copied checkpoints.
 
+Legacy concept Markdown may contain relative navigation references such as
+`../index.md`. Phase A preserves those references without copying any V3
+index files. Phase C generates its own index pages and validates all
+deferred navigation links against the generated output; an index link to
+a page that C does not generate is still an error. Unresolved links to
+ordinary concept Markdown continue to fail during migration.
+
 **Prohibited in Phase A:** any `index.md`, `themen/`, legacy manifests,
 Build/Verify/Repair JSON checkpoints, schema/prompt files, backups and
 temporary files. Existing V3 `index.md` files are intentionally ignored,
