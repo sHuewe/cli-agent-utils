@@ -96,6 +96,15 @@ stable, document-scoped IDs, source snapshot hashes, **all** original
 scan Knowledge Items, pending assignments, V3 diagnostics and source evidence.
 These records are structured metadata in catalog.json, not copied checkpoints.
 
+Legacy concept Markdown may also link back to an original source document,
+for example `../../../../md/Some_Source.md` from within the old generated V3
+tree. When the relative path resolves to a source document present in the
+V3 migration catalog, the importer retains its visible link label as text
+without creating a dangling hyperlink. The exact original Markdown is kept
+as a source snapshot in Phase A and its original path remains in catalog
+provenance. Source snapshots are deliberately not published in C.
+Other unknown `.md` targets still fail closed.
+
 Legacy concept Markdown may contain relative navigation references such as
 `../index.md`. Phase A preserves those references without copying any V3
 index files. Phase C generates its own index pages and validates all

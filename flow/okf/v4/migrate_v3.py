@@ -296,20 +296,42 @@ def authoritative_scanned_items(
 
 
 def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
-                    *, allow_deferred_index_links: bool = False) -> str:
-    """Rewrite concept links; defer legacy index links only in Phase A.
+                    *, allow_deferred_index_links: bool = False,
+                    source_targets: frozenset[str] = frozenset()) -> str:
+    """Rewrite concept links and safely retire known V3 source-document links.
 
-    Phase A excludes old index.md files and Phase C generates new ones.
-    With allow_deferred_index_links, retain a reference to an index that
-    does not yet exist; Phase C calls this helper without that flag and
-    validates such references against generated navigation pages.
-    Unexpected internal Markdown links remain errors.
+    Phase A excludes old indexes (regenerated in C), and retains their links
+    until C validates them. Source documents are retained as immutable
+    source snapshots in Phase A, but are intentionally not published in C.
+    A link back to an *exactly identified original source* therefore becomes
+    its visible label, while provenance remains in the Phase-A catalog.
+    Unknown Markdown targets still fail closed.
     """
     from urllib.parse import unquote, quote, urlsplit
     pattern = re.compile(r"(?P<before>\]\(\s*|\[[^\]\n]+\]:[ \t]*)(?P<url><[^>\n]+>|[^\s()]+)", re.M)
+    source_inline = re.compile(
+        r"!?(?:\[(?P<label>(?:\\.|[^\\\]\n])*)\])\(\s*"
+        r"(?P<url><[^>\n]+>|[^\s()]+)\s*\)"
+    )
     codes = re.compile(r"(?<!\x60)(?P<t>\x60+)(?!\x60).*?(?<!\x60)(?P=t)(?!\x60)", re.S)
     fences = re.compile(r"^[ ]{0,3}(\x60{3,}|~{3,})(.*)$")
+    def resolved_source(raw: str) -> bool:
+        target = raw[1:-1] if raw.startswith("<") and raw.endswith(">") else raw
+        parsed = urlsplit(target)
+        if (parsed.scheme or parsed.netloc or not parsed.path
+                or parsed.path.startswith("/")):
+            return False
+        resolved = posixpath.normpath(posixpath.join(
+            posixpath.dirname(old), unquote(parsed.path),
+        ))
+        return resolved in source_targets
+
     def rewrite(segment: str) -> str:
+        def source_to_text(match: re.Match) -> str:
+            if not resolved_source(match["url"]):
+                return match.group()
+            return match["label"]
+
         def transform(match: re.Match) -> str:
             value = match["url"]
             enclosed = value.startswith("<") and value.endswith(">")
@@ -338,16 +360,22 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
             if (allow_deferred_index_links
                     and posixpath.basename(original).casefold() == "index.md"):
                 return match.group()
+            if original in source_targets:
+                # Reference-style source definitions have no inline label;
+                # remove the destination rather than emitting a dangling link.
+                return match["before"] + "#"
             if decoded.lower().endswith(".md"):
                 raise ValueError(f"Unresolved concept Markdown link in {old}: {target!r}")
             return match.group()
         result = []
         prev = 0
         for m in codes.finditer(segment):
-            result.append(pattern.sub(transform, segment[prev:m.start()]))
+            part = source_inline.sub(source_to_text, segment[prev:m.start()])
+            result.append(pattern.sub(transform, part))
             result.append(m.group())
             prev = m.end()
-        result.append(pattern.sub(transform, segment[prev:]))
+        part = source_inline.sub(source_to_text, segment[prev:])
+        result.append(pattern.sub(transform, part))
         return "".join(result)
     lines = body.splitlines(keepends=True)
     chunk, result = [], []
@@ -536,10 +564,18 @@ def prepare(workspace: Path, *, source_root: str, state_root: str,
             },
         })
     by_path = {x["path"]:x for x in concepts}
+    # Links in old generated Markdown are resolved relative to source_root,
+    # not necessarily a direct child of the workspace. Derive the relative
+    # destination for each cataloged original using the configured V3 root.
+    # Only those exact paths qualify: unrelated Markdown must still fail.
+    source_targets = frozenset(
+        posixpath.relpath(doc["original_path"], start=source_root)
+        for doc in documents
+    )
     for old, target, cid, data in pending:
         fixed = _markdown_links(
             data.decode("utf-8"), old, target, original_paths,
-            allow_deferred_index_links=True,
+            allow_deferred_index_links=True, source_targets=source_targets,
         ).encode("utf-8")
         outputs[target] = fixed
         by_path[target]["sha256"] = checksum(fixed)
