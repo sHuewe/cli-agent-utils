@@ -151,14 +151,22 @@ The B Flow runs in this order:
 0. **Independent full-source coverage**: `source_coverage_tasks` splits
    every immutable source snapshot into deterministic, line-numbered windows
    (at most 18 fragments / about 2.6k source characters per LLM request).
-   `source_coverage_review` checks each window directly against the V3
-   Knowledge Items whose evidence overlaps the window. This detects claims
-   omitted by the original V3 scan, not just items lost while grouping.
-   Each proposal must quote literal original text with an exact line number.
-   `certify_source_coverage` rejects missing, stale, contradictory,
-   ungrounded or overflowing reviews before any source repairs. All window
-   outputs are separately checkpointed, so large doctrines require many
-   small model calls rather than a single model call with a timeout risk.
+   `source_coverage_review` extracts cited factual/normative claims from
+   each source window *without* the historical V3 Knowledge Items.
+   `source_coverage_comparison_tasks` then builds separate, bounded
+   claim/Knowledge-Item batches; `source_coverage_compare` checks claims
+   against **all** Knowledge Items overlapping that window, without
+   truncation. Compound claims are split into independently matchable
+   facets, each of which may be covered by different Knowledge Items in
+   different batches. Python unions covered facet indices across all
+   batches; only a fully covered claim is suppressed. Every original
+   Knowledge Item in scope must occur in a comparison batch. Extracted claims require a literal source quote
+   and exact evidence line. `certify_source_coverage` rejects missing,
+   stale, unsupported, inconsistent or overflowing reviews or incomplete
+   batches before any source repairs. Every task has a content-derived
+   checkpoint key; changing the coverage protocol invalidates old V1/V2
+   extraction and comparison checkpoints. Large doctrines require many small calls,
+   not a single model prompt with an oversized context.
    Windows subprocess JSON is emitted with ASCII escapes (without changing
    UTF-8 file contents), preventing cp1252 `UnicodeEncodeError`.
    Findings become additional immutable source-bound Knowledge Items
