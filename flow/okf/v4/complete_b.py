@@ -59,7 +59,11 @@ def complete(workspace: Path, *, tasks: dict, certification: dict | None = None,
     })
     snapshot(
         workspace, destination, files, "phase-b.json",
-        protected_inputs=("okf-v4/phase-a", source, state),
+        protected_inputs=(
+            "okf-v4/phase-a", "okf-v4/b-reviewed",
+            "okf-v4/b-merged", "okf-v4/b-repair-1",
+            source, state,
+        ),
     )
     checked_b(workspace,root=destination,stage="B")
     return {"status":"completed","phase":"B","root":destination,
