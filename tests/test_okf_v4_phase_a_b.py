@@ -106,6 +106,15 @@ def migrate_applied(root: Path) -> None:
     assert result["status"]=="completed"
 
 
+def prepare_repaired(root: Path) -> dict:
+    """Materialize the mandatory B-source stage before any B inventory tests."""
+    tasks=source_repair_tasks(root)
+    if tasks["count"]:
+        raise AssertionError("Complete fixture unexpectedly requires source repair.")
+    apply_source_repair(root,tasks)
+    return prepare(root,"okf-v4/b-source-repaired")
+
+
 def test_migration_copies_only_contract_files_not_indexes_or_old_checkpoints(tmp_path):
     fixture(tmp_path)
     dry=migrate(tmp_path,source_root="okf-batched-generated-v3",
@@ -219,7 +228,7 @@ def test_same_legacy_concept_id_from_other_doctrine_is_allowed(tmp_path):
 
 
 def finished_b(workspace: Path, *, review_mode: str = "keep") -> dict:
-    tasks=prepare(workspace,"okf-v4/phase-a")
+    tasks=prepare_repaired(workspace)
     for item in tasks["concepts"]:
         put_json(workspace/f"okf-v4/state-b/summaries/{item['key']}.json",{
             "id":item["id"],
@@ -231,7 +240,7 @@ def finished_b(workspace: Path, *, review_mode: str = "keep") -> dict:
             "reason":"Die Aussagen sind klar voneinander abgegrenzt.",
             "parts":[],
         })
-    result=apply_quality(workspace,phase_a="okf-v4/phase-a",
+    result=apply_quality(workspace,phase_a="okf-v4/b-source-repaired",
                          state="okf-v4/state-b",tasks=tasks,
                          destination="okf-v4/b-reviewed")
     assert result["reviewed_concepts"]==len(tasks["concepts"])
@@ -316,13 +325,13 @@ def test_b_is_content_quality_only_and_c_builds_complete_navigation(tmp_path):
 def test_missing_llm_summary_aborts_b_before_any_index_creation(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    tasks=prepare(tmp_path,"okf-v4/phase-a")
+    tasks=prepare_repaired(tmp_path)
     item=tasks["concepts"][0]
     put_json(tmp_path/f"okf-v4/state-b/reviews/{item['key']}.json",{
         "id":item["id"],"action":"keep","reason":"Valid concept.","parts":[],
     })
     with pytest.raises(ValueError,match="Required file"):
-        apply_quality(tmp_path,phase_a="okf-v4/phase-a",state="okf-v4/state-b",
+        apply_quality(tmp_path,phase_a="okf-v4/b-source-repaired",state="okf-v4/state-b",
                       tasks=tasks,destination="okf-v4/b-reviewed")
     assert not (tmp_path/"okf-v4/phase-b").exists()
     assert not (tmp_path/"okf-v4/published").exists()
@@ -369,12 +378,12 @@ def test_migration_rejects_repair_path_mismatch(tmp_path):
 def test_checkpoint_key_changes_when_source_concept_changes(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    old_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    old_key=prepare_repaired(tmp_path)["concepts"][0]["key"]
     # A new import version with changed content must use a new LLM checkpoint.
     original=tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
     original.write_text(original.read_text()+"\nAnother supported detail.\n")
     migrate_applied(tmp_path)
-    new_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    new_key=prepare_repaired(tmp_path)["concepts"][0]["key"]
     assert old_key != new_key
 
 
@@ -491,7 +500,7 @@ def test_migration_refuses_modified_group_claim_from_original_scan(tmp_path):
 def test_inventory_key_changes_when_knowledge_item_payload_changes(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    original_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    original_key=prepare_repaired(tmp_path)["concepts"][0]["key"]
     concept_path="okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
     md_before=(tmp_path/concept_path).read_bytes()
     group_file=tmp_path/"okf-batched/state-v3/docs/example/group.json"
@@ -500,7 +509,7 @@ def test_inventory_key_changes_when_knowledge_item_payload_changes(tmp_path):
     put_json(group_file,group)
     refresh_scan_for_fixture(tmp_path)
     migrate_applied(tmp_path)
-    new_key=prepare(tmp_path,"okf-v4/phase-a")["concepts"][0]["key"]
+    new_key=prepare_repaired(tmp_path)["concepts"][0]["key"]
     assert new_key!=original_key
     assert (tmp_path/concept_path).read_bytes()==md_before
 
@@ -541,7 +550,7 @@ def test_c_refuses_publication_overlapping_phase_a_or_b(tmp_path, destination):
 def test_quality_refuses_destination_overlapping_protected_inputs(tmp_path, destination):
     fixture(tmp_path)
     migrate_applied(tmp_path)
-    tasks=prepare(tmp_path,"okf-v4/phase-a")
+    tasks=prepare_repaired(tmp_path)
     for item in tasks["concepts"]:
         put_json(tmp_path/f"okf-v4/state-b/summaries/{item['key']}.json",{
             "id":item["id"], "summary":"Dieses Konzept beschreibt die Aufgaben und ihre Koordination.",
@@ -554,7 +563,7 @@ def test_quality_refuses_destination_overlapping_protected_inputs(tmp_path, dest
         })
     original=(tmp_path/"okf-v4/phase-a/phase-a.json").read_bytes()
     with pytest.raises(ValueError,match="overlaps protected input"):
-        apply_quality(tmp_path,phase_a="okf-v4/phase-a",
+        apply_quality(tmp_path,phase_a="okf-v4/b-source-repaired",
                       state="okf-v4/state-b",tasks=tasks,destination=destination)
     checked_phase_a(tmp_path)
     assert (tmp_path/"okf-v4/phase-a/phase-a.json").read_bytes()==original
