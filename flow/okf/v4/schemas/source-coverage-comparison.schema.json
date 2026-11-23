@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "key",
+    "covered_ids"
+  ],
+  "properties": {
+    "key": {
+      "type": "string",
+      "minLength": 15
+    },
+    "covered_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 4
+      }
+    }
+  }
+}
