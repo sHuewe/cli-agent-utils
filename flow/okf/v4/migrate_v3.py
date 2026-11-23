@@ -564,11 +564,13 @@ def prepare(workspace: Path, *, source_root: str, state_root: str,
             },
         })
     by_path = {x["path"]:x for x in concepts}
-    # Links in old generated Markdown resolve relative to the V3 output root.
-    # An original workspace source is one level above that output root.
-    # Only cataloged original paths qualify; never suppress arbitrary .md links.
+    # Links in old generated Markdown are resolved relative to source_root,
+    # not necessarily a direct child of the workspace. Derive the relative
+    # destination for each cataloged original using the configured V3 root.
+    # Only those exact paths qualify: unrelated Markdown must still fail.
     source_targets = frozenset(
-        posixpath.normpath("../" + doc["original_path"]) for doc in documents
+        posixpath.relpath(doc["original_path"], start=source_root)
+        for doc in documents
     )
     for old, target, cid, data in pending:
         fixed = _markdown_links(
