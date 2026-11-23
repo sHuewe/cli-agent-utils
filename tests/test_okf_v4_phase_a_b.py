@@ -136,6 +136,40 @@ def test_migration_copies_only_contract_files_not_indexes_or_old_checkpoints(tmp
     assert (tmp_path/"okf-batched-generated-v3/index.md").exists()
 
 
+@pytest.mark.parametrize("legacy,valid", [
+    ("md-ttp-example-the-russian-reconnaissance-fire-complex-2d4ab5ebcc37cb28", True),
+    ("md-ttp-example-the-russian-reconnaissance-fire-complex-2d4ab5ebcc37cb29", False),
+    ("unrelated-2d4ab5ebcc37cb28", False),
+    ("md-ttp-example-the-russian-2d4ab5ebcc37cb28", False),
+    ("md-ttp-example-the-russian-reconnaissance-fire-complex-2d4ab5ebcc37cb28-extra", False),
+])
+def test_legacy_scan_document_slug_alias_is_bounded_and_hash_checked(legacy, valid):
+    from migrate_v3 import _same_legacy_document_slug
+    canonical = (
+        "md-ttp-example-the-russian-reconnaissance-fire-complex-comes-"
+        "2d4ab5ebcc37cb28"
+    )
+    assert _same_legacy_document_slug(legacy,canonical) is valid
+
+
+@pytest.mark.parametrize("field", ["document_id", "folder_id"])
+def test_migration_accepts_hash_identical_legacy_scan_document_id(tmp_path,field):
+    slug = "example-a-detailed-source-comes-2d4ab5ebcc37cb28"
+    fixture(tmp_path, slug)
+    original = tmp_path/f"okf-batched/state-v3/docs/{slug}/scan-s001.json"
+    scan=json.loads(original.read_text(encoding="utf-8"))
+    scan[field]="example-a-detailed-source-2d4ab5ebcc37cb28"
+    put_json(original,scan)
+    before=original.read_bytes()
+    migrate_applied(tmp_path)
+    _,catalog,_=checked_phase_a(tmp_path)
+    assert catalog["documents"][0]["legacy_scan_route_aliases"] == [{
+        "section_id":"s001", "field":field, "legacy":scan[field],
+        "canonical":slug,
+    }]
+    assert original.read_bytes()==before
+
+
 @pytest.mark.parametrize("field,blank", [
     ("document_id", None), ("folder_id", ""), ("chunk_id", "  "),
 ])

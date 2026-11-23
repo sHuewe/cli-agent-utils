@@ -179,10 +179,34 @@ def inspect_legacy_repair(repair: dict, *, cid: str, old: str,
     }
 
 
+def _same_legacy_document_slug(actual: object, expected: str) -> bool:
+    """Allow a historical truncation variant only for one hashed source.
+
+    Some V3 scan LLM outputs used a shorter human-readable source slug than
+    the directory produced by stable_slugs. Accept only a whole-token prefix
+    variant with the SAME 16-hex source digest. Unrelated document IDs,
+    different hashes and arbitrary aliases still fail closed.
+    """
+    if not isinstance(actual, str):
+        return False
+    pattern = r"([a-z0-9]+(?:-[a-z0-9]+)*)-([0-9a-f]{16})"
+    older = re.fullmatch(pattern, actual)
+    canonical = re.fullmatch(pattern, expected)
+    if not older or not canonical or older.group(2) != canonical.group(2):
+        return False
+    first, second = older.group(1), canonical.group(1)
+    short, long = sorted((first, second), key=len)
+    return (
+        len(short) >= 24
+        and 0 < len(long) - len(short) <= 32
+        and long.startswith(short + "-")
+    )
+
+
 def authoritative_scanned_items(
     workspace: Path, state_root: str, slug: str, sections: dict,
     source_path: str, line_count: int,
-) -> dict[str, dict]:
+) -> tuple[dict[str, dict], list[dict]]:
     """Reconcile Phase-A coverage against ALL original V3 scan outputs.
 
     The V3 grouping operation prefixes each scan-local item ID with its
@@ -193,6 +217,7 @@ def authoritative_scanned_items(
     if not isinstance(planned, list) or not planned:
         raise ValueError(f"No authoritative V3 scan sections for {slug}")
     scanned: dict[str, dict] = {}
+    route_aliases: list[dict] = []
     section_ids: set[str] = set()
     for section in planned:
         if not isinstance(section, dict):
@@ -210,8 +235,9 @@ def authoritative_scanned_items(
         scan = read_json(safe_path(workspace, scan_path))
         # Earlier V3 schemas allowed missing/blank routing IDs even though
         # sections.json and the state directory uniquely determine them.
-        # Accept those omissions *in memory*; never rewrite V3 checkpoints
-        # or accept an explicitly conflicting nonempty identity.
+        # Accept omissions *in memory*. Explicitly populated document
+        # identities are accepted only for a hash-identical historical
+        # source slug prefix variant, recorded for provenance.
         required = {
             "status": "ok", "source_path": source_path,
             "section_id": sid, "start_line": start, "end_line": end,
@@ -231,10 +257,17 @@ def authoritative_scanned_items(
             if actual is None or (isinstance(actual, str) and not actual.strip()):
                 continue
             if actual != expected:
-                raise ValueError(
-                    f"V3 scan routing conflict {slug}/{sid}: "
-                    f"{field}={actual!r}, expected {expected!r}"
-                )
+                if (field in ("document_id", "folder_id")
+                        and _same_legacy_document_slug(actual, expected)):
+                    route_aliases.append({
+                        "section_id": sid, "field": field,
+                        "legacy": actual, "canonical": expected,
+                    })
+                else:
+                    raise ValueError(
+                        f"V3 scan routing conflict {slug}/{sid}: "
+                        f"{field}={actual!r}, expected {expected!r}"
+                    )
         items = scan.get("knowledge_items")
         if not isinstance(items, list):
             raise ValueError(f"Scan Knowledge Items missing in {slug}/{sid}")
@@ -259,7 +292,7 @@ def authoritative_scanned_items(
             scanned[qualified] = {**entry, "id": qualified}
     if not scanned:
         raise ValueError(f"No Knowledge Items found in V3 source scans: {slug}")
-    return scanned
+    return scanned, route_aliases
 
 
 def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str]) -> str:
@@ -361,7 +394,7 @@ def prepare(workspace: Path, *, source_root: str, state_root: str,
         source_line_count = len(source_bytes.decode("utf-8").splitlines())
         if source_line_count < 1:
             raise ValueError(f"Empty source document: {source_path}")
-        scanned_items = authoritative_scanned_items(
+        scanned_items, route_aliases = authoritative_scanned_items(
             workspace, state_root, slug, sections, source_path, source_line_count,
         )
         source_item_ids = set(scanned_items)
@@ -480,6 +513,7 @@ def prepare(workspace: Path, *, source_root: str, state_root: str,
             "concept_ids":[x["id"] for x in concepts if x["document_id"]==slug],
             "source_knowledge_items": [scanned_items[i] for i in sorted(scanned_items)],
             "pending_knowledge_item_ids": missing,
+            "legacy_scan_route_aliases": route_aliases,
             "coverage_diagnostics": {
                 "status": cover.get("status"), "missing_item_ids": declared_missing,
                 "warnings": warnings,
