@@ -18,8 +18,8 @@ from phase_a_contract import checked_phase_a
 
 PHASE_A = "okf-v4/phase-a"
 STATE = "okf-v4/state-b"
-MAX_CHARS = 3000
-MAX_LINES = 24
+MAX_CHARS = 2600
+MAX_LINES = 18
 MAX_ITEMS_CHARS = 9000
 
 
@@ -134,12 +134,18 @@ def additions(workspace: Path, *, required: bool = False,
         ).read_text(encoding="utf-8"))
         if (not isinstance(result, dict)
                 or result.get("key") != task["key"]
-                or result.get("status") not in ("ok", "missing")
+                or result.get("status") not in ("ok", "missing", "overflow")
                 or not isinstance(result.get("missing"), list)
                 or len(result["missing"]) > 16
                 or (result["status"] == "ok" and result["missing"])
                 or (result["status"] == "missing" and not result["missing"])):
             raise ValueError(f"Invalid independent source coverage review: {task['key']}")
+        if result["status"] == "overflow":
+            raise ValueError(
+                f"Source coverage chunk contains more than 16 missing "
+                f"assertions: {task['key']}. Reduce MAX_CHARS/MAX_LINES "
+                "and regenerate source coverage tasks."
+            )
         for missing in result["missing"]:
             if not isinstance(missing, dict):
                 raise ValueError("Malformed missing source assertion.")
