@@ -36,11 +36,15 @@ Defaults: V3 generated tree `okf-batched-generated-v3/`, V3 state
 All paths can be overridden with `--source-root`, `--state-root` and
 `--destination`.
 
-The importer fails closed if any existing document group is incomplete.
-It reads V3 `sections.json`, `group.json`, `coverage.json`,
-`concept-<id>-repair.json` and the planned Markdown concept for each
-group member. It verifies complete Knowledge Item membership against
-repair reports and deterministic coverage status.
+The importer accepts incomplete V3 coverage when the original section
+scans and grouped concept files are available. It reads V3
+`sections.json`, `scan-<section>.json`, `group.json`, `coverage.json`,
+optional `concept-<id>-repair.json` and existing concept Markdown.
+It reconciles every grouped item against the authoritative scan payload.
+Unassigned scan items, incomplete repair statuses and V3 warnings are retained
+in the catalog for a required pre-inventory source repair in B. Modified or
+invented source-item identities, unsafe evidence and missing source files
+still fail closed.
 
 **Exact Phase-A permitted file set:**
 
@@ -56,8 +60,9 @@ okf-v4/phase-a/
 Only the *original source Markdown*, the planned concept Markdown files
 (with descriptive slugs and corrected inter-concept links), and these two
 structured metadata files are copied or created. The catalog preserves
-stable, document-scoped IDs, source snapshot hashes, complete original
-Knowledge Item objects and their evidence ranges.
+stable, document-scoped IDs, source snapshot hashes, **all** original
+scan Knowledge Items, pending assignments, V3 diagnostics and source evidence.
+These records are structured metadata in catalog.json, not copied checkpoints.
 
 **Prohibited in Phase A:** any `index.md`, `themen/`, legacy manifests,
 Build/Verify/Repair JSON checkpoints, schema/prompt files, backups and
@@ -85,8 +90,15 @@ cli-agent-flow run flow/okf/v4/phase-b.toml --workspace .
 
 The B Flow runs in this order:
 
-1. `inventory_tasks` validates the exact Phase-A file contract.
-2. `summarize` reads every actual source concept and creates its initial
+1. `source_repair_tasks` validates immutable A and identifies incomplete
+   V3 concept repairs and unassigned original scan Knowledge Items. Bounded,
+   read-only `source_repair_review` LLM tasks propose corrected content or
+   additional source-bound concepts. `apply_source_repairs` deterministically
+   checks identities, provenance and **complete original scan coverage** before
+   publishing `okf-v4/b-source-repaired/`. A remains untouched. When V3 is
+   complete, no source-repair LLM tasks are needed.
+2. `inventory_tasks` validates the fully reconciled B-source corpus.
+   `summarize` reads every actual source concept and creates its initial
    German LLM summary and 1–5 thematic tags.
 3. `quality_review` reads the same concept plus its complete, trusted source
    Knowledge Items. It chooses **keep**, **rewrite**, or **split** (2–8 pieces)
@@ -173,8 +185,12 @@ remain in the certified B corpus, not the published navigation tree.
 
 ## Limitations and further development
 
-- The migration requires a complete, verified V3 corpus; it will fail closed
-  instead of importing incomplete documents or manufacturing evidence.
+- Migration requires authoritative V3 section scans, grouped concept
+  records and source files. Documents without those inputs still fail closed;
+  missing original Knowledge Items are never manufactured.
+- Source recovery handles known scan items and incomplete concept repairs.
+  New Knowledge Items never arise from LLM output. B's later semantic
+  verification remains the final content-quality gate.
 - Phase B supports local rewrite/split and same-doctrine merge. It does not
   perform cross-doctrine concept merges, which risk changing provenance;
   C can instead link concepts across doctrines.
