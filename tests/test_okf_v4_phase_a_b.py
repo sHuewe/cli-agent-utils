@@ -581,7 +581,7 @@ def test_migration_rejects_mismatched_evidence_document(tmp_path):
     sections=json.loads(sections_path.read_text())
     sections["source_path"]="doctrines/second.md"
     put_json(sections_path,sections)
-    with pytest.raises(ValueError,match="different source|V3 scan does not match"):
+    with pytest.raises(ValueError,match="different source|V3 scan section mismatch"):
         migrate_applied(tmp_path)
     assert not (tmp_path/"okf-v4/phase-a").exists()
 
