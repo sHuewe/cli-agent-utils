@@ -287,7 +287,7 @@ def main() -> None:
             result = apply(workspace, values.round, tasks)
         else:
             result = verification_tasks(workspace, values.round, tasks)
-    print(json.dumps(result, ensure_ascii=False))
+    print(json.dumps(result, ensure_ascii=True))
 
 
 if __name__ == "__main__":

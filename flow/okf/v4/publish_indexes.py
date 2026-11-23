@@ -279,7 +279,7 @@ def main(argv: list[str]|None=None)->int:
         raise ValueError("C publisher requires verified json_inputs.tasks.")
     result=publish(args.workspace,phase_b=args.phase_b,state_root=args.state_root,
                    destination=args.destination,tasks=data)
-    print(json.dumps(result,ensure_ascii=False))
+    print(json.dumps(result,ensure_ascii=True))
     return 0
 
 

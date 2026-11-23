@@ -38,6 +38,19 @@ def checked_b(
     original_ids = {c["id"]: c for c in original["concepts"]}
     orig_items = {x["id"]: x for doc in original["documents"]
                   for x in doc["source_knowledge_items"]}
+    # Independently discovered source assertions are approved only if every
+    # bounded original-text review is present, source-quoted and current.
+    # Legacy tests without an audit continue to use original V3 scans alone.
+    audit_hash = catalog.get("source_coverage_sha256")
+    if audit_hash is not None:
+        from source_coverage import additions, digest as coverage_digest
+        audited = additions(workspace, required=True, phase_a=phase_a)
+        if not isinstance(audit_hash, str) or audit_hash != coverage_digest(audited):
+            raise ValueError("Missing, stale or modified independent source audit.")
+        for item in audited:
+            if item["id"] in orig_items:
+                raise ValueError("Source audit collides with an original V3 item.")
+            orig_items[item["id"]] = item
     current_items = {}
     ids = set()
     paths = set()

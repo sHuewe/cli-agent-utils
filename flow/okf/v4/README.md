@@ -148,13 +148,29 @@ cli-agent-flow run flow/okf/v4/phase-b.toml --workspace .
 
 The B Flow runs in this order:
 
+0. **Independent full-source coverage**: `source_coverage_tasks` splits
+   every immutable source snapshot into deterministic, line-numbered windows
+   (at most 18 fragments / about 2.6k source characters per LLM request).
+   `source_coverage_review` checks each window directly against the V3
+   Knowledge Items whose evidence overlaps the window. This detects claims
+   omitted by the original V3 scan, not just items lost while grouping.
+   Each proposal must quote literal original text with an exact line number.
+   `certify_source_coverage` rejects missing, stale, contradictory,
+   ungrounded or overflowing reviews before any source repairs. All window
+   outputs are separately checkpointed, so large doctrines require many
+   small model calls rather than a single model call with a timeout risk.
+   Windows subprocess JSON is emitted with ASCII escapes (without changing
+   UTF-8 file contents), preventing cp1252 `UnicodeEncodeError`.
+   Findings become additional immutable source-bound Knowledge Items
+   in B; Phase A and the original V3 scan remain unchanged.
 1. `source_repair_tasks` validates immutable A and identifies incomplete
    V3 concept repairs and unassigned original scan Knowledge Items. Bounded,
    read-only `source_repair_review` LLM tasks propose corrected content or
    additional source-bound concepts. `apply_source_repairs` deterministically
-   checks identities, provenance and **complete original scan coverage** before
-   publishing `okf-v4/b-source-repaired/`. A remains untouched. When V3 is
-   complete, no source-repair LLM tasks are needed.
+   checks identities, provenance, **complete original scan coverage and
+   independently audited missing claims** before publishing
+   `okf-v4/b-source-repaired/`. A remains untouched. When both the V3 scan
+   and independent source audit find no gaps, no source-repair LLM tasks run.
 2. `inventory_tasks` validates the fully reconciled B-source corpus.
    `summarize` reads every actual source concept and creates its initial
    German LLM summary and 1–5 thematic tags.

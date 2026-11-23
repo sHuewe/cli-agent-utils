@@ -15,6 +15,7 @@ V4 = Path(__file__).resolve().parents[1] / "flow/okf/v4"
 sys.path.insert(0, str(V4))
 from migrate_v3 import migrate
 from source_repair import prepare as source_repair_tasks, apply as apply_source_repair
+from source_coverage import prepare as coverage_tasks, additions as coverage_additions
 from phase_a_contract import checked_phase_a
 from prepare_inventory import prepare
 from publish_indexes import publish
@@ -113,6 +114,133 @@ def prepare_repaired(root: Path) -> dict:
         raise AssertionError("Complete fixture unexpectedly requires source repair.")
     apply_source_repair(root,tasks)
     return prepare(root,"okf-v4/b-source-repaired")
+
+
+def test_bounded_source_coverage_discovers_original_claim_absent_from_v3(tmp_path):
+    fixture(tmp_path)
+    source=tmp_path/"doctrines/example.md"
+    source.write_text(
+        source.read_text(encoding="utf-8")
+        + "A separate previously omitted source fact.\n",
+        encoding="utf-8",
+    )
+    state=tmp_path/"okf-batched/state-v3/docs/example"
+    sections=json.loads((state/"sections.json").read_text(encoding="utf-8"))
+    sections["sections"][0]["end_line"]=3
+    put_json(state/"sections.json",sections)
+    scan=json.loads((state/"scan-s001.json").read_text(encoding="utf-8"))
+    scan["end_line"]=3
+    put_json(state/"scan-s001.json",scan)
+    migrate_applied(tmp_path)
+    audit=coverage_tasks(tmp_path)
+    assert audit["count"]>=1
+    assert any(
+        "A separate previously omitted source fact." in line["text"]
+        for task in audit["chunks"] for line in task["lines"]
+    )
+    put_json(tmp_path/"okf-v4/state-b/coverage/tasks.json",audit)
+    for task in audit["chunks"]:
+        assert len(str(task["lines"])) < 9000
+        missing=[]
+        for line in task["lines"]:
+            if "A separate previously omitted source fact." in line["text"]:
+                missing.append({
+                    "line":line["line"],
+                    "source_quote":"A separate previously omitted source fact.",
+                    "statement":"There is a separate source fact that was not included in the original scan.",
+                    "normative":False,
+                })
+        put_json(
+            tmp_path/f"okf-v4/state-b/coverage/reviews/{task['key']}.json",
+            {"key":task["key"],"status":"missing" if missing else "ok",
+             "missing":missing},
+        )
+    missing_items=coverage_additions(tmp_path,required=True)
+    assert len(missing_items)==1
+    assert missing_items[0]["id"].startswith("example:audit-")
+    repair_tasks=source_repair_tasks(tmp_path,require_coverage=True)
+    assert repair_tasks["count"]==1
+    task=repair_tasks["concepts"][0]
+    assert task["kind"]=="audit_missing"
+    put_json(
+        tmp_path/f"okf-v4/state-b/source-repair/proposals/{task['key']}.json",
+        {
+            "id":task["id"],"action":"rewrite","title":"Ergänzende Quellaussage",
+            "markdown":(
+                "---\ntitle: Ergänzende Quellaussage\ntype: concept\n---\n"
+                "# Ergänzende Quellaussage\n"
+                "Das Quelldokument enthält eine zusätzliche Aussage, die in der"
+                " ursprünglichen Wissensextraktion übersehen wurde.\n"
+            ),
+            "knowledge_item_ids":task["knowledge_item_ids"],
+        },
+    )
+    apply_source_repair(tmp_path,repair_tasks,require_coverage=True)
+    _,cat,_=checked_b(tmp_path,root="okf-v4/b-source-repaired",stage="B-source")
+    assert len(cat["concepts"])==2
+    assert sum(len(c["knowledge_items"]) for c in cat["concepts"])==2
+    # A remains an immutable record of the original (incomplete) V3 scan.
+    _,a_catalog,_=checked_phase_a(tmp_path)
+    assert len(a_catalog["documents"][0]["source_knowledge_items"])==1
+    assert cat["source_coverage_sha256"]
+    # Reviewed B output must retain the extra item even after concept quality
+    # processing, not merely at the temporary source-repair checkpoint.
+    inventory=prepare(tmp_path,"okf-v4/b-source-repaired")
+    for entry in inventory["concepts"]:
+        put_json(
+            tmp_path/f"okf-v4/state-b/summaries/{entry['key']}.json",
+            {
+                "id":entry["id"],"summary":"Fachliche Zusammenfassung einer geprüften Quellaussage.",
+                "tags":["Quellenauswertung"],
+            },
+        )
+        put_json(
+            tmp_path/f"okf-v4/state-b/reviews/{entry['key']}.json",
+            {"id":entry["id"],"action":"keep",
+             "reason":"Erfüllt die geltenden Anforderungen.","parts":[]},
+        )
+    apply_quality(
+        tmp_path,phase_a="okf-v4/b-source-repaired",
+        state="okf-v4/state-b",tasks=inventory,destination="okf-v4/b-reviewed",
+    )
+    _,reviewed,_=checked_b(tmp_path,root="okf-v4/b-reviewed",stage="B-draft")
+    assert reviewed["source_coverage_sha256"] == cat["source_coverage_sha256"]
+    assert sum(len(c["knowledge_items"]) for c in reviewed["concepts"])==2
+
+
+def test_source_coverage_rejects_unsupported_quote_and_incomplete_reviews(tmp_path):
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    audit=coverage_tasks(tmp_path)
+    put_json(tmp_path/"okf-v4/state-b/coverage/tasks.json",audit)
+    with pytest.raises(ValueError,match="Required file"):
+        coverage_additions(tmp_path,required=True)
+    for task in audit["chunks"]:
+        put_json(
+            tmp_path/f"okf-v4/state-b/coverage/reviews/{task['key']}.json",
+            {
+                "key":task["key"],"status":"missing",
+                "missing":[{
+                    "line":task["first_line"],
+                    "source_quote":"Invented quotation not present in source",
+                    "statement":"Invented claim that is unsupported by original evidence.",
+                    "normative":False,
+                }],
+            },
+        )
+    with pytest.raises(ValueError,match="Source quote absent"):
+        coverage_additions(tmp_path,required=True)
+
+
+def test_source_coverage_windows_console_transport_is_ascii_safe(tmp_path):
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    task=coverage_tasks(tmp_path)
+    import json
+    # The task JSON may contain umlauts, but subprocess output is ASCII
+    # transport even with Windows cp1252 stdout.
+    encoded=json.dumps(task,ensure_ascii=True).encode("cp1252")
+    assert json.loads(encoded.decode("cp1252"))==task
 
 
 def test_migration_copies_only_contract_files_not_indexes_or_old_checkpoints(tmp_path):
@@ -809,6 +937,7 @@ def test_flows_separate_quality_and_publishing():
     bsteps={step["id"]:step for step in b["steps"]}
     csteps={step["id"]:step for step in c["steps"]}
     assert list(bsteps)==[
+        "source_coverage_tasks","source_coverage_review","certify_source_coverage",
         "source_repair_tasks","source_repair_review","apply_source_repairs",
         "inventory_tasks","summarize","quality_review","apply_quality",
         "merge_candidates","merge_review","apply_merges",

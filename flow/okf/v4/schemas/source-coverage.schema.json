@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "key",
+    "status",
+    "missing"
+  ],
+  "properties": {
+    "key": {
+      "type": "string",
+      "minLength": 10
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "missing",
+        "overflow"
+      ]
+    },
+    "missing": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "line",
+          "source_quote",
+          "statement",
+          "normative"
+        ],
+        "properties": {
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "source_quote": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 600
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 12,
+            "maxLength": 700
+          },
+          "normative": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

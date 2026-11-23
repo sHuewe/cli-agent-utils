@@ -13,7 +13,7 @@ def main() -> None:
         state="okf-v4/state-b", tasks=envelope["inputs"]["tasks"],
         destination="okf-v4/b-reviewed",
     )
-    print(json.dumps(result, ensure_ascii=False))
+    print(json.dumps(result, ensure_ascii=True))
 
 
 if __name__ == "__main__":

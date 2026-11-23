@@ -2,15 +2,50 @@ version = 1
 exclude_paths = ["flow"]
 result = "steps.complete_b.output"
 
-# Recover original V3 scan assertions missing from the grouped concept corpus
-# before summaries, quality refinement or merging. A remains immutable.
+# Independently compare the ORIGINAL source text against its V3 scan items.
+# Each bounded chunk is reviewed in a separate checkpointable LLM call.
+# No full-source prompt is ever sent to one model call.
+[[steps]]
+id = "source_coverage_tasks"
+output = "okf-v4/state-b/coverage/tasks.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/source_coverage.py"
+args = ["--mode", "prepare"]
+timeout_seconds = 300
+
+[[steps]]
+id = "source_coverage_review"
+foreach = "steps.source_coverage_tasks.output.chunks"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/source_coverage.md"
+output_schema = "flow/okf/v4/schemas/source-coverage.schema.json"
+output = "okf-v4/state-b/coverage/reviews/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+chunk = "${item}"
+
+[[steps]]
+id = "certify_source_coverage"
+output = "okf-v4/state-b/coverage/certification.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/source_coverage.py"
+args = ["--mode", "check"]
+timeout_seconds = 300
+
+# Recover original V3 scan assertions missing from grouped concepts AND
+# source-grounded claims found by the independent full-text audit.
+# Never mutate A, original V3 state or any source snapshot.
 [[steps]]
 id = "source_repair_tasks"
 output = "okf-v4/state-b/source-repair/tasks.json"
 overwrite_output = true
 [steps.python_script]
 path = "flow/okf/v4/source_repair.py"
-args = ["--mode", "prepare"]
+args = ["--mode", "prepare", "--require-coverage"]
 timeout_seconds = 300
 
 [[steps]]
@@ -34,7 +69,7 @@ output = "okf-v4/state-b/source-repair/apply-result.json"
 overwrite_output = true
 [steps.python_script]
 path = "flow/okf/v4/source_repair.py"
-args = ["--mode", "apply"]
+args = ["--mode", "apply", "--require-coverage"]
 timeout_seconds = 600
 [steps.json_inputs.tasks]
 path = "okf-v4/state-b/source-repair/tasks.json"
