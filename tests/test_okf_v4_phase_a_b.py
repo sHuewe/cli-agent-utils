@@ -335,6 +335,7 @@ def test_flows_separate_quality_and_publishing():
     bsteps={step["id"]:step for step in b["steps"]}
     csteps={step["id"]:step for step in c["steps"]}
     assert list(bsteps)==[
+        "source_repair_tasks","source_repair_review","apply_source_repairs",
         "inventory_tasks","summarize","quality_review","apply_quality",
         "merge_candidates","merge_review","apply_merges",
         "initial_verification_tasks","verify_final",
@@ -360,7 +361,7 @@ def test_migration_rejects_repair_path_mismatch(tmp_path):
     repair=json.loads(repair_path.read_text())
     repair["path"]="doctrines/example/organization/another.md"
     put_json(repair_path,repair)
-    with pytest.raises(ValueError,match="Incomplete repair"):
+    with pytest.raises(ValueError,match="Invalid repair"):
         migrate_applied(tmp_path)
     assert not (tmp_path/"okf-v4/phase-a").exists()
 
@@ -472,9 +473,9 @@ def test_migration_refuses_item_omitted_by_group_but_present_in_scan(tmp_path):
             "description":"Another independent source-grounded statement."}
     scan["knowledge_items"].append(second)
     put_json(scan_file,scan)
-    with pytest.raises(ValueError,match="Group/scan Knowledge Item mismatch"):
-        migrate_applied(tmp_path)
-    assert not (tmp_path/"okf-v4/phase-a").exists()
+    migrate_applied(tmp_path)
+    _,catalog,_=checked_phase_a(tmp_path)
+    assert len(catalog["documents"][0]["pending_knowledge_item_ids"])==1
 
 
 def test_migration_refuses_modified_group_claim_from_original_scan(tmp_path):
