@@ -55,7 +55,10 @@ def complete(workspace: Path, *, tasks: dict, state: str = "okf-v4/state-b",
         "knowledge_item_count":sum(len(c["knowledge_items"]) for c in next_concepts),
         "source_phase_a_sha256":next_catalog["origin_phase_a_sha256"],
     })
-    snapshot(workspace,destination,files,"phase-b.json")
+    snapshot(
+        workspace, destination, files, "phase-b.json",
+        protected_inputs=("okf-v4/phase-a", source, state),
+    )
     checked_b(workspace,root=destination,stage="B")
     return {"status":"completed","phase":"B","root":destination,
             "concept_count":len(next_concepts),
