@@ -17,6 +17,7 @@ import sys
 from migrate_v3 import safe_path, slugify
 from phase_a_contract import checked_phase_a
 from phase_b_contract import checked_b
+from source_coverage import additions as coverage_additions, digest as coverage_digest
 from refine_b import B_SCHEMA, encode, markdown, sha, snapshot
 
 PHASE_A = "okf-v4/phase-a"
@@ -34,7 +35,8 @@ def _key(identity: str, payload: dict) -> str:
     return result
 
 
-def prepare(workspace: Path, phase_a: str = PHASE_A) -> dict:
+def prepare(workspace: Path, phase_a: str = PHASE_A,
+            require_coverage: bool = False) -> dict:
     _, catalog, _ = checked_phase_a(workspace, phase_a)
     by_document = {doc["id"]: doc for doc in catalog["documents"]}
     entries = []
@@ -77,6 +79,29 @@ def prepare(workspace: Path, phase_a: str = PHASE_A) -> dict:
                 **item, "source_sha256": doc["sha256"],
             })
             entries.append(item)
+    # Independent source audit can identify claims that the V3 scanner
+    # omitted entirely. These are separately source-quoted and line-anchored;
+    # their identities are distinct from all immutable V3 scan identities.
+    audited = coverage_additions(
+        workspace, required=require_coverage, phase_a=phase_a,
+    )
+    for ki in audited:
+        slug = ki["id"].split(":", 1)[0]
+        if ki["id"] in existing_ids or slug not in by_document:
+            raise ValueError("Source audit item identity/document collision.")
+        existing_ids.add(ki["id"])
+        doc = by_document[slug]
+        item = {
+            "id": ki["id"], "kind": "audit_missing", "title": "",
+            "path": None, "source": phase_a + "/" + doc["source_snapshot"],
+            "knowledge_item_ids": [ki["id"]], "knowledge_items": [ki],
+            "feedback": {"status": "new_source_assertion",
+                         "evidence": ki["evidence_ranges"]},
+        }
+        item["key"] = _key(item["id"], {
+            **item, "source_sha256": doc["sha256"],
+        })
+        entries.append(item)
     if len({x["key"] for x in entries}) != len(entries):
         raise ValueError("Duplicate source repair task key.")
     return {
@@ -86,11 +111,15 @@ def prepare(workspace: Path, phase_a: str = PHASE_A) -> dict:
 
 
 def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
-          state: str = STATE, destination: str = DESTINATION) -> dict:
-    if tasks != prepare(workspace, phase_a):
+          state: str = STATE, destination: str = DESTINATION,
+          require_coverage: bool = False) -> dict:
+    if tasks != prepare(workspace, phase_a, require_coverage):
         raise ValueError("Source repair tasks are missing, stale or modified.")
     _, original, base = checked_phase_a(workspace, phase_a)
     docs = original["documents"]
+    audited = coverage_additions(
+        workspace, required=require_coverage, phase_a=phase_a, state=state,
+    )
     original_concepts = original["concepts"]
     by_id = {c["id"]: c for c in original_concepts}
     by_doc = {d["id"]: d for d in docs}
@@ -159,6 +188,8 @@ def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
         "schema": B_SCHEMA, "stage": "B-source",
         "origin_phase_a_sha256": sha((base / "phase-a.json").read_bytes()),
         "documents": next_docs, "concepts": concepts, "aliases": {},
+        "source_coverage_sha256": coverage_digest(audited)
+            if require_coverage or audited else None,
     }
     files["catalog.json"] = encode(catalog)
     files["source-repaired.json"] = encode({
@@ -172,6 +203,7 @@ def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
         "recovered_item_count": sum(
             x["kind"] == "missing" for x in tasks["concepts"]
         ),
+        "audited_source_item_count": len(audited),
     })
     snapshot(
         workspace, destination, files, "source-repaired.json",
@@ -189,17 +221,18 @@ def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--mode", choices=("prepare", "apply"), required=True)
+    p.add_argument("--require-coverage", action="store_true")
     args = p.parse_args()
     envelope = json.load(sys.stdin)
     workspace = Path(".").resolve()
     if args.mode == "prepare":
-        result = prepare(workspace)
+        result = prepare(workspace, require_coverage=args.require_coverage)
     else:
         given = envelope.get("inputs", {}).get("tasks")
         if not isinstance(given, dict):
             raise ValueError("Missing source repair tasks JSON input.")
-        result = apply(workspace, given)
-    print(json.dumps(result, ensure_ascii=False))
+        result = apply(workspace, given, require_coverage=args.require_coverage)
+    print(json.dumps(result, ensure_ascii=True))
 
 
 if __name__ == "__main__":
