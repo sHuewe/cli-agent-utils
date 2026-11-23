@@ -754,7 +754,7 @@ def main(argv: list[str]|None=None)->int:
     args=p.parse_args(argv)
     print(json.dumps(migrate(args.workspace,source_root=args.source_root,state_root=args.state_root,
                              destination=args.destination,apply=args.apply,
-                             document_root=args.document_root),ensure_ascii=False,indent=2))
+                             document_root=args.document_root),ensure_ascii=True,indent=2))
     return 0
 
 
