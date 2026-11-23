@@ -98,12 +98,17 @@ These records are structured metadata in catalog.json, not copied checkpoints.
 
 Legacy concept Markdown may also link back to an original source document,
 for example `../../../../md/Some_Source.md` from within the old generated V3
-tree. When the relative path resolves to a source document present in the
-V3 migration catalog, the importer retains its visible link label as text
-without creating a dangling hyperlink. The exact original Markdown is kept
-as a source snapshot in Phase A and its original path remains in catalog
-provenance. Source snapshots are deliberately not published in C.
-Other unknown `.md` targets still fail closed.
+tree. When the relative path resolves to a real Markdown file beneath the
+configured `--document-root`, the importer retains its visible link label
+as text without creating a dangling hyperlink. This includes existing
+source documents without a completed V3 group checkpoint; they are **not**
+added to Phase A merely because a concept references them. Source file
+names are compared case-insensitively only when the match is unambiguous.
+Accepted source link paths are stored in each concept's
+`source_reference_paths` metadata. Original documents that are themselves
+migrated are retained as immutable snapshots in Phase A; source snapshots
+are deliberately not published in C. Missing or unrelated `.md` targets
+still fail closed with the resolved V3-relative path in the error message.
 
 Legacy concept Markdown may contain relative navigation references such as
 `../index.md`. Phase A preserves those references without copying any V3
