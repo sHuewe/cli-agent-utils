@@ -58,9 +58,14 @@ scans and grouped concept files are available. It reads V3
 optional `concept-<id>-repair.json` and existing concept Markdown.
 It reconciles every grouped item against the authoritative scan payload.
 Unassigned scan items, incomplete repair statuses and V3 warnings are retained
-in the catalog for a required pre-inventory source repair in B. Modified or
-invented source-item identities, unsafe evidence and missing source files
-still fail closed.
+in the catalog for a required pre-inventory source repair in B. Legacy
+`concept-<id>-repair.json` reports are LLM-produced **diagnostics**, not
+authoritative evidence: mismatched IDs, paths, reported item coverage or
+remaining findings are recorded in each concept's
+`legacy_repair_diagnostics`, setting `source_repair_required` for B.
+The original V3 scans, grouped Knowledge Items and Markdown files are
+still checked strictly; modified or invented source-item identities,
+unsafe evidence and missing source files fail closed.
 
 **Exact Phase-A permitted file set:**
 

@@ -142,6 +142,43 @@ def validate_evidence(
             raise ValueError(f"Evidence range outside the source for {context}")
 
 
+def inspect_legacy_repair(repair: dict, *, cid: str, old: str,
+                          source_root: str, item_ids: list[str]) -> dict:
+    """Treat V3 LLM repair reports as diagnostics, not source authority.
+
+    Only the original section scan and grouped source Knowledge Items are
+    authoritative. A stale or incorrect LLM repair checkpoint must trigger
+    B-source review, never discard an otherwise valid doctrine concept or
+    invent source-item coverage.
+    """
+    issues = []
+    if not repair:
+        return {"status": "missing", "issues": ["report_missing"]}
+    if repair.get("concept_id") != cid:
+        issues.append("concept_id_mismatch")
+    if repair.get("path") not in (old, source_root + "/" + old):
+        issues.append("path_mismatch")
+    if repair.get("status") not in ("ok", "repaired"):
+        issues.append("status_incomplete")
+    documented = repair.get("documented_item_ids")
+    if (not isinstance(documented, list)
+            or any(not isinstance(item, str) for item in documented)
+            or len(documented) != len(set(documented))):
+        issues.append("documented_ids_invalid")
+    elif set(documented) != set(item_ids):
+        issues.append("documented_ids_mismatch")
+    remaining = repair.get("remaining_item_ids", [])
+    if not isinstance(remaining, list) or remaining:
+        issues.append("remaining_item_findings")
+    warnings = repair.get("remaining_warnings", [])
+    if not isinstance(warnings, list) or warnings:
+        issues.append("remaining_warnings")
+    return {
+        "status": repair.get("status") if isinstance(repair.get("status"), str) else "invalid",
+        "issues": issues,
+    }
+
+
 def authoritative_scanned_items(
     workspace: Path, state_root: str, slug: str, sections: dict,
     source_path: str, line_count: int,
@@ -365,17 +402,11 @@ def prepare(workspace: Path, *, source_root: str, state_root: str,
                 )
             repair_file = doc_dir / f"concept-{cid}-repair.json"
             repair = read_json(repair_file) if repair_file.is_file() else {}
-            documented = repair.get("documented_item_ids", [])
-            if repair and (repair.get("concept_id") != cid
-                    or repair.get("path") not in (old, source_root+"/"+old)
-                    or not isinstance(documented, list)
-                    or not set(documented).issubset(item_ids)):
-                raise ValueError(f"Invalid repair identity/coverage: {cid}")
+            repair_diagnostics = inspect_legacy_repair(
+                repair, cid=cid, old=old, source_root=source_root, item_ids=item_ids,
+            )
             repair_required = (
-                not repair or repair.get("status") not in ("ok", "repaired")
-                or set(documented) != set(item_ids)
-                or bool(repair.get("remaining_item_ids"))
-                or bool(repair.get("remaining_warnings"))
+                bool(repair_diagnostics["issues"])
                 or bool(cover.get("warnings"))
                 or bool(set(cover.get("missing_item_ids", [])) & set(item_ids))
             )
@@ -394,6 +425,7 @@ def prepare(workspace: Path, *, source_root: str, state_root: str,
                 "knowledge_items":items,
                 "evidence_ranges":concept.get("evidence_ranges",[]),
                 "source_repair_required": repair_required,
+                "legacy_repair_diagnostics": repair_diagnostics,
                 "sha256":None,
             })
         # Reconcile both identities and full source-derived payloads.
