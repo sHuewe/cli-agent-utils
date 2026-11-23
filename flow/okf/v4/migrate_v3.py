@@ -269,7 +269,11 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str]) -> s
     return "".join(result)
 
 
-def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict, dict[str, bytes]]:
+def prepare(workspace: Path, *, source_root: str, state_root: str,
+            document_root: str = "doctrines") -> tuple[dict, dict[str, bytes]]:
+    # Source documents live independently of generated V3 concepts, which
+    # intentionally retain their doctrines/<slug>/... hierarchy.
+    document_dir = safe_path(workspace, document_root+"/.placeholder", must_exist=False).parent
     generated = safe_path(workspace, source_root+"/.placeholder", must_exist=False).parent
     state = safe_path(workspace, state_root+"/.placeholder", must_exist=False).parent
     if not generated.is_dir() or not state.is_dir():
@@ -294,7 +298,7 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
             raise ValueError(f"Unexplained V3 coverage status: {slug}")
         source_path = sections.get("source_path")
         if (not isinstance(source_path, str)
-                or not source_path.startswith("doctrines/")
+                or not source_path.startswith(document_root + "/")
                 or not source_path.lower().endswith((".md", ".markdown"))):
             raise ValueError(f"Unexpected source document path for {slug}: {source_path!r}")
         source = safe_path(workspace, source_path)
@@ -454,15 +458,18 @@ def prepare(workspace: Path, *, source_root: str, state_root: str) -> tuple[dict
 
 
 def migrate(workspace: Path, *, source_root: str, state_root: str,
-            destination: str, apply: bool = False) -> dict:
+            destination: str, apply: bool = False,
+            document_root: str = "doctrines") -> dict:
     workspace=workspace.resolve()
     target=safe_path(workspace,destination+"/.placeholder",must_exist=False).parent
     if any(target == parent or target in parent.parents or parent in target.parents for parent in (
         safe_path(workspace,source_root+"/.placeholder",must_exist=False).parent,
         safe_path(workspace,state_root+"/.placeholder",must_exist=False).parent,
+        safe_path(workspace,document_root+"/.placeholder",must_exist=False).parent,
     )):
-        raise ValueError("Phase A destination overlaps V3 sources/state.")
-    contract,outputs=prepare(workspace,source_root=source_root,state_root=state_root)
+        raise ValueError("Phase A destination overlaps V3 sources/state/source documents.")
+    contract,outputs=prepare(workspace,source_root=source_root,state_root=state_root,
+                             document_root=document_root)
     if target.exists():
         if target.is_symlink() or not (target/"phase-a.json").is_file():
             raise ValueError("Refusing to replace a non-V4 Phase-A directory.")
@@ -501,13 +508,18 @@ def migrate(workspace: Path, *, source_root: str, state_root: str,
 def main(argv: list[str]|None=None)->int:
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--workspace",type=Path,default=Path("."))
-    p.add_argument("--source-root",default="okf-batched-generated-v3")
+    p.add_argument("--source-root",default="okf-batched-generated-v3",
+                   help="Root of generated V3 concept Markdown (not original source documents).")
     p.add_argument("--state-root",default="okf-batched/state-v3/docs")
+    p.add_argument("--document-root",default="doctrines",
+                   help="Workspace-relative directory containing original source Markdown; "
+                        "must match the prefix in V3 sections.json (e.g. md).")
     p.add_argument("--destination",default="okf-v4/phase-a")
     p.add_argument("--apply",action="store_true")
     args=p.parse_args(argv)
     print(json.dumps(migrate(args.workspace,source_root=args.source_root,state_root=args.state_root,
-                             destination=args.destination,apply=args.apply),ensure_ascii=False,indent=2))
+                             destination=args.destination,apply=args.apply,
+                             document_root=args.document_root),ensure_ascii=False,indent=2))
     return 0
 
 
