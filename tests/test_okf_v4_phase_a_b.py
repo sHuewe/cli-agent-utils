@@ -513,3 +513,52 @@ def test_later_b_stages_refuse_protected_input_overlap(tmp_path,stage,destinatio
     assert (tmp_path/"okf-v4/b-merged/merged.json").read_bytes()==original_b
     assert not (tmp_path/"okf-v4/phase-a/merged").exists()
     assert not (tmp_path/"okf-v4/phase-a/completed").exists()
+
+
+
+@pytest.mark.parametrize("label,expected", [
+    ("Index", "tag--index"),
+    ("index", "tag--index"),
+    ("CON", "tag--con"),
+    ("PRN", "tag--prn"),
+    ("Führung", "fuehrung"),
+    ("Organisation", "organisation"),
+])
+def test_theme_slug_avoids_reserved_filename_and_preserves_normal_tags(label, expected):
+    from migrate_v3 import theme_slug
+    from refine_b import _semantic
+    assert theme_slug(label)==expected
+    assert _semantic({
+        "id":"example:s001-c010",
+        "summary":"Die fachliche Aussage beschreibt die genaue Verteilung der Aufgaben.",
+        "tags":[label],
+    },"example:s001-c010")["tags"]==[label]
+
+
+def test_reserved_index_tag_publishes_distinct_theme_and_overview(tmp_path):
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    finished_b(tmp_path)
+    from publish_indexes import render
+    _,catalog,_=checked_b(tmp_path,root="okf-v4/phase-b",stage="B")
+    concept=catalog["concepts"][0]
+    artifacts,report=render(catalog,[],{concept["id"]:{
+        "summary":"Dieses Konzept erklärt die wesentlichen Aufgaben und Verantwortlichkeiten.",
+        "tags":["Index", "Organisation"],
+    }})
+    assert "themen/tag--index.md" in artifacts
+    assert "themen/organisation.md" in artifacts
+    assert "themen/index.md" in artifacts
+    assert report["theme_count"]==2
+    assert b"tag--index.md" in artifacts["themen/index.md"]
+    assert b"organisation.md" in artifacts["themen/index.md"]
+
+
+def test_non_latin_theme_slug_is_deterministic_and_safe():
+    from migrate_v3 import theme_slug
+    tag="管理"
+    name=theme_slug(tag)
+    assert name.startswith("tag--u-")
+    assert len(name)==len("tag--u-")+16
+    assert name==theme_slug(tag)
+    assert name!=theme_slug("Index")
