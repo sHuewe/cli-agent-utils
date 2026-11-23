@@ -420,15 +420,42 @@ def test_flows_separate_quality_and_publishing():
     assert csteps["publish_indexes"]["overwrite_output"] is True
 
 
-def test_migration_rejects_repair_path_mismatch(tmp_path):
+@pytest.mark.parametrize("corruption,expected", [
+    ({"path":"doctrines/example/organization/another.md"}, "path_mismatch"),
+    ({"concept_id":"s999-t001"}, "concept_id_mismatch"),
+    ({"documented_item_ids":["example:k999"]}, "documented_ids_mismatch"),
+    ({"documented_item_ids":["example:k001","example:k001"]}, "documented_ids_invalid"),
+    ({"remaining_item_ids":["example:k001"]}, "remaining_item_findings"),
+    ({"status":"needs_revision"}, "status_incomplete"),
+])
+def test_migration_preserves_inconsistent_legacy_repair_as_finding(tmp_path, corruption, expected):
     fixture(tmp_path)
     repair_path=tmp_path/"okf-batched/state-v3/docs/example/concept-s001-c010-repair.json"
     repair=json.loads(repair_path.read_text())
-    repair["path"]="doctrines/example/organization/another.md"
+    repair.update(corruption)
     put_json(repair_path,repair)
-    with pytest.raises(ValueError,match="Invalid repair"):
-        migrate_applied(tmp_path)
-    assert not (tmp_path/"okf-v4/phase-a").exists()
+    migrate_applied(tmp_path)
+    marker, catalog, _=checked_phase_a(tmp_path)
+    assert marker["knowledge_item_count"]==1
+    concept=catalog["concepts"][0]
+    assert concept["knowledge_item_ids"]==["example:k001"]
+    assert concept["source_repair_required"] is True
+    assert expected in concept["legacy_repair_diagnostics"]["issues"]
+    tasks=source_repair_tasks(tmp_path)
+    assert tasks["count"]==1
+    assert tasks["concepts"][0]["id"]==concept["id"]
+
+
+def test_migration_trusts_authoritative_group_not_repair_item_claims(tmp_path):
+    fixture(tmp_path)
+    repair_path=tmp_path/"okf-batched/state-v3/docs/example/concept-s001-c010-repair.json"
+    repair=json.loads(repair_path.read_text())
+    repair["documented_item_ids"]=["example:unknown"]
+    put_json(repair_path,repair)
+    migrate_applied(tmp_path)
+    _,catalog,_=checked_phase_a(tmp_path)
+    assert catalog["concepts"][0]["knowledge_item_ids"]==["example:k001"]
+    assert catalog["documents"][0]["source_knowledge_items"][0]["id"]=="example:k001"
 
 
 def test_checkpoint_key_changes_when_source_concept_changes(tmp_path):
