@@ -32,9 +32,36 @@ def encode(value: dict) -> bytes:
     return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
-def snapshot(workspace: Path, target_name: str, files: dict[str, bytes], marker: str) -> None:
-    """Atomically replace a generated, validated tree without altering inputs."""
+def snapshot(
+    workspace: Path,
+    target_name: str,
+    files: dict[str, bytes],
+    marker: str,
+    *,
+    protected_inputs: tuple[str, ...],
+) -> None:
+    """Atomically publish B output without overlapping any authoritative input.
+
+    The destination must be disjoint from *every* immutable source/state
+    directory in either direction. Validate before making any directories or
+    staging files, including when the target does not exist yet.
+    """
+    workspace = workspace.resolve()
     root = safe_path(workspace, target_name + "/.placeholder", must_exist=False).parent
+    if not protected_inputs:
+        raise ValueError("Snapshot requires explicitly protected input roots.")
+    for input_name in protected_inputs:
+        protected = safe_path(
+            workspace, input_name + "/.placeholder", must_exist=False,
+        ).parent
+        if (
+            root == protected
+            or root in protected.parents
+            or protected in root.parents
+        ):
+            raise ValueError(
+                f"Phase-B destination overlaps protected input tree: {input_name}"
+            )
     if root.exists():
         if root.is_symlink() or not (root / marker).is_file():
             raise ValueError("Refusing to overwrite a different output tree.")
@@ -302,6 +329,9 @@ def apply_quality(
         "concept_count": len(next_concepts),
         "knowledge_item_count": len(old_knowledge),
     })
-    snapshot(workspace, destination, files, "draft.json")
+    snapshot(
+        workspace, destination, files, "draft.json",
+        protected_inputs=(phase_a, state),
+    )
     return {"status": "ok", "draft": destination, "concept_count": len(next_concepts),
             "reviewed_concepts": len(entries), "split_children": len(next_concepts) - len(entries)}
