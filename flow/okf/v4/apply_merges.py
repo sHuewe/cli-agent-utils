@@ -102,7 +102,10 @@ def merge(workspace: Path, *, groups: dict, state: str = "okf-v4/state-b",
     final_items={x["id"]:x for c in final for x in c["knowledge_items"]}
     if source_items!=final_items or sum(map(lambda c:len(c["knowledge_items"]),final))!=len(source_items):
         raise ValueError("Merge violated source coverage.")
-    snapshot(workspace,destination,files,"merged.json")
+    snapshot(
+        workspace, destination, files, "merged.json",
+        protected_inputs=("okf-v4/phase-a", source, state),
+    )
     checked_b(workspace,root=destination,stage="B-merged")
     return {"status":"ok","root":destination,"concept_count":len(final),
             "removed_concepts":merged,"reviewed_groups":len(groups["groups"])}
