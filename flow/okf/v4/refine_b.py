@@ -242,12 +242,9 @@ def apply_quality(
     workspace: Path, *, phase_a: str, state: str, tasks: dict,
     destination: str,
 ) -> dict:
-    if phase_a == "okf-v4/phase-a":
-        marker, catalog, base = checked_phase_a(workspace, phase_a)
-    else:
-        from phase_b_contract import checked_b
-        marker, catalog, base = checked_b(
-            workspace, root=phase_a, stage="B-source")
+    from phase_b_contract import checked_b
+    marker, catalog, base = checked_b(
+        workspace, root=phase_a, stage="B-source")
     entries = validate_tasks(tasks, catalog, phase_a)
     files: dict[str, bytes] = {}
     next_concepts: list[dict] = []
@@ -317,9 +314,7 @@ def apply_quality(
     for doc in catalog["documents"]:
         data = (base / doc["source_snapshot"]).read_bytes()
         files[doc["source_snapshot"]] = data
-    origin_hash = (sha((base / "phase-a.json").read_bytes())
-                   if phase_a == "okf-v4/phase-a"
-                   else catalog["origin_phase_a_sha256"])
+    origin_hash = catalog["origin_phase_a_sha256"]
     result = {
         "schema": B_SCHEMA, "stage": "B-draft",
         "origin_phase_a_sha256": origin_hash,
@@ -339,7 +334,7 @@ def apply_quality(
     })
     snapshot(
         workspace, destination, files, "draft.json",
-        protected_inputs=(phase_a, state),
+        protected_inputs=("okf-v4/phase-a", phase_a, state),
     )
     return {"status": "ok", "draft": destination, "concept_count": len(next_concepts),
             "reviewed_concepts": len(entries), "split_children": len(next_concepts) - len(entries)}
