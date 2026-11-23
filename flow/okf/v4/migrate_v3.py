@@ -60,6 +60,34 @@ def slugify(title: str) -> str:
     return text
 
 
+def theme_slug(label: str) -> str:
+    """Produce a deterministic, publication-safe slug for any valid theme.
+
+    Theme labels are not concept filenames: names such as "Index", "CON",
+    and non-Latin script are legitimate LLM labels. Keep the existing
+    human-readable slug for ordinary tags, but use a disjoint namespace
+    (double hyphen, impossible from slugify) for reserved and otherwise
+    unrepresentable names. This also prevents collisions with other ordinary
+    theme slugs and with the mandatory themen/index.md overview.
+    """
+    if not isinstance(label, str) or not label.strip():
+        raise ValueError("Theme label must be a nonempty string.")
+    try:
+        return slugify(label.strip())
+    except ValueError:
+        normalized = unicodedata.normalize("NFKD", label.strip())
+        ascii_name = normalized.encode("ascii", "ignore").decode().lower()
+        stem = re.sub(r"[^a-z0-9]+", "-", ascii_name).strip("-")[:72].rstrip("-")
+        if stem in RESERVED:
+            return "tag--" + stem
+        if not stem:
+            # Same canonical Unicode label => same name; no platform-dependent
+            # filename characters, and never conflicts with a normal slug.
+            canonical = unicodedata.normalize("NFKC", label.strip()).casefold()
+            return "tag--u-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+        raise
+
+
 def title_from_frontmatter(raw: str) -> str | None:
     lines = raw.splitlines()
     if not lines or lines[0].strip() != "---":
