@@ -156,14 +156,16 @@ The B Flow runs in this order:
    `source_coverage_comparison_tasks` then builds separate, bounded
    claim/Knowledge-Item batches; `source_coverage_compare` checks claims
    against **all** Knowledge Items overlapping that window, without
-   truncation. A claim already covered by any verified batch is not
-   considered missing. Every original Knowledge Item in scope must occur
-   in a comparison batch. Extracted claims require a literal source quote
+   truncation. Compound claims are split into independently matchable
+   facets, each of which may be covered by different Knowledge Items in
+   different batches. Python unions covered facet indices across all
+   batches; only a fully covered claim is suppressed. Every original
+   Knowledge Item in scope must occur in a comparison batch. Extracted claims require a literal source quote
    and exact evidence line. `certify_source_coverage` rejects missing,
    stale, unsupported, inconsistent or overflowing reviews or incomplete
    batches before any source repairs. Every task has a content-derived
-   checkpoint key; changing the coverage protocol invalidates old V1
-   extraction checkpoints. Large doctrines require many small calls,
+   checkpoint key; changing the coverage protocol invalidates old V1/V2
+   extraction and comparison checkpoints. Large doctrines require many small calls,
    not a single model prompt with an oversized context.
    Windows subprocess JSON is emitted with ASCII escapes (without changing
    UTF-8 file contents), preventing cp1252 `UnicodeEncodeError`.
