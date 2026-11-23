@@ -27,6 +27,31 @@ response_format = "json"
 [steps.vars]
 chunk = "${item}"
 
+# Claims are extracted independently. Compare every claim with ALL
+# overlapping source items, using bounded and losslessly partitioned batches.
+# No individual model request receives the full overlapping item set.
+[[steps]]
+id = "source_coverage_comparison_tasks"
+output = "okf-v4/state-b/coverage/comparison-tasks.json"
+overwrite_output = true
+[steps.python_script]
+path = "flow/okf/v4/source_coverage.py"
+args = ["--mode", "compare-tasks"]
+timeout_seconds = 300
+
+[[steps]]
+id = "source_coverage_compare"
+foreach = "steps.source_coverage_comparison_tasks.output.comparisons"
+iteration_id = "${item.key}"
+prompt_file = "flow/okf/v4/prompts/source_coverage_compare.md"
+output_schema = "flow/okf/v4/schemas/source-coverage-comparison.schema.json"
+output = "okf-v4/state-b/coverage/comparisons/${iteration.id}.json"
+overwrite_output = false
+workspace_access = "none"
+response_format = "json"
+[steps.vars]
+comparison = "${item}"
+
 [[steps]]
 id = "certify_source_coverage"
 output = "okf-v4/state-b/coverage/certification.json"
