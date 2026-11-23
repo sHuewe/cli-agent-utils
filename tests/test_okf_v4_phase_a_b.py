@@ -1082,6 +1082,26 @@ def test_missing_llm_summary_aborts_b_before_any_index_creation(tmp_path):
     assert not (tmp_path/"okf-v4/published").exists()
 
 
+def test_main_b_ignores_partial_legacy_full_source_audit(tmp_path):
+    """Old aborted audit ledgers must not block the streamlined V3-only B."""
+    fixture(tmp_path)
+    migrate_applied(tmp_path)
+    stale=tmp_path/"okf-v4/state-b/coverage/tasks.json"
+    put_json(stale, {"schema":"old", "chunks":[{"key":"stale"}]})
+    tasks=source_repair_tasks(tmp_path, skip_coverage=True)
+    assert tasks["count"]==0
+    assert tasks["concepts"]==[]
+    with pytest.raises(ValueError):
+        source_repair_tasks(tmp_path, require_coverage=True, skip_coverage=True)
+    from source_repair import apply as apply_source_repair
+    apply_source_repair(tmp_path, tasks, skip_coverage=True)
+    _,catalog,_=checked_b(tmp_path,root="okf-v4/b-source-repaired",stage="B-source")
+    assert catalog["source_coverage_sha256"] is None
+    assert sum(len(c["knowledge_items"]) for c in catalog["concepts"]) == sum(
+        len(d["source_knowledge_items"]) for d in catalog["documents"]
+    )
+
+
 def test_flows_separate_quality_and_publishing():
     import tomllib
     b=tomllib.loads((V4/"phase-b.toml").read_text(encoding="utf-8"))
@@ -1089,9 +1109,6 @@ def test_flows_separate_quality_and_publishing():
     bsteps={step["id"]:step for step in b["steps"]}
     csteps={step["id"]:step for step in c["steps"]}
     assert list(bsteps)==[
-        "source_coverage_tasks","source_coverage_review",
-        "source_coverage_comparison_tasks","source_coverage_compare",
-        "certify_source_coverage",
         "source_repair_tasks","source_repair_review","apply_source_repairs",
         "inventory_tasks","summarize","quality_review","apply_quality",
         "merge_candidates","merge_review","apply_merges",
@@ -1104,6 +1121,14 @@ def test_flows_separate_quality_and_publishing():
     ]
     assert list(csteps)==["link_candidates","relate","publish_indexes"]
     assert b["result"]=="steps.complete_b.output"
+    assert bsteps["source_repair_tasks"]["python_script"]["args"] == [
+        "--mode", "prepare", "--skip-coverage",
+    ]
+    assert bsteps["apply_source_repairs"]["python_script"]["args"] == [
+        "--mode", "apply", "--skip-coverage",
+    ]
+    assert not any(step.startswith("source_coverage") for step in bsteps)
+    assert "certify_source_coverage" not in bsteps
     assert c["result"]=="steps.publish_indexes.output"
     assert bsteps["quality_review"]["foreach"]=="steps.inventory_tasks.output.concepts"
     assert bsteps["quality_review"]["workspace_access"]=="read"
