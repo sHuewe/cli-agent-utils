@@ -433,6 +433,53 @@ def test_workspace_rooted_source_lookup_never_accepts_traversal():
         )
 
 
+def test_workspace_source_fallback_does_not_shadow_imported_concept():
+    from migrate_v3 import _markdown_links
+    old="doctrines/example/old.md"
+    target="doctrines/example/doctrines/other.md"
+    source_target="../doctrines/other.md"
+    references=set()
+    result=_markdown_links(
+        "[Concept](doctrines/other.md)",old,old,
+        {target:"doctrines/example/new-concept.md"},
+        source_targets=frozenset({source_target}),
+        source_references=references,
+        workspace_source_root="okf-batched-generated-v3",
+        document_root="doctrines",
+    )
+    assert result=="[Concept](new-concept.md)"
+    assert references==set()
+
+
+def test_workspace_source_fallback_matches_full_nested_document_root():
+    from migrate_v3 import _markdown_links
+    old="doctrines/example/organization/old.md"
+    references=set()
+    result=_markdown_links(
+        "[Nested](inputs/md/example.md)",old,old,{},
+        source_targets=frozenset({"../inputs/md/example.md"}),
+        source_references=references,
+        workspace_source_root="okf-batched-generated-v3",
+        document_root="inputs/md",
+    )
+    assert result=="Nested"
+    assert references=={"../inputs/md/example.md"}
+    with pytest.raises(ValueError,match="Unresolved concept Markdown link"):
+        _markdown_links(
+            "[Wrong](inputs/md/../example.md)",old,old,{},
+            source_targets=frozenset({"../inputs/example.md"}),
+            workspace_source_root="okf-batched-generated-v3",
+            document_root="inputs/md",
+        )
+    with pytest.raises(ValueError,match="Unresolved concept Markdown link"):
+        _markdown_links(
+            "[Wrong](inputs/example.md)",old,old,{},
+            source_targets=frozenset({"../inputs/example.md"}),
+            workspace_source_root="okf-batched-generated-v3",
+            document_root="inputs/md",
+        )
+
+
 def test_migration_defers_legacy_index_navigation_to_phase_c(tmp_path):
     fixture(tmp_path)
     legacy = tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
