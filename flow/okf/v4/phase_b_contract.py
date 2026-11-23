@@ -15,6 +15,8 @@ def checked_b(
 ) -> tuple[dict, dict, Path]:
     workspace = workspace.resolve()
     marker_name = {"B-draft": "draft.json", "B-merged": "merged.json",
+                   "B-repair-1": "repair-1.json",
+                   "B-repair-2": "repair-2.json",
                    "B": "phase-b.json"}.get(stage)
     if marker_name is None:
         raise ValueError(f"Unknown B stage: {stage}")
