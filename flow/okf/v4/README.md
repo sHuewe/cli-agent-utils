@@ -102,14 +102,28 @@ The B Flow runs in this order:
 6. `final_inventory_tasks` is computed from the actual revised/merged corpus,
    not the initial list. `summarize_final` reads and summarizes *every*
    resulting concept again, including new split children.
-7. `verify_final` reads every final concept and checks its actual text
-   against all assigned source Knowledge Items. Missing claims or unsupported
-   additions block completion.
-8. `complete_b` validates **every** final review/summary, exact input
-   provenance and complete source-item conservation, then publishes the
-   contract `okf-v4/phase-b/`: `phase-b.json`, `catalog.json`,
-   `inventory.json`, original source snapshots, and final concept Markdown.
-   It produces **no navigation files**.
+7. `verify_final` reads every merged concept, checking the actual
+   Markdown against all assigned source Knowledge Items. Valid, unchanged
+   concepts are retained as verified.
+8. **Bounded repair loop (maximum two attempts):** The deterministic
+   `repair_candidates_1` step selects *only* concepts with concrete
+   `needs_revision` findings. `repair_review_1` creates complete,
+   structured replacement Markdown via a read-only LLM; `apply_repair_1`
+   validates original IDs, title and complete Knowledge Item assignments
+   before writing `okf-v4/b-repair-1/`. Only changed concepts are checked
+   again by `verify_repair_1`. If still defective, round two repeats this
+   process into `okf-v4/b-repair-2/`. Both intermediate trees retain exact
+   source evidence and may contain **no indexes**.
+9. `certify_repairs` reconciles initial verification and both repair
+   rounds, reusing a successful verdict only for the exact same concept
+   and Knowledge Item fingerprint. Any unresolved error after two attempts
+   stops B **before** publication. Zero failures incur zero repair LLM calls.
+10. `final_inventory_tasks` then generates the inventory from the actual,
+    fully verified final corpus. `summarize_final` creates the final LLM
+    summaries. `complete_b` rechecks the full certification and publishes
+    `okf-v4/phase-b/`: `phase-b.json`, `catalog.json`,
+    `inventory.json`, original source snapshots and final concept Markdown.
+    **No navigation files are generated in B.**
 
 All deterministic transformations are generic Python script steps provided
 by cli-agent PR #324, with JSON stdin/stdout and independent checkpoints.
@@ -164,9 +178,10 @@ remain in the certified B corpus, not the published navigation tree.
 - Phase B supports local rewrite/split and same-doctrine merge. It does not
   perform cross-doctrine concept merges, which risk changing provenance;
   C can instead link concepts across doctrines.
-- The first implementation of final semantic verification is fail-closed:
-  disputed content stops B and must be corrected/reviewed before publication.
-  Fully automated remediation loops can be added later.
+- Semantic verification is fail-closed after at most two automatic
+  source-grounded repair attempts. Errors not resolved in those attempts
+  still require manual inspection or explicit changes; repeated retries are
+  intentionally not unbounded.
 - Future incremental-update flows should use stable concept identities,
   source snapshots, exact Knowledge Item records and the retirement mapping
   to limit reprocessing to affected concepts.
