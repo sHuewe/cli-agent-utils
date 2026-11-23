@@ -15,7 +15,8 @@
     "status": {
       "enum": [
         "ok",
-        "missing"
+        "missing",
+        "overflow"
       ]
     },
     "missing": {
