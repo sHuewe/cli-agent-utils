@@ -21,12 +21,14 @@ other workspace files. Source line windows deliberately limit runtime.
 Never invent line numbers or quotations. Don't treat headings, citation
 markers, formatting or restatements as missing claims. A claim split across
 chunk boundaries may be conservatively omitted if evidence is incomplete.
-Maximum 16 findings in this single chunk; when more than 16 substantive
-claims are missing, the task must be re-chunked rather than silently
-truncating the findings. Do not use warnings instead of evidence.
+Maximum 16 findings in this single chunk. When more than 16 substantive
+claims are missing, return status="overflow", missing=[] so the deterministic
+pipeline halts with an explicit instruction to generate smaller chunks.
+Never silently truncate findings. Do not use warnings instead of evidence.
 
 Return ONLY JSON:
-{"key":"<exact chunk.key>","status":"ok|missing","missing":[{"line":1,"source_quote":"literal text","statement":"supported missing assertion","normative":false}]}
+{"key":"<exact chunk.key>","status":"ok|missing|overflow","missing":[{"line":1,"source_quote":"literal text","statement":"supported missing assertion","normative":false}]}
 
 Use status "ok" only with an empty list, "missing" only with a nonempty
-list. No tool calls and no Markdown outside the JSON.
+list, and "overflow" only with an empty list. No tool calls and no Markdown
+outside the JSON.
