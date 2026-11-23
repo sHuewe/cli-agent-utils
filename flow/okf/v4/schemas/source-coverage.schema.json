@@ -15,7 +15,7 @@
     "status": {
       "enum": [
         "ok",
-        "missing",
+        "claims",
         "overflow"
       ]
     },
