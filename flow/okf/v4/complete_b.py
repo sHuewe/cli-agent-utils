@@ -8,24 +8,26 @@ import sys
 from phase_b_contract import checked_b
 from migrate_v3 import safe_path
 from refine_b import B_SCHEMA, encode, sha, snapshot, validate_tasks, summary
+from repair_b import certify
 
 
-def complete(workspace: Path, *, tasks: dict, state: str = "okf-v4/state-b",
-             source: str = "okf-v4/b-merged",
+def complete(workspace: Path, *, tasks: dict, certification: dict | None = None,
+             state: str = "okf-v4/state-b",
+             source: str = "okf-v4/b-repair-2",
              destination: str = "okf-v4/phase-b") -> dict:
-    _,catalog,base=checked_b(workspace,root=source,stage="B-merged")
+    _,catalog,base=checked_b(workspace,root=source,stage="B-repair-2")
     verified=validate_tasks(tasks,catalog,source)
-    llm={}
-    for t in verified:
-        result=json.loads(safe_path(
-            workspace,f"{state}/final/verification/{t['key']}.json"
-        ).read_text(encoding="utf-8"))
-        if (not isinstance(result,dict) or result.get("id")!=t["id"]
-                or result.get("status")!="ok"
-                or result.get("missing_item_ids")!=[]
-                or result.get("warnings")!=[]):
-            raise ValueError(f"Final semantic verification failed: {t['id']}")
-        llm[t["id"]]=summary(workspace,state+"/final",t)
+    # A previous valid verification cannot authorize a changed source item,
+    # a new revision, or a different final corpus. Always recompute this
+    # ledger from original and both repair-round checkpoints.
+    expected_certification=certify(workspace)
+    if certification is None or certification != expected_certification:
+        raise ValueError("B repair certification is missing or stale.")
+    if {t["id"]:t["key"] for t in verified} != {
+        x["id"]:x["key"] for x in expected_certification["concepts"]
+    }:
+        raise ValueError("Final inventory does not match certified revisions.")
+    llm={t["id"]:summary(workspace,state+"/final",t) for t in verified}
     next_concepts=[]
     inventory=[]
     for concept in catalog["concepts"]:
@@ -68,9 +70,12 @@ def complete(workspace: Path, *, tasks: dict, state: str = "okf-v4/state-b",
 def main() -> None:
     envelope=json.load(sys.stdin)
     tasks=envelope.get("inputs",{}).get("tasks")
-    if not isinstance(tasks,dict):
-        raise ValueError("Expected verified final inventory tasks.")
-    print(json.dumps(complete(Path(".").resolve(),tasks=tasks),ensure_ascii=False))
+    certification=envelope.get("inputs",{}).get("certification")
+    if not isinstance(tasks,dict) or not isinstance(certification,dict):
+        raise ValueError("Expected verified final inventory and repair certification.")
+    print(json.dumps(complete(
+        Path(".").resolve(),tasks=tasks,certification=certification,
+    ),ensure_ascii=False))
 
 
 if __name__=="__main__":
