@@ -2,81 +2,17 @@ version = 1
 exclude_paths = ["flow"]
 result = "steps.complete_b.output"
 
-# The independent source audit has 1430+ short LLM windows in real datasets.
-# Preserve small requests rather than enlarging prompts to satisfy a fixed
-# foreach limit. This requires a cli-agent-flow version with [limits] support.
-[limits]
-max_foreach_items = 5000
-
-# Independently compare the ORIGINAL source text against its V3 scan items.
-# Each bounded chunk is reviewed in a separate checkpointable LLM call.
-# No full-source prompt is ever sent to one model call.
-[[steps]]
-id = "source_coverage_tasks"
-output = "okf-v4/state-b/coverage/tasks.json"
-overwrite_output = true
-[steps.python_script]
-path = "flow/okf/v4/source_coverage.py"
-args = ["--mode", "prepare"]
-timeout_seconds = 300
-
-[[steps]]
-id = "source_coverage_review"
-foreach = "steps.source_coverage_tasks.output.chunks"
-iteration_id = "${item.key}"
-prompt_file = "flow/okf/v4/prompts/source_coverage.md"
-output_schema = "flow/okf/v4/schemas/source-coverage.schema.json"
-output = "okf-v4/state-b/coverage/reviews/${iteration.id}.json"
-overwrite_output = false
-workspace_access = "none"
-response_format = "json"
-[steps.vars]
-chunk = "${item}"
-
-# Claims are extracted independently. Compare every claim with ALL
-# overlapping source items, using bounded and losslessly partitioned batches.
-# No individual model request receives the full overlapping item set.
-[[steps]]
-id = "source_coverage_comparison_tasks"
-output = "okf-v4/state-b/coverage/comparison-tasks.json"
-overwrite_output = true
-[steps.python_script]
-path = "flow/okf/v4/source_coverage.py"
-args = ["--mode", "compare-tasks"]
-timeout_seconds = 300
-
-[[steps]]
-id = "source_coverage_compare"
-foreach = "steps.source_coverage_comparison_tasks.output.comparisons"
-iteration_id = "${item.key}"
-prompt_file = "flow/okf/v4/prompts/source_coverage_compare.md"
-output_schema = "flow/okf/v4/schemas/source-coverage-comparison.schema.json"
-output = "okf-v4/state-b/coverage/comparisons/${iteration.id}.json"
-overwrite_output = false
-workspace_access = "none"
-response_format = "json"
-[steps.vars]
-comparison = "${item}"
-
-[[steps]]
-id = "certify_source_coverage"
-output = "okf-v4/state-b/coverage/certification.json"
-overwrite_output = true
-[steps.python_script]
-path = "flow/okf/v4/source_coverage.py"
-args = ["--mode", "check"]
-timeout_seconds = 300
-
-# Recover original V3 scan assertions missing from grouped concepts AND
-# source-grounded claims found by the independent full-text audit.
-# Never mutate A, original V3 state or any source snapshot.
+# Phase B validates and repairs ALL original V3 scan Knowledge Items.
+# Independent full-source re-extraction is intentionally not part of the
+# main flow: it would require thousands of additional LLM iterations.
+# Existing Phase-A snapshots and their V3 evidence remain immutable.
 [[steps]]
 id = "source_repair_tasks"
 output = "okf-v4/state-b/source-repair/tasks.json"
 overwrite_output = true
 [steps.python_script]
 path = "flow/okf/v4/source_repair.py"
-args = ["--mode", "prepare", "--require-coverage"]
+args = ["--mode", "prepare", "--skip-coverage"]
 timeout_seconds = 300
 
 [[steps]]
@@ -100,12 +36,12 @@ output = "okf-v4/state-b/source-repair/apply-result.json"
 overwrite_output = true
 [steps.python_script]
 path = "flow/okf/v4/source_repair.py"
-args = ["--mode", "apply", "--require-coverage"]
+args = ["--mode", "apply", "--skip-coverage"]
 timeout_seconds = 600
 [steps.json_inputs.tasks]
 path = "okf-v4/state-b/source-repair/tasks.json"
 
-# Inventory is permitted only after the full source scan ledger is covered.
+# Inventory is permitted only after every original V3 Knowledge Item is accounted for.
 [[steps]]
 id = "inventory_tasks"
 output = "okf-v4/state-b/inventory-tasks.json"
