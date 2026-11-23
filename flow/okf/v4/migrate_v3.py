@@ -208,15 +208,33 @@ def authoritative_scanned_items(
         section_ids.add(sid)
         scan_path = f"{state_root}/{slug}/scan-{sid}.json"
         scan = read_json(safe_path(workspace, scan_path))
-        if (scan.get("status") != "ok"
-                or scan.get("source_path") != source_path
-                or scan.get("section_id") != sid
-                or scan.get("chunk_id") != sid
-                or scan.get("document_id") != slug
-                or scan.get("folder_id") != slug
-                or scan.get("start_line") != start
-                or scan.get("end_line") != end):
-            raise ValueError(f"V3 scan does not match authoritative section {slug}/{sid}")
+        # Earlier V3 schemas allowed missing/blank routing IDs even though
+        # sections.json and the state directory uniquely determine them.
+        # Accept those omissions *in memory*; never rewrite V3 checkpoints
+        # or accept an explicitly conflicting nonempty identity.
+        required = {
+            "status": "ok", "source_path": source_path,
+            "section_id": sid, "start_line": start, "end_line": end,
+        }
+        for field, expected in required.items():
+            if scan.get(field) != expected or (
+                    field in ("start_line", "end_line")
+                    and type(scan.get(field)) is not int):
+                raise ValueError(
+                    f"V3 scan section mismatch {slug}/{sid}: "
+                    f"{field}={scan.get(field)!r}, expected {expected!r}"
+                )
+        for field, expected in (
+            ("chunk_id", sid), ("document_id", slug), ("folder_id", slug),
+        ):
+            actual = scan.get(field)
+            if actual is None or (isinstance(actual, str) and not actual.strip()):
+                continue
+            if actual != expected:
+                raise ValueError(
+                    f"V3 scan routing conflict {slug}/{sid}: "
+                    f"{field}={actual!r}, expected {expected!r}"
+                )
         items = scan.get("knowledge_items")
         if not isinstance(items, list):
             raise ValueError(f"Scan Knowledge Items missing in {slug}/{sid}")
