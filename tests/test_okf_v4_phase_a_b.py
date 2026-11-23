@@ -183,6 +183,29 @@ def test_bounded_source_coverage_discovers_original_claim_absent_from_v3(tmp_pat
     _,a_catalog,_=checked_phase_a(tmp_path)
     assert len(a_catalog["documents"][0]["source_knowledge_items"])==1
     assert cat["source_coverage_sha256"]
+    # Reviewed B output must retain the extra item even after concept quality
+    # processing, not merely at the temporary source-repair checkpoint.
+    inventory=prepare(tmp_path,"okf-v4/b-source-repaired")
+    for entry in inventory["concepts"]:
+        put_json(
+            tmp_path/f"okf-v4/state-b/summaries/{entry['key']}.json",
+            {
+                "id":entry["id"],"summary":"Fachliche Zusammenfassung einer geprüften Quellaussage.",
+                "tags":["Quellenauswertung"],
+            },
+        )
+        put_json(
+            tmp_path/f"okf-v4/state-b/reviews/{entry['key']}.json",
+            {"id":entry["id"],"action":"keep",
+             "reason":"Erfüllt die geltenden Anforderungen.","parts":[]},
+        )
+    apply_quality(
+        tmp_path,phase_a="okf-v4/b-source-repaired",
+        state="okf-v4/state-b",tasks=inventory,destination="okf-v4/b-reviewed",
+    )
+    _,reviewed,_=checked_b(tmp_path,root="okf-v4/b-reviewed",stage="B-draft")
+    assert reviewed["source_coverage_sha256"] == cat["source_coverage_sha256"]
+    assert sum(len(c["knowledge_items"]) for c in reviewed["concepts"])==2
 
 
 def test_source_coverage_rejects_unsupported_quote_and_incomplete_reviews(tmp_path):
