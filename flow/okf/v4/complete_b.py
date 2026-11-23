@@ -79,7 +79,7 @@ def main() -> None:
         raise ValueError("Expected verified final inventory and repair certification.")
     print(json.dumps(complete(
         Path(".").resolve(),tasks=tasks,certification=certification,
-    ),ensure_ascii=False))
+    ),ensure_ascii=True))
 
 
 if __name__=="__main__":
