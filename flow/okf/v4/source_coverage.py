@@ -172,7 +172,7 @@ def additions(workspace: Path, *, required: bool = False,
             identity = task["document_id"] + ":audit-" + signature
             item = {
                 "id": identity, "description": statement,
-                "normative": normative,
+                "normative": normative, "source_quote": quote,
                 "evidence_ranges": [{
                     "doctrine": task["source_original_path"],
                     "start_line": line_number, "end_line": line_number,
