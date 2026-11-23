@@ -213,6 +213,71 @@ def test_migration_rejects_conflicting_scan_metadata(tmp_path,field,wrong):
     assert not (tmp_path/"okf-v4/phase-a").exists()
 
 
+def test_migration_defers_legacy_index_navigation_to_phase_c(tmp_path):
+    fixture(tmp_path)
+    legacy = tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
+    legacy.write_text(
+        legacy.read_text(encoding="utf-8")
+        + "\n[Ordnerübersicht](index.md)\n"
+        + "[Doktrinübersicht](../index.md)\n"
+        + "[Startseite](../../../index.md)\n",
+        encoding="utf-8",
+    )
+    migrate_applied(tmp_path)
+    _, catalog, base = checked_phase_a(tmp_path)
+    migrated = base/catalog["concepts"][0]["path"]
+    body = migrated.read_text(encoding="utf-8")
+    assert "[Ordnerübersicht](index.md)" in body
+    assert "[Doktrinübersicht](../index.md)" in body
+    assert "[Startseite](../../../index.md)" in body
+    assert not list(base.rglob("index.md"))
+    # C must resolve those links against the freshly generated indexes.
+    finished_b(tmp_path)
+    finished_c(tmp_path)
+    published = tmp_path/"okf-v4/published"/catalog["concepts"][0]["path"]
+    text = published.read_text(encoding="utf-8")
+    assert "[Ordnerübersicht](index.md)" in text
+    assert "[Doktrinübersicht](../index.md)" in text
+    assert "[Startseite](../../../index.md)" in text
+
+
+def test_migration_ignores_case_variant_legacy_index_link_only_in_a(tmp_path):
+    from migrate_v3 import _markdown_links
+    text = "[Overview](../INDEX.MD)"
+    old = "doctrines/example/organization/old.md"
+    new = "doctrines/example/organization/new.md"
+    assert _markdown_links(
+        text, old, new, {}, allow_deferred_index_links=True
+    ) == text
+    assert _markdown_links(
+        text, old, new, {"doctrines/example/index.md":"doctrines/example/index.md"}
+    ) == "[Overview](../index.md)"
+    with pytest.raises(ValueError, match="Unresolved concept Markdown link"):
+        _markdown_links(text, old, new, {})
+
+
+def test_migration_still_rejects_missing_non_index_concept_target(tmp_path):
+    fixture(tmp_path)
+    legacy = tmp_path/"okf-batched-generated-v3/doctrines/example/organization/s001-c010.md"
+    legacy.write_text(
+        legacy.read_text(encoding="utf-8") + "\n[Lost](../missing.md)\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Unresolved concept Markdown link"):
+        migrate_applied(tmp_path)
+
+
+def test_phase_c_rejects_deferred_index_link_when_page_is_not_generated(tmp_path):
+    from migrate_v3 import _markdown_links
+    with pytest.raises(ValueError, match="Unresolved concept Markdown link"):
+        _markdown_links(
+            "[Missing](../../other/index.md)",
+            "doctrines/example/organization/a.md",
+            "doctrines/example/organization/a.md",
+            {"doctrines/example/index.md": "doctrines/example/index.md"},
+        )
+
+
 def test_migration_accepts_configurable_original_document_root(tmp_path):
     fixture(tmp_path)
     old_source=tmp_path/"doctrines/example.md"
