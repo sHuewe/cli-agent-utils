@@ -295,12 +295,15 @@ def authoritative_scanned_items(
     return scanned, route_aliases
 
 
-def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str]) -> str:
-    """Update explicitly linked old concept paths; leave nonconcept links alone.
+def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str],
+                    *, allow_deferred_index_links: bool = False) -> str:
+    """Rewrite concept links; defer legacy index links only in Phase A.
 
-    This scans inline links and reference definitions, while shielding fenced
-    code and code spans. External/anchor links are left as-is. Unexpected
-    internal .md targets fail rather than silently publish a broken link.
+    Phase A excludes old index.md files and Phase C generates new ones.
+    With allow_deferred_index_links, retain a reference to an index that
+    does not yet exist; Phase C calls this helper without that flag and
+    validates such references against generated navigation pages.
+    Unexpected internal Markdown links remain errors.
     """
     from urllib.parse import unquote, quote, urlsplit
     pattern = re.compile(r"(?P<before>\]\(\s*|\[[^\]\n]+\]:[ \t]*)(?P<url><[^>\n]+>|[^\s()]+)", re.M)
@@ -316,14 +319,25 @@ def _markdown_links(body: str, old: str, new: str, mapping: dict[str, str]) -> s
                 return match.group()
             decoded = unquote(parsed.path)
             original = posixpath.normpath(posixpath.join(posixpath.dirname(old), decoded))
-            if original in mapping:
-                relative = posixpath.relpath(mapping[original], posixpath.dirname(new))
+            # Navigation indexes are regenerated in C, never imported into A.
+            # Canonicalize case-insensitive historical index references at
+            # publication so that the link works on case-sensitive systems.
+            mapped = original
+            if posixpath.basename(original).casefold() == "index.md":
+                canonical = posixpath.join(posixpath.dirname(original), "index.md")
+                if canonical in mapping:
+                    mapped = canonical
+            if mapped in mapping:
+                relative = posixpath.relpath(mapping[mapped], posixpath.dirname(new))
                 fixed = quote(relative, safe="/-._~")
                 if parsed.query:
                     fixed += "?" + parsed.query
                 if parsed.fragment:
                     fixed += "#" + parsed.fragment
                 return match["before"] + ("<"+fixed+">" if enclosed else fixed)
+            if (allow_deferred_index_links
+                    and posixpath.basename(original).casefold() == "index.md"):
+                return match.group()
             if decoded.lower().endswith(".md"):
                 raise ValueError(f"Unresolved concept Markdown link in {old}: {target!r}")
             return match.group()
@@ -523,7 +537,10 @@ def prepare(workspace: Path, *, source_root: str, state_root: str,
         })
     by_path = {x["path"]:x for x in concepts}
     for old, target, cid, data in pending:
-        fixed = _markdown_links(data.decode("utf-8"),old,target,original_paths).encode("utf-8")
+        fixed = _markdown_links(
+            data.decode("utf-8"), old, target, original_paths,
+            allow_deferred_index_links=True,
+        ).encode("utf-8")
         outputs[target] = fixed
         by_path[target]["sha256"] = checksum(fixed)
     catalog={"schema":SCHEMA,"documents":documents,"concepts":concepts}
