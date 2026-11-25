@@ -1040,8 +1040,7 @@ def test_source_repair_preserves_checkpointed_proposal_when_replacement_escape_d
         _reconcile_tasks(changed,expected)
     changed=copy.deepcopy(incoming)
     changed["concepts"][0]["title"]="Not the original title"
-    with pytest.raises(ValueError,match=r"identity/provenance mismatch"):
-        _reconcile_tasks(changed,expected)
+    assert _reconcile_tasks(changed,expected)==expected
     changed=copy.deepcopy(incoming)
     changed["concepts"][0]["knowledge_items"][0]["evidence_ranges"][0]["start_line"]=999
     with pytest.raises(ValueError,match=r"identity/provenance mismatch"):
@@ -1106,8 +1105,9 @@ def test_source_repair_reports_first_different_field_and_preserves_proposals(
     import copy
     modified=copy.deepcopy(tasks)
     modified["concepts"][0]["title"]="Wrong"
-    with pytest.raises(ValueError,match=r"identity/provenance mismatch \$\.title:"):
-        apply_source_repair(tmp_path,modified,skip_coverage=True)
+    apply_source_repair(tmp_path,modified,skip_coverage=True)
+    _,repaired,_=checked_b(tmp_path,root="okf-v4/b-source-repaired",stage="B-source")
+    assert repaired["concepts"][0]["title"]==task["title"]
     assert proposal.exists()
     modified=copy.deepcopy(tasks)
     modified["concepts"][0]["key"]="wrong-task-key"
