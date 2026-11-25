@@ -194,13 +194,33 @@ def _same_except_replacement_escape(
             )):
         return False
 
-    # Accept *only* marker-local replacements. The longer unchanged spans
-    # remain literal and anchored, so unrelated word edits cannot pass.
+    # Explicit bounded-position matching avoids catastrophic regex
+    # backtracking when corruption markers are adjacent. For each marker,
+    # consume 0..6 characters, then match the next unchanged literal.
+    # All reachable positions are deduplicated; the work is bounded by
+    # O(marker_count * stored_length * 7), not exponential in marker_count.
     spans = re.split(r"\\ufffd|\ufffd", expected)
     if len(spans) == 1:
         return False
-    pattern = r"\A" + r"[\s\S]{0,6}".join(re.escape(span) for span in spans) + r"\Z"
-    return re.fullmatch(pattern, stored) is not None
+    marker_count = len(spans) - 1
+    fixed_length = sum(map(len, spans))
+    if not fixed_length <= len(stored) <= fixed_length + 6 * marker_count:
+        return False
+    if not stored.startswith(spans[0]):
+        return False
+    positions = {len(spans[0])}
+    for literal in spans[1:]:
+        following = set()
+        for position in positions:
+            maximum = min(6, len(stored) - position - len(literal))
+            for gap in range(maximum + 1):
+                start = position + gap
+                if stored.startswith(literal, start):
+                    following.add(start + len(literal))
+        if not following:
+            return False
+        positions = following
+    return len(stored) in positions
 
 
 def _reconcile_tasks(given: dict, expected: dict) -> dict:
