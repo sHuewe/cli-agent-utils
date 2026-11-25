@@ -265,7 +265,7 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
                     f"$.knowledge_items[{index}].{field}", ident,
                 )
 
-        if not isinstance(stored.get("feedback"), dict):
+        if "feedback" in stored and not isinstance(stored["feedback"], dict):
             raise ValueError(f"Invalid source task feedback for {ident}.")
         if stored != item:
             advisory_changes += 1
