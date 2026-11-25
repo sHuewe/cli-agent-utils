@@ -938,6 +938,40 @@ def test_migration_keeps_incomplete_coverage_for_pre_inventory_repair(tmp_path):
     assert sum(x["knowledge_item_count"] for x in recovered["concepts"])==2
 
 
+def test_source_repair_diagnose_reports_nested_field_without_llm(tmp_path):
+    fixture(tmp_path)
+    repair=tmp_path/"okf-batched/state-v3/docs/example/concept-s001-c010-repair.json"
+    repair.unlink()
+    migrate_applied(tmp_path)
+    tasks=source_repair_tasks(tmp_path,skip_coverage=True)
+    path=tmp_path/"okf-v4/state-b/source-repair/tasks.json"
+    put_json(path,tasks)
+    import subprocess
+    process=subprocess.run(
+        [sys.executable,str(V4/"source_repair.py"),
+         "--mode","diagnose","--skip-coverage"],
+        input="",cwd=tmp_path,capture_output=True,text=True,
+    )
+    assert process.returncode==0,process.stderr
+    assert json.loads(process.stdout)["task_count"]==1
+    import copy
+    changed=copy.deepcopy(tasks)
+    changed["concepts"][0]["feedback"]["status"]="altered"
+    put_json(path,changed)
+    process=subprocess.run(
+        [sys.executable,str(V4/"source_repair.py"),
+         "--mode","diagnose","--skip-coverage"],
+        input="",cwd=tmp_path,capture_output=True,text=True,
+    )
+    assert process.returncode==1
+    result=json.loads(process.stdout)
+    assert result["status"]=="mismatch"
+    assert "$.feedback.status" in result["detail"]
+    assert "stored='altered'" in result["detail"]
+    assert "task_id=" in result["detail"]
+    assert path.exists()
+
+
 def test_source_repair_accepts_reordered_checkpoint_task_ledger(tmp_path):
     """The 1,687 review files are keyed; task array order is not identity."""
     fixture(tmp_path, "example")
