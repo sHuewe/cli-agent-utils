@@ -155,14 +155,19 @@ def _brief(value: object) -> str:
 def _same_except_replacement_escape(
     stored: object, expected: object, path: str = "$",
 ) -> bool:
-    """Accept only a known JSON round-trip of U+FFFD in KI descriptions.
+    """Reconcile only short text gaps at known corrupted KI markers.
 
-    Some old source descriptions contain the *literal* six-character
-    sequence '\\ufffd'. A JSON-processing hop has instead decoded it to the
-    single U+FFFD replacement character in the task ledger. The task key
-    was computed before the hop, so only this narrowly scoped textual
-    representation can differ. All IDs, evidence, task keys, other
-    descriptions and other payload fields still match exactly.
+    Legacy Phase-A descriptions can contain literal '\\ufffd' sequences or
+    the Unicode replacement character itself. The previously checkpointed
+    Flow payload may contain either the replacement character or a few
+    restored characters at exactly those locations. A simple U+FFFD
+    substitution is therefore insufficient.
+
+    Require an unchanged key and exact values for every other task field
+    (checked by _reconcile_tasks). Only description text at replacement
+    markers may vary, by at most six code points per marker. Literal text
+    before, between and after markers must match exactly. The authoritative
+    Phase-A item is always used for B output.
     """
     if type(stored) is not type(expected):
         return False
@@ -183,11 +188,39 @@ def _same_except_replacement_escape(
         )
     if stored == expected:
         return True
-    if (isinstance(stored, str)
-            and re.fullmatch(r"\$\.knowledge_items\[\d+\]\.description", path)
-            and "\ufffd" in stored and r"\ufffd" in expected):
-        return stored.replace("\ufffd", r"\ufffd") == expected
-    return False
+    if (not isinstance(stored, str)
+            or not re.fullmatch(
+                r"\$\.knowledge_items\[\d+\]\.description", path
+            )):
+        return False
+
+    # Explicit bounded-position matching avoids catastrophic regex
+    # backtracking when corruption markers are adjacent. For each marker,
+    # consume 0..6 characters, then match the next unchanged literal.
+    # All reachable positions are deduplicated; the work is bounded by
+    # O(marker_count * stored_length * 7), not exponential in marker_count.
+    spans = re.split(r"\\ufffd|\ufffd", expected)
+    if len(spans) == 1:
+        return False
+    marker_count = len(spans) - 1
+    fixed_length = sum(map(len, spans))
+    if not fixed_length <= len(stored) <= fixed_length + 6 * marker_count:
+        return False
+    if not stored.startswith(spans[0]):
+        return False
+    positions = {len(spans[0])}
+    for literal in spans[1:]:
+        following = set()
+        for position in positions:
+            maximum = min(6, len(stored) - position - len(literal))
+            for gap in range(maximum + 1):
+                start = position + gap
+                if stored.startswith(literal, start):
+                    following.add(start + len(literal))
+        if not following:
+            return False
+        positions = following
+    return len(stored) in positions
 
 
 def _reconcile_tasks(given: dict, expected: dict) -> dict:
@@ -260,7 +293,7 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
             )
     if encoding_only_count:
         print(
-            "Source repair: accepted U+FFFD escape-only representation "
+            "Source repair: accepted marker-local KI description transport "
             f"differences in {encoding_only_count} task(s); "
             "all task keys, evidence and other fields were verified.",
             file=sys.stderr,
