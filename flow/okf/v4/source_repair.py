@@ -210,8 +210,8 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
     # Phase-A payload (including source/document hashes). It is also the
     # stable identifier of the preexisting LLM proposal. Once the key set
     # matches, we only compare identity, routing and provenance fields here.
-    # In particular, never compare free-text descriptions or advisory LLM
-    # diagnostics byte-for-byte after the runner's JSON transport.
+    # In particular, do not compare transported free-text titles,
+    # descriptions or advisory LLM diagnostics byte-for-byte.
     #
     # All downstream data come from the freshly checked Phase A (expected),
     # NOT from the checkpointed Flow input (given).
@@ -235,8 +235,14 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
             require_same(
                 sorted(stored), sorted(item), "$.fields", ident,
             )
+        # The title is free text; its authoritative value was included in
+        # the hashed task key and is recovered from checked Phase A below.
+        # A JSON round-trip can alter the displayed title without changing
+        # the stable identity or any source/evidence mapping.
+        if not isinstance(stored.get("title"), str) and "title" in stored:
+            raise ValueError(f"Invalid source task title type for {ident}.")
         for field in (
-            "key", "id", "kind", "title", "path", "source",
+            "key", "id", "kind", "path", "source",
             "knowledge_item_ids",
         ):
             require_same(stored.get(field), item.get(field), f"$.{field}", ident)
@@ -275,7 +281,7 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
     if advisory_changes:
         print(
             f"Source repair: {advisory_changes} task(s) contain JSON-transport "
-            "differences in advisory descriptions or feedback. "
+            "differences in advisory titles, descriptions or feedback. "
             "Task keys, identities, original KI evidence and all structural "
             "fields were checked; using authoritative Phase-A data.",
             file=sys.stderr,
