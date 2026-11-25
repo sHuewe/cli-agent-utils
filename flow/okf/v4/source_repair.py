@@ -255,7 +255,10 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
                 raise ValueError(f"Invalid Knowledge Item at {ident}[{index}].")
             require_same(sorted(saved), sorted(original),
                          f"$.knowledge_items[{index}].fields", ident)
-            if not isinstance(saved.get("description"), str):
+            # V3 scans may omit description entirely. Preserve that
+            # absence when both task and authoritative Phase A agree;
+            # supplied descriptions must still have the correct type.
+            if "description" in saved and not isinstance(saved["description"], str):
                 raise ValueError(
                     f"Invalid KI description type at {ident}[{index}]."
                 )
