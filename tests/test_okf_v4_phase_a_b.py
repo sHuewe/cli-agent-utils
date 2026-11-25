@@ -938,6 +938,60 @@ def test_migration_keeps_incomplete_coverage_for_pre_inventory_repair(tmp_path):
     assert sum(x["knowledge_item_count"] for x in recovered["concepts"])==2
 
 
+def test_source_repair_accepts_reordered_checkpoint_task_ledger(tmp_path):
+    """The 1,687 review files are keyed; task array order is not identity."""
+    fixture(tmp_path, "example")
+    fixture(tmp_path, "second")
+    for slug in ("example", "second"):
+        repair=tmp_path/f"okf-batched/state-v3/docs/{slug}/concept-s001-c010-repair.json"
+        repair.unlink()
+    migrate_applied(tmp_path)
+    tasks=source_repair_tasks(tmp_path,skip_coverage=True)
+    assert tasks["count"]==2
+    for task in tasks["concepts"]:
+        put_json(
+            tmp_path/f"okf-v4/state-b/source-repair/proposals/{task['key']}.json",
+            {"id":task["id"],"action":"keep","title":task["title"],
+             "markdown":"","knowledge_item_ids":task["knowledge_item_ids"]},
+        )
+    reordered={**tasks,"concepts":list(reversed(tasks["concepts"]))}
+    apply_source_repair(tmp_path,reordered,skip_coverage=True)
+    checked_b(tmp_path,root="okf-v4/b-source-repaired",stage="B-source")
+
+
+def test_source_repair_reports_first_different_field_and_preserves_proposals(
+    tmp_path,
+):
+    fixture(tmp_path)
+    repair=tmp_path/"okf-batched/state-v3/docs/example/concept-s001-c010-repair.json"
+    repair.unlink()
+    migrate_applied(tmp_path)
+    tasks=source_repair_tasks(tmp_path,skip_coverage=True)
+    task=tasks["concepts"][0]
+    proposal=tmp_path/f"okf-v4/state-b/source-repair/proposals/{task['key']}.json"
+    put_json(
+        proposal,
+        {"id":task["id"],"action":"keep","title":task["title"],
+         "markdown":"","knowledge_item_ids":task["knowledge_item_ids"]},
+    )
+    import copy
+    modified=copy.deepcopy(tasks)
+    modified["concepts"][0]["title"]="Wrong"
+    with pytest.raises(ValueError,match="payload changed.*field='title'"):
+        apply_source_repair(tmp_path,modified,skip_coverage=True)
+    assert proposal.exists()
+    modified=copy.deepcopy(tasks)
+    modified["concepts"][0]["key"]="wrong-task-key"
+    with pytest.raises(ValueError,match="task keys differ"):
+        apply_source_repair(tmp_path,modified,skip_coverage=True)
+    assert proposal.exists()
+    with pytest.raises(ValueError,match="task count differs"):
+        apply_source_repair(
+            tmp_path,{**tasks,"concepts":[]},skip_coverage=True,
+        )
+    assert proposal.exists()
+
+
 def test_source_repair_rejects_modified_original_knowledge_item_ids(tmp_path):
     fixture(tmp_path)
     migrate_applied(tmp_path)

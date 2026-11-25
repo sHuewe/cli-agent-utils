@@ -115,13 +115,80 @@ def prepare(workspace: Path, phase_a: str = PHASE_A,
     }
 
 
+def _reconcile_tasks(given: dict, expected: dict) -> dict:
+    """Validate the full repair ledger, independent of harmless list order.
+
+    A checkpointed source_repair_review is keyed by task key, not the
+    arbitrary order in which the task list was serialized. Never accept
+    additions, removals or changes to the payload of any task.
+    """
+    if not isinstance(given, dict):
+        raise ValueError("Source repair tasks JSON input is not an object.")
+    if set(given) != set(expected):
+        raise ValueError(
+            "Source repair tasks top-level fields differ: "
+            f"missing={sorted(set(expected) - set(given))}, "
+            f"unexpected={sorted(set(given) - set(expected))}"
+        )
+    for field in ("schema", "status", "count"):
+        if given.get(field) != expected.get(field):
+            raise ValueError(
+                f"Source repair tasks {field} differs: "
+                f"stored={given.get(field)!r}, expected={expected.get(field)!r}"
+            )
+    supplied, current = given.get("concepts"), expected.get("concepts")
+    if not isinstance(supplied, list) or not isinstance(current, list):
+        raise ValueError("Source repair tasks concepts must be a list.")
+    if len(supplied) != len(current):
+        raise ValueError(
+            f"Source repair task count differs: stored={len(supplied)}, "
+            f"expected={len(current)}"
+        )
+    def index(rows: list, label: str) -> dict[str, dict]:
+        values = {}
+        for item in rows:
+            if not isinstance(item, dict) or not isinstance(item.get("key"), str):
+                raise ValueError(f"{label} has a task without a valid key.")
+            key = item["key"]
+            if key in values:
+                raise ValueError(f"{label} has duplicate task key: {key}")
+            values[key] = item
+        return values
+
+    actual_by_key = index(supplied, "Stored ledger")
+    expected_by_key = index(current, "Recomputed ledger")
+    absent = sorted(expected_by_key.keys() - actual_by_key.keys())
+    extra = sorted(actual_by_key.keys() - expected_by_key.keys())
+    if absent or extra:
+        raise ValueError(
+            "Source repair task keys differ: "
+            f"missing={absent[:3]!r} ({len(absent)} total), "
+            f"unexpected={extra[:3]!r} ({len(extra)} total). "
+            "Check Phase A, --skip-coverage and the source-repair script version. "
+            "Do not delete existing LLM proposals."
+        )
+    for item in current:
+        key = item["key"]
+        stored = actual_by_key[key]
+        if stored != item:
+            field = next(
+                (field for field in sorted(set(stored) | set(item))
+                 if stored.get(field) != item.get(field)),
+                "<unknown>",
+            )
+            raise ValueError(
+                f"Source repair task payload changed for {key}: field={field!r}. "
+                "The existing LLM review cannot be blindly reused."
+            )
+    return expected
+
+
 def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
           state: str = STATE, destination: str = DESTINATION,
           require_coverage: bool = False, skip_coverage: bool = False) -> dict:
-    if tasks != prepare(
-        workspace, phase_a, require_coverage, skip_coverage,
-    ):
-        raise ValueError("Source repair tasks are missing, stale or modified.")
+    tasks = _reconcile_tasks(
+        tasks, prepare(workspace, phase_a, require_coverage, skip_coverage),
+    )
     _, original, base = checked_phase_a(workspace, phase_a)
     docs = original["documents"]
     audited = [] if skip_coverage else coverage_additions(
