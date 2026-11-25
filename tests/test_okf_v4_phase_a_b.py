@@ -993,6 +993,55 @@ def test_source_repair_accepts_reordered_checkpoint_task_ledger(tmp_path):
     checked_b(tmp_path,root="okf-v4/b-source-repaired",stage="B-source")
 
 
+def test_source_repair_preserves_checkpointed_proposal_when_replacement_escape_differs(
+    tmp_path,
+):
+    """Literal '\\ufffd' in V3 and U+FFFD after JSON transit are equivalent
+    only in Knowledge Item descriptions; source identities remain strict.
+    """
+    fixture(tmp_path)
+    repair=tmp_path/"okf-batched/state-v3/docs/example/concept-s001-c010-repair.json"
+    repair.unlink()
+    migrate_applied(tmp_path)
+    from source_repair import _reconcile_tasks
+    import copy
+    expected=source_repair_tasks(tmp_path,skip_coverage=True)
+    assert expected["count"]==1
+    expected=copy.deepcopy(expected)
+    task=expected["concepts"][0]
+    assert task["knowledge_items"]
+    task["knowledge_items"][0]["description"]=r"Standing Opera\ufffdting Procedure"
+    incoming=copy.deepcopy(expected)
+    incoming["concepts"][0]["knowledge_items"][0]["description"]=(
+        "Standing Opera\ufffdting Procedure"
+    )
+    assert _reconcile_tasks(incoming,expected)==expected
+    proposal=tmp_path/f"okf-v4/state-b/source-repair/proposals/{task['key']}.json"
+    put_json(proposal,{"id":task["id"],"action":"keep","title":task["title"],
+                       "markdown":"","knowledge_item_ids":task["knowledge_item_ids"]})
+    assert proposal.exists()
+    # No general normalization of arbitrary text or genuine content changes.
+    changed=copy.deepcopy(incoming)
+    changed["concepts"][0]["knowledge_items"][0]["description"]=(
+        "Standing Opera\ufffdting Procedure and extra wording"
+    )
+    with pytest.raises(ValueError,match=r"Source repair mismatch"):
+        _reconcile_tasks(changed,expected)
+    changed=copy.deepcopy(incoming)
+    changed["concepts"][0]["knowledge_items"][0]["id"]="example:invented"
+    with pytest.raises(ValueError,match=r"Source repair mismatch"):
+        _reconcile_tasks(changed,expected)
+    changed=copy.deepcopy(incoming)
+    changed["concepts"][0]["title"]="Not the original title"
+    with pytest.raises(ValueError,match=r"Source repair mismatch"):
+        _reconcile_tasks(changed,expected)
+    changed=copy.deepcopy(incoming)
+    changed["concepts"][0]["knowledge_items"][0]["evidence_ranges"][0]["start_line"]=999
+    with pytest.raises(ValueError,match=r"Source repair mismatch"):
+        _reconcile_tasks(changed,expected)
+    assert proposal.exists()
+
+
 def test_source_repair_reports_first_different_field_and_preserves_proposals(
     tmp_path,
 ):

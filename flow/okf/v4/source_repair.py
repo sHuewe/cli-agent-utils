@@ -152,6 +152,44 @@ def _brief(value: object) -> str:
     return display[:90] + ("..." if len(display) > 90 else "")
 
 
+def _same_except_replacement_escape(
+    stored: object, expected: object, path: str = "$",
+) -> bool:
+    """Accept only a known JSON round-trip of U+FFFD in KI descriptions.
+
+    Some old source descriptions contain the *literal* six-character
+    sequence '\\ufffd'. A JSON-processing hop has instead decoded it to the
+    single U+FFFD replacement character in the task ledger. The task key
+    was computed before the hop, so only this narrowly scoped textual
+    representation can differ. All IDs, evidence, task keys, other
+    descriptions and other payload fields still match exactly.
+    """
+    if type(stored) is not type(expected):
+        return False
+    if isinstance(stored, dict):
+        return (
+            set(stored) == set(expected)
+            and all(
+                _same_except_replacement_escape(
+                    stored[name], expected[name], f"{path}.{name}",
+                )
+                for name in stored
+            )
+        )
+    if isinstance(stored, list):
+        return len(stored) == len(expected) and all(
+            _same_except_replacement_escape(left, right, f"{path}[{index}]")
+            for index, (left, right) in enumerate(zip(stored, expected))
+        )
+    if stored == expected:
+        return True
+    if (isinstance(stored, str)
+            and re.fullmatch(r"\$\.knowledge_items\[\d+\]\.description", path)
+            and "\ufffd" in stored and r"\ufffd" in expected):
+        return stored.replace("\ufffd", r"\ufffd") == expected
+    return False
+
+
 def _reconcile_tasks(given: dict, expected: dict) -> dict:
     """Validate the full repair ledger, independent of harmless list order.
 
@@ -204,11 +242,15 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
             "Check Phase A, --skip-coverage and the source-repair script version. "
             "Do not delete existing LLM proposals."
         )
+    encoding_only_count = 0
     for item in current:
         key = item["key"]
         stored = actual_by_key[key]
         mismatch = _first_difference(stored, item)
         if mismatch is not None:
+            if _same_except_replacement_escape(stored, item):
+                encoding_only_count += 1
+                continue
             field, before, after = mismatch
             raise ValueError(
                 f"Source repair mismatch {field}: "
@@ -216,6 +258,13 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
                 f"task_id={item['id']!r}. "
                 "Existing LLM proposals have NOT been modified."
             )
+    if encoding_only_count:
+        print(
+            "Source repair: accepted U+FFFD escape-only representation "
+            f"differences in {encoding_only_count} task(s); "
+            "all task keys, evidence and other fields were verified.",
+            file=sys.stderr,
+        )
     return expected
 
 
