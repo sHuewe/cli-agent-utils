@@ -1011,7 +1011,7 @@ def test_source_repair_reports_first_different_field_and_preserves_proposals(
     import copy
     modified=copy.deepcopy(tasks)
     modified["concepts"][0]["title"]="Wrong"
-    with pytest.raises(ValueError,match="payload changed.*field='title'"):
+    with pytest.raises(ValueError,match=r"Source repair mismatch \$\.title:"):
         apply_source_repair(tmp_path,modified,skip_coverage=True)
     assert proposal.exists()
     modified=copy.deepcopy(tasks)
