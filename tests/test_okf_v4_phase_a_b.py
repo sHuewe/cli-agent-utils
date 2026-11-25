@@ -1047,7 +1047,7 @@ def test_source_repair_marker_local_substitutions_are_strict():
     import copy
     expected={"schema":"v1","status":"ok","count":1,"concepts":[{
         "id":"example:s1","key":"stable-key","knowledge_items":[{
-            "id":"ki1","description":r"Standing Opera\\ufffdng Procedure"
+            "id":"ki1","description":r"Standing Opera\ufffdng Procedure"
         }]}]}
     given=copy.deepcopy(expected)
     given["concepts"][0]["knowledge_items"][0]["description"]="Standing Operating Procedure"
