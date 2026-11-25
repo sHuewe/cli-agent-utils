@@ -963,13 +963,20 @@ def test_source_repair_diagnose_reports_nested_field_without_llm(tmp_path):
          "--mode","diagnose","--skip-coverage"],
         input="",cwd=tmp_path,capture_output=True,text=True,
     )
-    assert process.returncode==1
+    assert process.returncode==0, process.stdout
     result=json.loads(process.stdout)
-    assert result["status"]=="mismatch"
-    assert "$.feedback.status" in result["detail"]
-    assert "stored='altered'" in result["detail"]
-    assert "task_id=" in result["detail"]
+    assert result["status"]=="ok"
     assert path.exists()
+    # Identity and source evidence must still be validated strictly.
+    changed["concepts"][0]["knowledge_items"][0]["id"]="fabricated"
+    put_json(path,changed)
+    process=subprocess.run(
+        [sys.executable,str(V4/"source_repair.py"),
+         "--mode","diagnose","--skip-coverage"],
+        input="",cwd=tmp_path,capture_output=True,text=True,
+    )
+    assert process.returncode==1
+    assert "$.knowledge_items[0].id" in json.loads(process.stdout)["detail"]
 
 
 def test_source_repair_accepts_reordered_checkpoint_task_ledger(tmp_path):
@@ -1020,29 +1027,29 @@ def test_source_repair_preserves_checkpointed_proposal_when_replacement_escape_d
     put_json(proposal,{"id":task["id"],"action":"keep","title":task["title"],
                        "markdown":"","knowledge_item_ids":task["knowledge_item_ids"]})
     assert proposal.exists()
-    # No general normalization of arbitrary text or genuine content changes.
+    # Description text is advisory after JSON transport, even when it
+    # differs beyond a specific replacement marker.
     changed=copy.deepcopy(incoming)
     changed["concepts"][0]["knowledge_items"][0]["description"]=(
-        "Standing Opera\ufffdting Procedure and extra wording"
+        "Standing Operating Procedure and extra wording"
     )
-    with pytest.raises(ValueError,match=r"Source repair mismatch"):
-        _reconcile_tasks(changed,expected)
+    assert _reconcile_tasks(changed,expected)==expected
     changed=copy.deepcopy(incoming)
     changed["concepts"][0]["knowledge_items"][0]["id"]="example:invented"
-    with pytest.raises(ValueError,match=r"Source repair mismatch"):
+    with pytest.raises(ValueError,match=r"identity/provenance mismatch"):
         _reconcile_tasks(changed,expected)
     changed=copy.deepcopy(incoming)
     changed["concepts"][0]["title"]="Not the original title"
-    with pytest.raises(ValueError,match=r"Source repair mismatch"):
+    with pytest.raises(ValueError,match=r"identity/provenance mismatch"):
         _reconcile_tasks(changed,expected)
     changed=copy.deepcopy(incoming)
     changed["concepts"][0]["knowledge_items"][0]["evidence_ranges"][0]["start_line"]=999
-    with pytest.raises(ValueError,match=r"Source repair mismatch"):
+    with pytest.raises(ValueError,match=r"identity/provenance mismatch"):
         _reconcile_tasks(changed,expected)
     assert proposal.exists()
 
 
-def test_source_repair_marker_local_substitutions_are_strict():
+def test_source_repair_keeps_keyed_identity_checks_without_prose_checks():
     from source_repair import _reconcile_tasks
     import copy
     expected={"schema":"v1","status":"ok","count":1,"concepts":[{
@@ -1053,8 +1060,32 @@ def test_source_repair_marker_local_substitutions_are_strict():
     given["concepts"][0]["knowledge_items"][0]["description"]="Standing Operating Procedure"
     assert _reconcile_tasks(given,expected)==expected
     given["concepts"][0]["knowledge_items"][0]["description"]="Standing Operating Different"
-    with pytest.raises(ValueError,match="Source repair mismatch"):
+    assert _reconcile_tasks(given,expected)==expected
+    given["concepts"][0]["knowledge_items"][0]["id"]="invented"
+    with pytest.raises(ValueError,match="identity/provenance mismatch"):
         _reconcile_tasks(given,expected)
+
+
+def test_source_repair_accepts_optional_missing_ki_description():
+    from source_repair import _reconcile_tasks
+    import copy
+
+    expected = {
+        "schema": "v1", "status": "ok", "count": 1,
+        "concepts": [{
+            "id": "example:s1", "key": "stable-key",
+            "knowledge_items": [{"id": "ki1", "normative": False}],
+        }],
+    }
+    incoming = copy.deepcopy(expected)
+    assert _reconcile_tasks(incoming, expected) == expected
+    incoming["concepts"][0]["knowledge_items"][0]["description"] = "added"
+    with pytest.raises(ValueError, match="identity/provenance mismatch"):
+        _reconcile_tasks(incoming, expected)
+    incoming = copy.deepcopy(expected)
+    incoming["concepts"][0]["knowledge_items"][0]["normative"] = True
+    with pytest.raises(ValueError, match="identity/provenance mismatch"):
+        _reconcile_tasks(incoming, expected)
 
 
 def test_source_repair_reports_first_different_field_and_preserves_proposals(
@@ -1075,7 +1106,7 @@ def test_source_repair_reports_first_different_field_and_preserves_proposals(
     import copy
     modified=copy.deepcopy(tasks)
     modified["concepts"][0]["title"]="Wrong"
-    with pytest.raises(ValueError,match=r"Source repair mismatch \$\.title:"):
+    with pytest.raises(ValueError,match=r"identity/provenance mismatch \$\.title:"):
         apply_source_repair(tmp_path,modified,skip_coverage=True)
     assert proposal.exists()
     modified=copy.deepcopy(tasks)

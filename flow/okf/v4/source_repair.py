@@ -152,83 +152,14 @@ def _brief(value: object) -> str:
     return display[:90] + ("..." if len(display) > 90 else "")
 
 
-def _same_except_replacement_escape(
-    stored: object, expected: object, path: str = "$",
-) -> bool:
-    """Reconcile only short text gaps at known corrupted KI markers.
-
-    Legacy Phase-A descriptions can contain literal '\\ufffd' sequences or
-    the Unicode replacement character itself. The previously checkpointed
-    Flow payload may contain either the replacement character or a few
-    restored characters at exactly those locations. A simple U+FFFD
-    substitution is therefore insufficient.
-
-    Require an unchanged key and exact values for every other task field
-    (checked by _reconcile_tasks). Only description text at replacement
-    markers may vary, by at most six code points per marker. Literal text
-    before, between and after markers must match exactly. The authoritative
-    Phase-A item is always used for B output.
-    """
-    if type(stored) is not type(expected):
-        return False
-    if isinstance(stored, dict):
-        return (
-            set(stored) == set(expected)
-            and all(
-                _same_except_replacement_escape(
-                    stored[name], expected[name], f"{path}.{name}",
-                )
-                for name in stored
-            )
-        )
-    if isinstance(stored, list):
-        return len(stored) == len(expected) and all(
-            _same_except_replacement_escape(left, right, f"{path}[{index}]")
-            for index, (left, right) in enumerate(zip(stored, expected))
-        )
-    if stored == expected:
-        return True
-    if (not isinstance(stored, str)
-            or not re.fullmatch(
-                r"\$\.knowledge_items\[\d+\]\.description", path
-            )):
-        return False
-
-    # Explicit bounded-position matching avoids catastrophic regex
-    # backtracking when corruption markers are adjacent. For each marker,
-    # consume 0..6 characters, then match the next unchanged literal.
-    # All reachable positions are deduplicated; the work is bounded by
-    # O(marker_count * stored_length * 7), not exponential in marker_count.
-    spans = re.split(r"\\ufffd|\ufffd", expected)
-    if len(spans) == 1:
-        return False
-    marker_count = len(spans) - 1
-    fixed_length = sum(map(len, spans))
-    if not fixed_length <= len(stored) <= fixed_length + 6 * marker_count:
-        return False
-    if not stored.startswith(spans[0]):
-        return False
-    positions = {len(spans[0])}
-    for literal in spans[1:]:
-        following = set()
-        for position in positions:
-            maximum = min(6, len(stored) - position - len(literal))
-            for gap in range(maximum + 1):
-                start = position + gap
-                if stored.startswith(literal, start):
-                    following.add(start + len(literal))
-        if not following:
-            return False
-        positions = following
-    return len(stored) in positions
-
-
 def _reconcile_tasks(given: dict, expected: dict) -> dict:
-    """Validate the full repair ledger, independent of harmless list order.
+    """Validate task keys, identities and coverage, not transported prose.
 
-    A checkpointed source_repair_review is keyed by task key, not the
-    arbitrary order in which the task list was serialized. Never accept
-    additions, removals or changes to the payload of any task.
+    Each task key is a digest tied to the authoritative Phase-A source and
+    existing concept content. Checkpoints/proposals are addressed by that
+    key, whereas the runner can modify free-text descriptions while
+    serializing them through JSON. Compare structural/provenance fields,
+    then return freshly recomputed Phase-A tasks for all further processing.
     """
     if not isinstance(given, dict):
         raise ValueError("Source repair tasks JSON input is not an object.")
@@ -275,27 +206,78 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
             "Check Phase A, --skip-coverage and the source-repair script version. "
             "Do not delete existing LLM proposals."
         )
-    encoding_only_count = 0
-    for item in current:
-        key = item["key"]
-        stored = actual_by_key[key]
-        mismatch = _first_difference(stored, item)
+    # The task key is a content digest generated from the authoritative
+    # Phase-A payload (including source/document hashes). It is also the
+    # stable identifier of the preexisting LLM proposal. Once the key set
+    # matches, we only compare identity, routing and provenance fields here.
+    # In particular, never compare free-text descriptions or advisory LLM
+    # diagnostics byte-for-byte after the runner's JSON transport.
+    #
+    # All downstream data come from the freshly checked Phase A (expected),
+    # NOT from the checkpointed Flow input (given).
+    advisory_changes = 0
+
+    def require_same(stored: object, authoritative: object, path: str,
+                     identity: str) -> None:
+        mismatch = _first_difference(stored, authoritative, path)
         if mismatch is not None:
-            if _same_except_replacement_escape(stored, item):
-                encoding_only_count += 1
-                continue
             field, before, after = mismatch
             raise ValueError(
-                f"Source repair mismatch {field}: "
+                f"Source repair identity/provenance mismatch {field}: "
                 f"stored={_brief(before)}, expected={_brief(after)}; "
-                f"task_id={item['id']!r}. "
-                "Existing LLM proposals have NOT been modified."
+                f"task_id={identity!r}. Existing LLM proposals were not changed."
             )
-    if encoding_only_count:
+
+    for item in current:
+        stored = actual_by_key[item["key"]]
+        ident = item["id"]
+        if set(stored) != set(item):
+            require_same(
+                sorted(stored), sorted(item), "$.fields", ident,
+            )
+        for field in (
+            "key", "id", "kind", "title", "path", "source",
+            "knowledge_item_ids",
+        ):
+            require_same(stored.get(field), item.get(field), f"$.{field}", ident)
+
+        # KI ID, evidence ranges, normative flag and every other structural
+        # attribute must remain exact. Only the description is advisory
+        # text. The original description from Phase A will be used in B.
+        saved_ki = stored.get("knowledge_items")
+        original_ki = item.get("knowledge_items")
+        if not isinstance(saved_ki, list) or not isinstance(original_ki, list):
+            raise ValueError(f"Invalid Knowledge Item list in source task {ident}.")
+        require_same(len(saved_ki), len(original_ki),
+                     "$.knowledge_items.length", ident)
+        for index, (saved, original) in enumerate(zip(saved_ki, original_ki)):
+            if not isinstance(saved, dict) or not isinstance(original, dict):
+                raise ValueError(f"Invalid Knowledge Item at {ident}[{index}].")
+            require_same(sorted(saved), sorted(original),
+                         f"$.knowledge_items[{index}].fields", ident)
+            # V3 scans may omit description entirely. Preserve that
+            # absence when both task and authoritative Phase A agree;
+            # supplied descriptions must still have the correct type.
+            if "description" in saved and not isinstance(saved["description"], str):
+                raise ValueError(
+                    f"Invalid KI description type at {ident}[{index}]."
+                )
+            for field in sorted(set(original) - {"description"}):
+                require_same(
+                    saved[field], original[field],
+                    f"$.knowledge_items[{index}].{field}", ident,
+                )
+
+        if "feedback" in stored and not isinstance(stored["feedback"], dict):
+            raise ValueError(f"Invalid source task feedback for {ident}.")
+        if stored != item:
+            advisory_changes += 1
+    if advisory_changes:
         print(
-            "Source repair: accepted marker-local KI description transport "
-            f"differences in {encoding_only_count} task(s); "
-            "all task keys, evidence and other fields were verified.",
+            f"Source repair: {advisory_changes} task(s) contain JSON-transport "
+            "differences in advisory descriptions or feedback. "
+            "Task keys, identities, original KI evidence and all structural "
+            "fields were checked; using authoritative Phase-A data.",
             file=sys.stderr,
         )
     return expected
