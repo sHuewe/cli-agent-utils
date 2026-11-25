@@ -115,6 +115,43 @@ def prepare(workspace: Path, phase_a: str = PHASE_A,
     }
 
 
+def _first_difference(stored: object, expected: object,
+                      path: str = "$") -> tuple[str, object, object] | None:
+    """Locate the first nested difference, without weakening validation."""
+    if type(stored) is not type(expected):
+        return path, stored, expected
+    if isinstance(stored, dict):
+        for key in sorted(set(stored) | set(expected)):
+            child = f"{path}.{key}"
+            if key not in stored:
+                return child, "<missing>", expected[key]
+            if key not in expected:
+                return child, stored[key], "<missing>"
+            mismatch = _first_difference(stored[key], expected[key], child)
+            if mismatch is not None:
+                return mismatch
+        return None
+    if isinstance(stored, list):
+        if len(stored) != len(expected):
+            return f"{path}.length", len(stored), len(expected)
+        for index, (before, after) in enumerate(zip(stored, expected)):
+            mismatch = _first_difference(before, after, f"{path}[{index}]")
+            if mismatch is not None:
+                return mismatch
+        return None
+    if stored != expected:
+        return path, stored, expected
+    return None
+
+
+def _brief(value: object) -> str:
+    """Short enough for the meaningful portion of a Windows traceback."""
+    if isinstance(value, (list, dict)):
+        return f"{type(value).__name__}({len(value)} entries)"
+    display = repr(value)
+    return display[:90] + ("..." if len(display) > 90 else "")
+
+
 def _reconcile_tasks(given: dict, expected: dict) -> dict:
     """Validate the full repair ledger, independent of harmless list order.
 
@@ -170,15 +207,14 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
     for item in current:
         key = item["key"]
         stored = actual_by_key[key]
-        if stored != item:
-            field = next(
-                (field for field in sorted(set(stored) | set(item))
-                 if stored.get(field) != item.get(field)),
-                "<unknown>",
-            )
+        mismatch = _first_difference(stored, item)
+        if mismatch is not None:
+            field, before, after = mismatch
             raise ValueError(
-                f"Source repair task payload changed for {key}: field={field!r}. "
-                "The existing LLM review cannot be blindly reused."
+                f"Source repair mismatch {field}: "
+                f"stored={_brief(before)}, expected={_brief(after)}; "
+                f"task_id={item['id']!r}. "
+                "Existing LLM proposals have NOT been modified."
             )
     return expected
 
@@ -294,12 +330,36 @@ def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--mode", choices=("prepare", "apply"), required=True)
+    p.add_argument("--mode", choices=("prepare", "apply", "diagnose"), required=True)
     p.add_argument("--require-coverage", action="store_true")
     p.add_argument("--skip-coverage", action="store_true")
     args = p.parse_args()
-    envelope = json.load(sys.stdin)
     workspace = Path(".").resolve()
+    if args.mode == "diagnose":
+        # Read-only: inspect Phase A and the checkpointed task ledger.
+        # Never call the LLM, overwrite proposals or publish B artifacts.
+        stored = json.loads(safe_path(
+            workspace, f"{STATE}/source-repair/tasks.json",
+        ).read_text(encoding="utf-8"))
+        try:
+            expected = prepare(
+                workspace, require_coverage=args.require_coverage,
+                skip_coverage=args.skip_coverage,
+            )
+            _reconcile_tasks(stored, expected)
+        except ValueError as exc:
+            print(json.dumps(
+                {"status": "mismatch", "detail": str(exc)},
+                ensure_ascii=True,
+            ))
+            raise SystemExit(1) from None
+        print(json.dumps(
+            {"status": "ok", "task_count": expected["count"],
+             "message": "The stored tasks match recomputed Phase A tasks."},
+            ensure_ascii=True,
+        ))
+        return
+    envelope = json.load(sys.stdin)
     if args.mode == "prepare":
         result = prepare(
             workspace, require_coverage=args.require_coverage,
