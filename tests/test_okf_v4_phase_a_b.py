@@ -1040,11 +1040,11 @@ def test_source_repair_preserves_checkpointed_proposal_when_replacement_escape_d
         _reconcile_tasks(changed,expected)
     changed=copy.deepcopy(incoming)
     changed["concepts"][0]["title"]="Not the original title"
-    with pytest.raises(ValueError,match=r"Source repair mismatch"):
+    with pytest.raises(ValueError,match=r"identity/provenance mismatch"):
         _reconcile_tasks(changed,expected)
     changed=copy.deepcopy(incoming)
     changed["concepts"][0]["knowledge_items"][0]["evidence_ranges"][0]["start_line"]=999
-    with pytest.raises(ValueError,match=r"Source repair mismatch"):
+    with pytest.raises(ValueError,match=r"identity/provenance mismatch"):
         _reconcile_tasks(changed,expected)
     assert proposal.exists()
 
