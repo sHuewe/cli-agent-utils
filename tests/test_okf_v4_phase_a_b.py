@@ -1042,6 +1042,21 @@ def test_source_repair_preserves_checkpointed_proposal_when_replacement_escape_d
     assert proposal.exists()
 
 
+def test_source_repair_marker_local_substitutions_are_strict():
+    from source_repair import _reconcile_tasks
+    import copy
+    expected={"schema":"v1","status":"ok","count":1,"concepts":[{
+        "id":"example:s1","key":"stable-key","knowledge_items":[{
+            "id":"ki1","description":r"Standing Opera\\ufffdng Procedure"
+        }]}]}
+    given=copy.deepcopy(expected)
+    given["concepts"][0]["knowledge_items"][0]["description"]="Standing Operating Procedure"
+    assert _reconcile_tasks(given,expected)==expected
+    given["concepts"][0]["knowledge_items"][0]["description"]="Standing Operating Different"
+    with pytest.raises(ValueError,match="Source repair mismatch"):
+        _reconcile_tasks(given,expected)
+
+
 def test_source_repair_reports_first_different_field_and_preserves_proposals(
     tmp_path,
 ):
