@@ -1066,6 +1066,28 @@ def test_source_repair_keeps_keyed_identity_checks_without_prose_checks():
         _reconcile_tasks(given,expected)
 
 
+def test_source_repair_accepts_optional_missing_ki_description():
+    from source_repair import _reconcile_tasks
+    import copy
+
+    expected = {
+        "schema": "v1", "status": "ok", "count": 1,
+        "concepts": [{
+            "id": "example:s1", "key": "stable-key",
+            "knowledge_items": [{"id": "ki1", "normative": False}],
+        }],
+    }
+    incoming = copy.deepcopy(expected)
+    assert _reconcile_tasks(incoming, expected) == expected
+    incoming["concepts"][0]["knowledge_items"][0]["description"] = "added"
+    with pytest.raises(ValueError, match="identity/provenance mismatch"):
+        _reconcile_tasks(incoming, expected)
+    incoming = copy.deepcopy(expected)
+    incoming["concepts"][0]["knowledge_items"][0]["normative"] = True
+    with pytest.raises(ValueError, match="identity/provenance mismatch"):
+        _reconcile_tasks(incoming, expected)
+
+
 def test_source_repair_reports_first_different_field_and_preserves_proposals(
     tmp_path,
 ):
