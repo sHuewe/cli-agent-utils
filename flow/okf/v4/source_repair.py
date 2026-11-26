@@ -332,18 +332,27 @@ def _source_repair_markdown(title: str, body: str) -> bytes:
 def _check_proposal_identity(proposal: object, task: dict) -> bool:
     """Verify deterministic task identity and KI coverage, not model list order.
 
-    Proposals are loaded from a path derived from an immutable, source-bound
-    task key. The model must not add/drop/duplicate any KI. An exact
-    permutation is harmless because the authoritative KI order is taken
-    from Phase A, never from the proposal. Return True for reordered lists.
+    Proposals are loaded by immutable, source-bound task key. Accept either
+    the canonical task ID or that task's *exact* key as the model-supplied ID;
+    both are unambiguous when the complete KI IDs match. Never accept another
+    task's ID/key, or change the authoritative catalog identity. A complete
+    permutation of the KI IDs is harmless. Return True for reordered lists.
     """
     ident = task["id"]
     if not isinstance(proposal, dict):
         raise ValueError(f"Source repair proposal is not an object: {ident}")
-    if proposal.get("id") != ident:
+    # The model sometimes copies the iteration/task key (task identity plus
+    # source-bound hash) instead of the canonical concept ID. This is safe to
+    # recognize ONLY for the exact key of the task whose keyed proposal file
+    # was loaded, and ONLY when the full KI reference multiset matches below.
+    # Never use the model's identifier in the resulting catalog.
+    returned_id = proposal.get("id")
+    allowed_ids = (ident, task["key"])
+    if returned_id not in allowed_ids:
         raise ValueError(
             f"Source repair proposal ID mismatch for {ident}: "
-            f"stored={proposal.get('id')!r}, expected={ident!r}"
+            f"stored={returned_id!r}, expected={ident!r} "
+            f"(or exact own task key={task['key']!r})"
         )
     received = proposal.get("knowledge_item_ids")
     expected = task["knowledge_item_ids"]
@@ -378,7 +387,7 @@ def _diagnose_proposals(workspace: Path, *,
         workspace, require_coverage=require_coverage,
         skip_coverage=skip_coverage,
     )
-    counts = {"checked": 0, "reordered": 0, "invalid": 0}
+    counts = {"checked": 0, "reordered": 0, "id_is_task_key": 0, "invalid": 0}
     failures = []
     for task in tasks["concepts"]:
         counts["checked"] += 1
@@ -390,6 +399,8 @@ def _diagnose_proposals(workspace: Path, *,
             proposal = json.loads(path.read_text(encoding="utf-8"))
             if _check_proposal_identity(proposal, task):
                 counts["reordered"] += 1
+            if proposal["id"] == task["key"] and task["key"] != task["id"]:
+                counts["id_is_task_key"] += 1
         except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
             counts["invalid"] += 1
             if len(failures) < 10:

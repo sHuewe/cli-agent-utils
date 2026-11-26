@@ -13,12 +13,26 @@ from source_repair import prepare
 
 
 def test_accepts_only_complete_permutation():
-    task = {"id": "test:s1", "knowledge_item_ids": ["a", "b", "c"]}
+    task = {"id": "test:s1", "key": "test--s1--abc123", "knowledge_item_ids": ["a", "b", "c"]}
     original = {"id": "test:s1", "knowledge_item_ids": ["a", "b", "c"]}
     assert _check_proposal_identity(original, task) is False
     reordered = {"id": "test:s1", "knowledge_item_ids": ["c", "a", "b"]}
     assert _check_proposal_identity(reordered, task) is True
     assert task["knowledge_item_ids"] == ["a", "b", "c"]
+    # A few existing LLM reviews echo the task key rather than the concept ID.
+    # This exact same-task alias is safe only with complete source KI coverage.
+    key_as_id = {"id": task["key"], "knowledge_item_ids": ["c", "a", "b"]}
+    assert _check_proposal_identity(key_as_id, task) is True
+    with pytest.raises(ValueError, match="KI coverage mismatch"):
+        _check_proposal_identity(
+            {"id": task["key"], "knowledge_item_ids": ["a", "b"]}, task
+        )
+    with pytest.raises(ValueError, match="proposal ID mismatch"):
+        _check_proposal_identity(
+            {"id": "test--s2--abc123", "knowledge_item_ids": ["a", "b", "c"]},
+            task,
+        )
+
     for bad, detail in [
         (["a", "b"], "missing="),
         (["a", "b", "c", "d"], "unexpected="),
@@ -67,4 +81,17 @@ def test_readonly_proposal_diagnostic_summarizes_missing_and_reordered(tmp_path)
     assert result["status"] == "ok"
     assert result["invalid"] == 0
     assert result["reordered"] == 0
+    assert result["id_is_task_key"] == 0
+    assert path.read_bytes() == before
+
+    # The exact task-key echo is counted separately, without rewriting the
+    # checkpointed JSON or changing the canonical concept identity.
+    proposal["id"] = task["key"]
+    put_json(path, proposal)
+    before = path.read_bytes()
+    result = _diagnose_proposals(
+        tmp_path, require_coverage=False, skip_coverage=True,
+    )
+    assert result["status"] == "ok"
+    assert result["id_is_task_key"] == 1
     assert path.read_bytes() == before
