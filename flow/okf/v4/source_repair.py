@@ -347,6 +347,47 @@ def _source_repair_markdown(title: str, body: str) -> bytes:
     return markdown(title, "".join(lines))
 
 
+def _existing_repair_markdown(
+    canonical_title: str, proposed_title: str, body: str,
+) -> bytes:
+    """Preserve an existing concept's title, not the model's title suggestion.
+
+    First validate the LLM's complete document against its own proposed
+    title, including strict YAML, type and body checks. Rewriting the title
+    is allowed only for one simple, top-level title scalar; the source-grounded
+    Markdown body and every other metadata field remain byte-for-byte intact.
+    """
+    validated = _source_repair_markdown(proposed_title, body)
+    if proposed_title == canonical_title:
+        return validated
+    lines = validated.decode("utf-8").splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
+        raise ValueError("Existing source repair requires YAML frontmatter.")
+    closing = next(
+        (i for i in range(1, len(lines)) if lines[i].rstrip("\r\n") == "---"),
+        None,
+    )
+    if closing is None:
+        raise ValueError("Existing source repair requires YAML frontmatter.")
+    title_lines = [
+        i for i in range(1, closing)
+        if lines[i].startswith("title: ")
+    ]
+    if len(title_lines) != 1:
+        raise ValueError(
+            "Existing source repair title cannot be safely normalized."
+        )
+    pos = title_lines[0]
+    old_line = lines[pos].rstrip("\r\n")
+    newline = lines[pos][len(old_line):]
+    # The YAML parser has already validated that the old scalar exactly
+    # equals proposed_title. Only its representation is replaced.
+    lines[pos] = (
+        "title: " + json.dumps(canonical_title, ensure_ascii=False) + newline
+    )
+    return _source_repair_markdown(canonical_title, "".join(lines))
+
+
 def _check_proposal_identity(proposal: object, task: dict) -> bool:
     """Verify deterministic task identity and KI coverage, not model list order.
 
@@ -460,13 +501,16 @@ def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
         body = proposal.get("markdown")
         if task["kind"] == "existing":
             old = by_id[task["id"]]
-            if title != old["title"] or action not in ("keep", "rewrite"):
-                raise ValueError(f"Source repair cannot rename/reassign: {task['id']}")
+            if action not in ("keep", "rewrite") or not isinstance(title, str):
+                raise ValueError(
+                    f"Invalid existing source repair action/title: {task['id']}"
+                )
             if action == "keep":
                 if body != "":
                     raise ValueError("Keep proposal cannot carry revised Markdown.")
+                # A keep review cannot rename a concept: no output is changed.
                 continue
-            content = _source_repair_markdown(title, body)
+            content = _existing_repair_markdown(old["title"], title, body)
             files[old["path"]] = content
             new_concepts[old["id"]] = {**old, "sha256": sha(content)}
         else:
