@@ -41,6 +41,7 @@ def test_schema_keeps_legacy_shape_and_constrains_new_action_pairs():
 
 def test_keep_and_rewrite_validation_use_existing_apply_rules(tmp_path):
     fixture(tmp_path)
+    (tmp_path / "okf-batched/state-v3/docs/example/concept-s001-c010-repair.json").unlink()
     migrate_applied(tmp_path)
     task = prepare(tmp_path, skip_coverage=True)["concepts"][0]
     p = proposal(task)
@@ -62,6 +63,7 @@ def test_keep_and_rewrite_validation_use_existing_apply_rules(tmp_path):
 
 def test_existing_valid_proposal_is_never_mutated_and_invalid_can_be_quarantined(tmp_path):
     fixture(tmp_path)
+    (tmp_path / "okf-batched/state-v3/docs/example/concept-s001-c010-repair.json").unlink()
     migrate_applied(tmp_path)
     task = prepare(tmp_path, skip_coverage=True)["concepts"][0]
     path = (tmp_path / "okf-v4/state-b/source-repair/proposals"
