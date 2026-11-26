@@ -23,7 +23,7 @@ its **original title must also be retained** to preserve its filename. The
 Markdown must be one full, self-contained, accurate concept with YAML
 frontmatter including a required nonempty scalar `type` (for example `type: concept`), a `title` matching "title", and the closing `---` delimiter. It must preserve every statement
 supported by every selected concept; do not infer new requirements or alter
-source evidence. Include a grounded German summary and 1–5 useful thematic
+source evidence. Include a grounded English summary and 1–5 useful English thematic
 tags. Other group members not in member_ids remain unchanged.
 
 Do NOT write or delete files. Do NOT create indexes. Output JSON only.
