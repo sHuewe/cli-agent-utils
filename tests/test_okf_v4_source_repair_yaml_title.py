@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "flow/okf/v4"))
-from source_repair import _source_repair_markdown
+from source_repair import _source_repair_markdown, _existing_repair_markdown
 
 
 TITLE = "Document front matter: TOC structure and page classification"
@@ -145,3 +145,61 @@ def test_preserves_strict_type_requirement():
     )
     with pytest.raises(ValueError, match="nonempty string type"):
         _source_repair_markdown(TITLE, proposal)
+
+
+def test_existing_rewrite_keeps_canonical_title_and_markdown_content():
+    old_title = 'Originalüberschrift: Führung'
+    proposed_title = "Verbesserter Titel: Zusammenfassung"
+    body = (
+        "---\ntype: concept\n"
+        'title: "Verbesserter Titel: Zusammenfassung"\n'
+        "description: Required by mission command: NATO-wide definition\n"
+        "---\n" + SUBSTANTIVE_TEXT
+    )
+    fixed = _existing_repair_markdown(old_title, proposed_title, body).decode("utf-8")
+    meta = yaml.safe_load(fixed.split("---", 2)[1])
+    assert meta["title"] == old_title
+    assert meta["description"] == (
+        "Required by mission command: NATO-wide definition"
+    )
+    assert fixed.endswith(SUBSTANTIVE_TEXT)
+    assert proposed_title not in fixed.split("---", 2)[1]
+
+
+def test_existing_rewrite_refuses_wrong_frontmatter_title():
+    body = (
+        "---\ntype: concept\n"
+        "title: Something else\n---\n" + SUBSTANTIVE_TEXT
+    )
+    with pytest.raises(ValueError, match="frontmatter title"):
+        _existing_repair_markdown("Original", "Model suggestion", body)
+
+
+def test_existing_rewrite_refuses_multiline_title_reformatting():
+    body = (
+        "---\ntype: concept\n"
+        "title: >-\n"
+        "  Model suggestion\n---\n" + SUBSTANTIVE_TEXT
+    )
+    with pytest.raises(ValueError, match="safely normalized"):
+        _existing_repair_markdown("Original", "Model suggestion", body)
+
+
+def test_existing_rewrite_same_title_has_no_changes():
+    body = (
+        "---\ntype: concept\n"
+        "title: Model suggestion\n---\n" + SUBSTANTIVE_TEXT
+    )
+    assert _existing_repair_markdown("Model suggestion", "Model suggestion", body) == (
+        body.encode("utf-8")
+    )
+
+
+def test_existing_rewrite_proposal_title_changed_but_frontmatter_original():
+    body = (
+        "---\ntype: concept\n"
+        "title: Original title\n---\n" + SUBSTANTIVE_TEXT
+    )
+    assert _existing_repair_markdown(
+        "Original title", "Model's alternate title", body,
+    ) == body.encode("utf-8")
