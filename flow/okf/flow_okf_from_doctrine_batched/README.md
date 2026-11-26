@@ -64,6 +64,60 @@ and assignment checkpoints are retained. `jsonschema` is required.
 New scan outputs must include all three route identity fields because
 `schemas/scan.schema.json` now requires them.
 
+## Readable filenames: standalone utils publication
+
+The generic `cli-agent-flow` remains unchanged and completes all
+doctrine concepts, local `index.md` pages, global themes, and root
+navigation in the checkpoint-bound `okf-batched-generated-v3/` tree.
+**Only after the normal Flow succeeds** does the separate
+`publish_named_okf.py` utility generate `okf-batched-published-v3/`.
+This is a repository-specific postprocessing operation, not a new
+`cli-agent` Flow operation and not an additional model call.
+
+**Recommended one-command workflow** (from the workspace root):
+
+```powershell
+py .\flow\okf\flow_okf_from_doctrine_batched\run_and_publish.py --workspace .
+```
+
+The wrapper runs the original `cli-agent-flow run`, checks the process
+exit status, then runs the publisher. To publish an already completed
+generation without invoking the Flow again, use `--skip-flow`.
+
+**Standalone publisher, dry-run first**:
+
+```powershell
+py .\flow\okf\flow_okf_from_doctrine_batched\publish_named_okf.py --workspace .
+```
+
+To create/replace the published tree after reviewing the preflight:
+
+```powershell
+py .\flow\okf\flow_okf_from_doctrine_batched\publish_named_okf.py --workspace . --apply
+```
+
+The script uses the existing `group.json` concept plans to identify
+source files and stable concept IDs. It derives readable filenames from
+scalar YAML frontmatter titles, falling back to the already planned
+`group.json` titles, handles umlauts and collisions, and writes
+`concept-path-map.json` with the complete original-to-published mapping.
+It rewrites relative Markdown links in concepts, the local and root
+`index.md` files, and the global thematic pages. Internal broken links,
+unsafe source paths, duplicate destinations, and missing concept files
+abort publication. Validation takes place in a separate staging directory
+before the finished output directory is replaced.
+
+**Existing generated Markdown and every source/model checkpoint remain
+untouched.** The original technical filenames are retained exclusively in
+`okf-batched-generated-v3/`, so Flow resume keeps working. The final
+consumer-facing tree is `okf-batched-published-v3/`. Publication can
+be repeated without re-running any LLM steps. Python 3.11+ and the
+standard library suffice; no additional parser dependency is required.
+
+The standalone publisher may be run after the completed Flow regardless
+of whether the Flow was started via the wrapper. Never run publication
+concurrently with a still-writing generation Flow.
+
 ## Local document pipeline
 
 1. Generic `markdown_sections(always_sections=true)` builds uniform,

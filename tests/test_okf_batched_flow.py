@@ -39,6 +39,10 @@ def test_golden_checkpoint_contract_is_exactly_unchanged():
     assert source["analyze_documents"]["foreach"] == "steps.inventory.output.files"
     golden = _steps(GOLDEN / "flow.toml")["analyze_documents"]
     assert source["analyze_documents"] == golden
+    assert "publish_named" not in source
+    assert _load(NEW / "flow.toml")["result"] == "steps.global_topics.output"
+    assert (NEW / "publish_named_okf.py").is_file()
+    assert (NEW / "run_and_publish.py").is_file()
 
 
 def test_all_document_scans_complete_before_document_consolidation():

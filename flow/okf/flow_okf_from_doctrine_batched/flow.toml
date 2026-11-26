@@ -61,4 +61,3 @@ flow = "flow/okf/flow_okf_from_doctrine_batched/flows/global-topics.toml"
 [steps.input]
 module_results = "${steps.build_modules.output.iterations}"
 okf_root = "${var.okf_root}"
-
