@@ -357,6 +357,13 @@ def _existing_repair_markdown(
     is allowed only for one simple, top-level title scalar; the source-grounded
     Markdown body and every other metadata field remain byte-for-byte intact.
     """
+    # Prefer the already-canonical document, even if the model's separate
+    # JSON title field differs. No frontmatter changes are needed then.
+    if proposed_title != canonical_title:
+        try:
+            return _source_repair_markdown(canonical_title, body)
+        except ValueError:
+            pass
     validated = _source_repair_markdown(proposed_title, body)
     if proposed_title == canonical_title:
         return validated
