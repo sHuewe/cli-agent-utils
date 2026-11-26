@@ -193,3 +193,13 @@ def test_existing_rewrite_same_title_has_no_changes():
     assert _existing_repair_markdown("Model suggestion", "Model suggestion", body) == (
         body.encode("utf-8")
     )
+
+
+def test_existing_rewrite_proposal_title_changed_but_frontmatter_original():
+    body = (
+        "---\ntype: concept\n"
+        "title: Original title\n---\n" + SUBSTANTIVE_TEXT
+    )
+    assert _existing_repair_markdown(
+        "Original title", "Model's alternate title", body,
+    ) == body.encode("utf-8")
