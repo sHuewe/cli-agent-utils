@@ -291,12 +291,12 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
 
 
 def _source_repair_markdown(title: str, body: str) -> bytes:
-    """Quote only an exact unquoted title line when YAML parsing rejects it.
+    """Quote plain title/description scalars containing a YAML-significant colon.
 
-    Existing LLM proposals remain immutable. A colon followed by a space in
-    an otherwise literal YAML title can break frontmatter parsing. Repair
-    precisely that formatting issue, then run the ordinary strict Markdown
-    validator. Never broadly rewrite frontmatter or change the chosen title.
+    This compatibility repair changes only frontmatter representation in an
+    LLM proposal, never its body or stored checkpoint. The ordinary strict
+    validator must accept the entire resulting Markdown document; malformed
+    unrelated YAML remains an error.
     """
     try:
         return markdown(title, body)
@@ -304,7 +304,7 @@ def _source_repair_markdown(title: str, body: str) -> bytes:
         if str(exc) != "Replacement contains invalid YAML frontmatter.":
             raise
 
-    if not isinstance(title, str) or ": " not in title or not isinstance(body, str):
+    if not isinstance(title, str) or not isinstance(body, str):
         raise ValueError("Replacement contains invalid YAML frontmatter.")
     lines = body.splitlines(keepends=True)
     if not lines or lines[0].rstrip("\r\n") != "---":
@@ -315,17 +315,35 @@ def _source_repair_markdown(title: str, body: str) -> bytes:
     )
     if closing is None:
         raise ValueError("Replacement contains invalid YAML frontmatter.")
-    matches = [
-        i for i in range(1, closing)
-        if lines[i].rstrip("\r\n") == "title: " + title
-    ]
-    if len(matches) != 1:
+
+    # Only direct, unique, plain-string fields are eligible. In particular,
+    # never rewrite nested YAML, multiline scalars, aliases, or collections.
+    candidates = {}
+    for i in range(1, closing):
+        raw = lines[i].rstrip("\r\n")
+        for field in ("title", "description"):
+            prefix = field + ": "
+            if not raw.startswith(prefix):
+                continue
+            if field in candidates:
+                raise ValueError("Replacement contains invalid YAML frontmatter.")
+            value = raw[len(prefix):]
+            if (": " not in value or not value.strip()
+                    or value.lstrip().startswith(('"', "'", "[", "{", "|", ">", "&", "*", "!"))
+                    or " #" in value or "\t" in value):
+                continue
+            if field == "title" and value != title:
+                continue
+            candidates[field] = (i, value)
+    if not candidates:
         raise ValueError("Replacement contains invalid YAML frontmatter.")
-    # JSON double-quoted strings are valid YAML quoted scalars. The original
-    # title is compared exactly and then serialized without losing Unicode.
-    index = matches[0]
-    ending = lines[index][len(lines[index].rstrip("\r\n")):]
-    lines[index] = "title: " + json.dumps(title, ensure_ascii=False) + ending
+
+    for i, value in candidates.values():
+        raw = lines[i].rstrip("\r\n")
+        ending = lines[i][len(raw):]
+        field = raw.split(":", 1)[0]
+        # JSON-quoted UTF-8 text is also a valid YAML string scalar.
+        lines[i] = field + ": " + json.dumps(value, ensure_ascii=False) + ending
     return markdown(title, "".join(lines))
 
 
