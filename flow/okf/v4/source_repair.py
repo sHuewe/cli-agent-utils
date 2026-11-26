@@ -379,6 +379,10 @@ def _existing_repair_markdown(
         )
     pos = title_lines[0]
     old_line = lines[pos].rstrip("\r\n")
+    if old_line[len("title: "):].lstrip().startswith(("|", ">")):
+        raise ValueError(
+            "Existing source repair title cannot be safely normalized."
+        )
     newline = lines[pos][len(old_line):]
     # The YAML parser has already validated that the old scalar exactly
     # equals proposed_title. Only its representation is replaced.
