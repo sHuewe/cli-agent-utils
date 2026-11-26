@@ -289,6 +289,45 @@ def _reconcile_tasks(given: dict, expected: dict) -> dict:
     return expected
 
 
+def _source_repair_markdown(title: str, body: str) -> bytes:
+    """Quote only an exact unquoted title line when YAML parsing rejects it.
+
+    Existing LLM proposals remain immutable. A colon followed by a space in
+    an otherwise literal YAML title can break frontmatter parsing. Repair
+    precisely that formatting issue, then run the ordinary strict Markdown
+    validator. Never broadly rewrite frontmatter or change the chosen title.
+    """
+    try:
+        return markdown(title, body)
+    except ValueError as exc:
+        if str(exc) != "Replacement contains invalid YAML frontmatter.":
+            raise
+
+    if not isinstance(title, str) or ": " not in title or not isinstance(body, str):
+        raise ValueError("Replacement contains invalid YAML frontmatter.")
+    lines = body.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
+        raise ValueError("Replacement contains invalid YAML frontmatter.")
+    closing = next(
+        (i for i in range(1, len(lines)) if lines[i].rstrip("\r\n") == "---"),
+        None,
+    )
+    if closing is None:
+        raise ValueError("Replacement contains invalid YAML frontmatter.")
+    matches = [
+        i for i in range(1, closing)
+        if lines[i].rstrip("\r\n") == "title: " + title
+    ]
+    if len(matches) != 1:
+        raise ValueError("Replacement contains invalid YAML frontmatter.")
+    # JSON double-quoted strings are valid YAML quoted scalars. The original
+    # title is compared exactly and then serialized without losing Unicode.
+    index = matches[0]
+    ending = lines[index][len(lines[index].rstrip("\r\n")):]
+    lines[index] = "title: " + json.dumps(title, ensure_ascii=False) + ending
+    return markdown(title, "".join(lines))
+
+
 def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
           state: str = STATE, destination: str = DESTINATION,
           require_coverage: bool = False, skip_coverage: bool = False) -> dict:
@@ -328,13 +367,13 @@ def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
                 if body != "":
                     raise ValueError("Keep proposal cannot carry revised Markdown.")
                 continue
-            content = markdown(title, body)
+            content = _source_repair_markdown(title, body)
             files[old["path"]] = content
             new_concepts[old["id"]] = {**old, "sha256": sha(content)}
         else:
             if action != "rewrite" or not isinstance(title, str) or not title.strip():
                 raise ValueError(f"Missing source item requires a new concept: {task['id']}")
-            content = markdown(title, body)
+            content = _source_repair_markdown(title, body)
             slug = task["id"].split(":", 1)[0]
             path = (f"doctrines/{slug}/recovered/{slugify(title)}-"
                     f"{task['id'].rsplit('-', 1)[-1][:10]}.md")
