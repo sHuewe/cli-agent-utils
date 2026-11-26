@@ -22,9 +22,9 @@ Do not invent source evidence, unsupported requirements or unrelated claims.
 - `markdown` must be a substantive COMPLETE replacement document with
   closed YAML frontmatter including `type: concept` (or the source's
   existing nonempty scalar OKF type) and `title` equal to the given title.
-- `summary` is a German summary based on your corrected content,
+- `summary` is an English summary based on your corrected content,
   between 20 and 600 characters.
-- `tags` contains 1–5 genuine thematic labels.
+- `tags` contains 1–5 genuine English thematic labels.
 
 Output exactly:
 {
@@ -32,8 +32,8 @@ Output exactly:
   "title": "<concept.title>",
   "markdown": "<complete corrected OKF Markdown>",
   "knowledge_item_ids": ["<all source Knowledge Item IDs>"],
-  "summary": "<German content-grounded summary>",
-  "tags": ["<one or more thematic labels>"]
+  "summary": "<English content-grounded summary>",
+  "tags": ["<one or more English thematic labels>"]
 }
 
 Do NOT write any files, indexes or links. No text outside the JSON object.
