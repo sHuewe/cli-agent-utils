@@ -81,4 +81,17 @@ def test_readonly_proposal_diagnostic_summarizes_missing_and_reordered(tmp_path)
     assert result["status"] == "ok"
     assert result["invalid"] == 0
     assert result["reordered"] == 0
+    assert result["id_is_task_key"] == 0
+    assert path.read_bytes() == before
+
+    # The exact task-key echo is counted separately, without rewriting the
+    # checkpointed JSON or changing the canonical concept identity.
+    proposal["id"] = task["key"]
+    put_json(path, proposal)
+    before = path.read_bytes()
+    result = _diagnose_proposals(
+        tmp_path, require_coverage=False, skip_coverage=True,
+    )
+    assert result["status"] == "ok"
+    assert result["id_is_task_key"] == 1
     assert path.read_bytes() == before
