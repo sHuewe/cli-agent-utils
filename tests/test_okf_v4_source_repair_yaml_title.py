@@ -89,7 +89,7 @@ def test_does_not_rewrite_nested_yaml_or_structured_description():
     proposal = (
         "---\ntype: concept\n"
         "title: Mission command guidelines\n"
-        "description: [Mission command: commander selection]\n"
+        "description: [Mission command: commander selection\n"
         "---\n" + SUBSTANTIVE_TEXT
     )
     with pytest.raises(ValueError, match="invalid YAML frontmatter"):
