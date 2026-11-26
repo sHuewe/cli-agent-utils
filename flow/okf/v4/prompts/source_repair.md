@@ -38,9 +38,16 @@ audit handles those separately.
 For both missing kinds choose action="rewrite", a meaningful German title
 and complete source-grounded Markdown.
 
-All replacement Markdown must begin with closed YAML frontmatter, with
-a nonempty scalar type (e.g. type: concept) and a title exactly matching
-the response title. Avoid unsupported claims. Return exactly these fields:
+Return a consistent action/payload pair:
+- action="keep": the existing concept already covers every source item.
+  Return markdown="" exactly; do not send the current Markdown again.
+- action="rewrite": send the FULL corrected Markdown document, starting
+  with --- followed by closed YAML frontmatter, a nonempty scalar type
+  (e.g. type: concept), and a title matching the response title. Do not
+  return a partial patch, an empty document, or an unquoted frontmatter
+  scalar with a colon (use YAML double quotes for such strings).
+For kind=missing or kind=audit_missing you MUST use rewrite.
+Avoid unsupported claims. Return exactly these fields:
 id, action, title, markdown, knowledge_item_ids. All IDs and their order
 MUST be identical to the task values.
 
