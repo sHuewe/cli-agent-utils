@@ -13,12 +13,26 @@ from source_repair import prepare
 
 
 def test_accepts_only_complete_permutation():
-    task = {"id": "test:s1", "knowledge_item_ids": ["a", "b", "c"]}
+    task = {"id": "test:s1", "key": "test--s1--abc123", "knowledge_item_ids": ["a", "b", "c"]}
     original = {"id": "test:s1", "knowledge_item_ids": ["a", "b", "c"]}
     assert _check_proposal_identity(original, task) is False
     reordered = {"id": "test:s1", "knowledge_item_ids": ["c", "a", "b"]}
     assert _check_proposal_identity(reordered, task) is True
     assert task["knowledge_item_ids"] == ["a", "b", "c"]
+    # A few existing LLM reviews echo the task key rather than the concept ID.
+    # This exact same-task alias is safe only with complete source KI coverage.
+    key_as_id = {"id": task["key"], "knowledge_item_ids": ["c", "a", "b"]}
+    assert _check_proposal_identity(key_as_id, task) is True
+    with pytest.raises(ValueError, match="KI coverage mismatch"):
+        _check_proposal_identity(
+            {"id": task["key"], "knowledge_item_ids": ["a", "b"]}, task
+        )
+    with pytest.raises(ValueError, match="proposal ID mismatch"):
+        _check_proposal_identity(
+            {"id": "test--s2--abc123", "knowledge_item_ids": ["a", "b", "c"]},
+            task,
+        )
+
     for bad, detail in [
         (["a", "b"], "missing="),
         (["a", "b", "c", "d"], "unexpected="),
