@@ -8,6 +8,7 @@ fully source-reconciled B-source snapshot.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
@@ -328,6 +329,76 @@ def _source_repair_markdown(title: str, body: str) -> bytes:
     return markdown(title, "".join(lines))
 
 
+def _check_proposal_identity(proposal: object, task: dict) -> bool:
+    """Verify deterministic task identity and KI coverage, not model list order.
+
+    Proposals are loaded from a path derived from an immutable, source-bound
+    task key. The model must not add/drop/duplicate any KI. An exact
+    permutation is harmless because the authoritative KI order is taken
+    from Phase A, never from the proposal. Return True for reordered lists.
+    """
+    ident = task["id"]
+    if not isinstance(proposal, dict):
+        raise ValueError(f"Source repair proposal is not an object: {ident}")
+    if proposal.get("id") != ident:
+        raise ValueError(
+            f"Source repair proposal ID mismatch for {ident}: "
+            f"stored={proposal.get('id')!r}, expected={ident!r}"
+        )
+    received = proposal.get("knowledge_item_ids")
+    expected = task["knowledge_item_ids"]
+    if not isinstance(received, list) or any(
+        not isinstance(ki, str) for ki in received
+    ):
+        raise ValueError(
+            f"Source repair KI IDs missing or invalid for {ident}: "
+            "expected a list of string IDs."
+        )
+    actual_counts, expected_counts = Counter(received), Counter(expected)
+    if actual_counts != expected_counts:
+        missing = list((expected_counts - actual_counts).elements())
+        extra = list((actual_counts - expected_counts).elements())
+        raise ValueError(
+            f"Source repair KI coverage mismatch for {ident}: "
+            f"missing={missing[:5]!r} ({len(missing)} total), "
+            f"unexpected={extra[:5]!r} ({len(extra)} total). "
+            "Only permutations of the complete KI list may be reused."
+        )
+    return received != expected
+
+
+def _diagnose_proposals(workspace: Path, *,
+                        require_coverage: bool, skip_coverage: bool) -> dict:
+    """Read-only survey of ALL checkpointed LLM proposals.
+
+    No model calls, changes to proposals, snapshots or task checkpoints.
+    Report a small sample of invalid proposals and an aggregate error count.
+    """
+    tasks = prepare(
+        workspace, require_coverage=require_coverage,
+        skip_coverage=skip_coverage,
+    )
+    counts = {"checked": 0, "reordered": 0, "invalid": 0}
+    failures = []
+    for task in tasks["concepts"]:
+        counts["checked"] += 1
+        try:
+            path = safe_path(
+                workspace,
+                f"{STATE}/source-repair/proposals/{task['key']}.json",
+            )
+            proposal = json.loads(path.read_text(encoding="utf-8"))
+            if _check_proposal_identity(proposal, task):
+                counts["reordered"] += 1
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            counts["invalid"] += 1
+            if len(failures) < 10:
+                failures.append({"task_id": task["id"], "reason": str(exc)})
+    return {**counts, "examples": failures, "status": (
+        "ok" if counts["invalid"] == 0 else "invalid"
+    )}
+
+
 def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
           state: str = STATE, destination: str = DESTINATION,
           require_coverage: bool = False, skip_coverage: bool = False) -> dict:
@@ -352,10 +423,9 @@ def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
         proposal = json.loads(safe_path(
             workspace, f"{state}/source-repair/proposals/{task['key']}.json"
         ).read_text(encoding="utf-8"))
-        if (not isinstance(proposal, dict)
-                or proposal.get("id") != task["id"]
-                or proposal.get("knowledge_item_ids") != task["knowledge_item_ids"]):
-            raise ValueError(f"Invalid source repair identity/coverage: {task['id']}")
+        # Exact completeness is mandatory. Only KI ordering in the model's
+        # response is non-authoritative; canonical Phase-A order is retained.
+        _check_proposal_identity(proposal, task)
         action = proposal.get("action")
         title = proposal.get("title")
         body = proposal.get("markdown")
@@ -439,11 +509,23 @@ def apply(workspace: Path, tasks: dict, *, phase_a: str = PHASE_A,
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--mode", choices=("prepare", "apply", "diagnose"), required=True)
+    p.add_argument(
+        "--mode", choices=("prepare", "apply", "diagnose", "diagnose-proposals"),
+        required=True,
+    )
     p.add_argument("--require-coverage", action="store_true")
     p.add_argument("--skip-coverage", action="store_true")
     args = p.parse_args()
     workspace = Path(".").resolve()
+    if args.mode == "diagnose-proposals":
+        result = _diagnose_proposals(
+            workspace, require_coverage=args.require_coverage,
+            skip_coverage=args.skip_coverage,
+        )
+        print(json.dumps(result, ensure_ascii=True, indent=2))
+        if result["invalid"]:
+            raise SystemExit(1)
+        return
     if args.mode == "diagnose":
         # Read-only: inspect Phase A and the checkpointed task ledger.
         # Never call the LLM, overwrite proposals or publish B artifacts.
