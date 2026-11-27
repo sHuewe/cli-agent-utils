@@ -90,6 +90,10 @@ class CliAgentWrapper:
         rag: dict | None = EXAMPLE_RAG,
         system_prompt: str | None = None,
         approve_tools: list[str] | tuple[str, ...] = (),
+        tool_allowlist: list[str] | tuple[str, ...] | None = None,
+        max_tool_calls: int | None = None,
+        max_additional_knowledge_calls: int | None = None,
+        workspace_access: str = "none",
         include_tool_arguments: bool = False,
         redact_keys: list[str] | tuple[str, ...] = (),
     ) -> None:
@@ -100,6 +104,10 @@ class CliAgentWrapper:
         self.rag = dict(rag) if isinstance(rag, dict) else rag
         self.system_prompt = system_prompt
         self.approve_tools = frozenset(approve_tools)
+        self.tool_allowlist = tool_allowlist
+        self.max_tool_calls = max_tool_calls
+        self.max_additional_knowledge_calls = max_additional_knowledge_calls
+        self.workspace_access = workspace_access
         self.include_tool_arguments = include_tool_arguments
         self.redact_keys = tuple(redact_keys)
         self.agent: Any | None = None
@@ -130,7 +138,11 @@ class CliAgentWrapper:
         builder.with_project_config(
             path=config,
             workspace=self.workspace,
-            workspace_access="none",
+            workspace_access=self.workspace_access,
+            **({"tool_allowlist": self.tool_allowlist} if self.tool_allowlist is not None else {}),
+            **({"max_tool_calls": self.max_tool_calls} if self.max_tool_calls is not None else {}),
+            **({"max_additional_knowledge_calls": self.max_additional_knowledge_calls}
+               if self.max_additional_knowledge_calls is not None else {}),
             response_format="text",
             # Always override any Knowledge entries in the project config.
             # None explicitly disables the corresponding subsystem.
